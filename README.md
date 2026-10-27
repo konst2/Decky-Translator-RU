@@ -35,12 +35,12 @@ Might be helpful for learning a new language by playing games or some other purp
 
 ### Manual Installation
 1. Install [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader/tree/main?tab=readme-ov-file#-installation) on your Steam Deck
-2. [Download](https://github.com/konst2/Decky-Translator-RU/releases/latest/download/Decky.Translator.zip) the latest release from the [Releases](https://github.com/konst2/Decky-Translator-RU/releases) page
-3. Upload *Decky.Translator.zip* archive to any directory on your Steam Deck
+2. [Download](https://github.com/konst2/Decky-Translator-RU/releases/latest/download/DeckyTranslatorRu.zip) the latest release from the [Releases](https://github.com/konst2/Decky-Translator-RU/releases) page
+3. Upload *DeckyTranslatorRu.zip* archive to any directory on your Steam Deck
 4. Press <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/qam.svg"><img height="16" alt="QAM" src="assets/icons/dark/qam.svg"></picture>, go to the Decky tab <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/plug.svg"><img height="16" alt="Decky" src="assets/icons/dark/plug.svg"></picture> and click <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/gear.svg"><img height="16" alt="Settings" src="assets/icons/dark/gear.svg"></picture>
 5. Enable "Developer Mode" in General tab
 6. Open the Developer tab
-7. Install Plugin from ZIP file -> "Browse" and then select *Decky.Translator.zip*
+7. Install Plugin from ZIP file -> "Browse" and then select *DeckyTranslatorRu.zip*
 
 ## How to use it?
 
