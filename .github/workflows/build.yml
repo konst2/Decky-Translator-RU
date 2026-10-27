@@ -170,12 +170,12 @@ jobs:
         run: |
           cd out
           mkdir _staging
-          unzip -q "Decky Translator.zip" -d _staging
+          unzip -q "DeckyTranslatorRu.zip" -d _staging
           mv "_staging/Decky Translator RU" "_staging/decky-translator-ru"
-          rm "Decky Translator.zip"
-          (cd _staging && zip -qr "../Decky Translator.zip" decky-translator-ru)
+          rm "DeckyTranslatorRu.zip"
+          (cd _staging && zip -qr "../DeckyTranslatorRu.zip" decky-translator-ru)
           rm -rf _staging
-          unzip -l "Decky Translator.zip" | head -5
+          unzip -l "DeckyTranslatorRu.zip" | head -5
 
       - name: Upload plugin artifact
         uses: actions/upload-artifact@v4
@@ -214,7 +214,7 @@ jobs:
           tag_name: ${{ needs.build.outputs.version }}
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            Decky Translator.zip
+            DeckyTranslatorRu.zip
             plugin-dependencies.tar.gz
           draft: true
           generate_release_notes: true
