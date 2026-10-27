@@ -37,39 +37,39 @@ import chromeLogo from "../../assets/chrome-logo.png";
 
 // Language options with flag emojis
 const languageOptions = [
-    { label: "\ud83c\udf10 Auto-detect", data: "auto" },
-    { label: "\ud83c\uddf8\ud83c\udde6 Arabic", data: "ar" },
-    { label: "\ud83c\udde7\ud83c\uddec Bulgarian", data: "bg" },
-    { label: "\ud83c\udde8\ud83c\uddf3 Chinese (Simplified)", data: "zh-CN" },
-    { label: "\ud83c\uddf9\ud83c\uddfc Chinese (Traditional)", data: "zh-TW" },
-    { label: "\ud83c\udded\ud83c\uddf7 Croatian", data: "hr" },
-    { label: "\ud83c\udde8\ud83c\uddff Czech", data: "cs" },
-    { label: "\ud83c\udde9\ud83c\uddf0 Danish", data: "da" },
-    { label: "\ud83c\uddf3\ud83c\uddf1 Dutch", data: "nl" },
-    { label: "\ud83c\uddec\ud83c\udde7 English", data: "en" },
-    { label: "\ud83c\uddeb\ud83c\uddee Finnish", data: "fi" },
-    { label: "\ud83c\uddeb\ud83c\uddf7 French", data: "fr" },
-    { label: "\ud83c\udde9\ud83c\uddea German", data: "de" },
-    { label: "\ud83c\uddec\ud83c\uddf7 Greek", data: "el" },
-    { label: "\ud83c\uddee\ud83c\uddf3 Hindi", data: "hi" },
-    { label: "\ud83c\udded\ud83c\uddfa Hungarian", data: "hu" },
-    { label: "\ud83c\uddee\ud83c\uddf9 Italian", data: "it" },
-    { label: "\ud83c\uddef\ud83c\uddf5 Japanese", data: "ja" },
-    { label: "\ud83c\uddf0\ud83c\uddf7 Korean", data: "ko" },
-    { label: "\ud83c\uddf3\ud83c\uddf4 Norwegian", data: "no" },
-    { label: "\ud83c\uddf5\ud83c\uddf1 Polish", data: "pl" },
-    { label: "\ud83c\uddf5\ud83c\uddf9 Portuguese", data: "pt" },
-    { label: "\ud83c\uddf7\ud83c\uddf4 Romanian", data: "ro" },
-    { label: "\ud83c\uddf7\ud83c\uddfa Russian", data: "ru" },
-    { label: "\ud83c\uddea\ud83c\uddf8 Spanish", data: "es" },
-    { label: "\ud83c\uddf8\ud83c\uddea Swedish", data: "sv" },
-    { label: "\ud83c\uddf9\ud83c\udded Thai", data: "th" },
-    { label: "\ud83c\uddf9\ud83c\uddf7 Turkish", data: "tr" },
-    { label: "\ud83c\uddfa\ud83c\udde6 Ukrainian", data: "uk" },
-    { label: "\ud83c\uddfb\ud83c\uddf3 Vietnamese", data: "vi" }
+    { label: "\ud83c\udf10 Автоопределение", data: "auto" },
+    { label: "\ud83c\uddf8\ud83c\udde6 Арабский", data: "ar" },
+    { label: "\ud83c\udde7\ud83c\uddec Болгарский", data: "bg" },
+    { label: "\ud83c\udde8\ud83c\uddf3 Китайский (упрощённый)", data: "zh-CN" },
+    { label: "\ud83c\uddf9\ud83c\uddfc Китайский (традиционный)", data: "zh-TW" },
+    { label: "\ud83c\udded\ud83c\uddf7 Хорватский", data: "hr" },
+    { label: "\ud83c\udde8\ud83c\uddff Чешский", data: "cs" },
+    { label: "\ud83c\udde9\ud83c\uddf0 Датский", data: "da" },
+    { label: "\ud83c\uddf3\ud83c\uddf1 Нидерландский", data: "nl" },
+    { label: "\ud83c\uddec\ud83c\udde7 Английский", data: "en" },
+    { label: "\ud83c\uddeb\ud83c\uddee Финский", data: "fi" },
+    { label: "\ud83c\uddeb\ud83c\uddf7 Французский", data: "fr" },
+    { label: "\ud83c\udde9\ud83c\uddea Немецкий", data: "de" },
+    { label: "\ud83c\uddec\ud83c\uddf7 Греческий", data: "el" },
+    { label: "\ud83c\uddee\ud83c\uddf3 Хинди", data: "hi" },
+    { label: "\ud83c\udded\ud83c\uddfa Венгерский", data: "hu" },
+    { label: "\ud83c\uddee\ud83c\uddf9 Итальянский", data: "it" },
+    { label: "\ud83c\uddef\ud83c\uddf5 Японский", data: "ja" },
+    { label: "\ud83c\uddf0\ud83c\uddf7 Корейский", data: "ko" },
+    { label: "\ud83c\uddf3\ud83c\uddf4 Норвежский", data: "no" },
+    { label: "\ud83c\uddf5\ud83c\uddf1 Польский", data: "pl" },
+    { label: "\ud83c\uddf5\ud83c\uddf9 Португальский", data: "pt" },
+    { label: "\ud83c\uddf7\ud83c\uddf4 Румынский", data: "ro" },
+    { label: "\ud83c\uddf7\ud83c\uddfa Русский", data: "ru" },
+    { label: "\ud83c\uddea\ud83c\uddf8 Испанский", data: "es" },
+    { label: "\ud83c\uddf8\ud83c\uddea Шведский", data: "sv" },
+    { label: "\ud83c\uddf9\ud83c\udded Тайский", data: "th" },
+    { label: "\ud83c\uddf9\ud83c\uddf7 Турецкий", data: "tr" },
+    { label: "\ud83c\uddfa\ud83c\udde6 Украинский", data: "uk" },
+    { label: "\ud83c\uddfb\ud83c\uddf3 Вьетнамский", data: "vi" }
 ];
 
-const selectLanguageOption = { label: "Select language...", data: "" };
+const selectLanguageOption = { label: "Выберите язык...", data: "" };
 const outputLanguageOptions = languageOptions.filter(lang => lang.data !== "auto");
 
 // Languages RapidOCR able to work with
@@ -99,12 +99,12 @@ const ApiKeyModal: VFC<{
     return (
         <ModalRoot onCancel={closeModal} onEscKeypress={closeModal}>
             <div style={{ padding: "20px", minWidth: "400px" }}>
-                <h2 style={{ marginBottom: "15px" }}>{title || "API Key"}</h2>
+                <h2 style={{ marginBottom: "15px" }}>{title || "API-ключ"}</h2>
                 <p style={{ marginBottom: "15px", color: "#aaa", fontSize: "13px" }}>
-                    {description || "Enter your API key."}
+                    {description || "Введите ваш API-ключ."}
                 </p>
                 <TextField
-                    label="API Key"
+                    label="API-ключ"
                     value={apiKey}
                     bIsPassword={true}
                     bShowClearAction={true}
@@ -114,7 +114,7 @@ const ApiKeyModal: VFC<{
                     style={{ display: "flex", gap: "10px", marginTop: "20px", justifyContent: "flex-end" }}
                 >
                     <DialogButton onClick={closeModal}>
-                        Cancel
+                        Отмена
                     </DialogButton>
                     <DialogButton
                         onClick={() => {
@@ -122,7 +122,7 @@ const ApiKeyModal: VFC<{
                             closeModal?.();
                         }}
                     >
-                        Save
+                        Сохранить
                     </DialogButton>
                 </Focusable>
             </div>
@@ -131,7 +131,7 @@ const ApiKeyModal: VFC<{
 };
 
 const cacheProviderLabel = (p: string) => ({
-    ct2: "On-Device",
+    ct2: "Локально",
     freegoogle: "Google Translate",
     googlecloud: "Google Cloud",
     gemini_vision: "Gemini Vision",
@@ -257,29 +257,29 @@ const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () => void }
                 style={{ display: "flex", flexDirection: "column", maxHeight: "70vh", boxSizing: "border-box", minWidth: "540px" }}
             >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", marginBottom: "10px", flexShrink: 0 }}>
-                    <div style={{ fontSize: "16px", fontWeight: "bold" }}>{filter === "all" ? "All" : filter === "unique" ? "Unique" : "Identical"} Cached Translations{entries !== null && <span style={{ color: "rgba(255,255,255,0.45)" }}> ({shown.length})</span>}</div>
+                    <div style={{ fontSize: "16px", fontWeight: "bold" }}>{filter === "all" ? "Все" : filter === "unique" ? "Уникальные" : "Одинаковые"} переводы в кэше{entries !== null && <span style={{ color: "rgba(255,255,255,0.45)" }}> ({shown.length})</span>}</div>
                     {all.length > 0 && (
                         <Focusable style={{ display: "flex", gap: "8px", alignItems: "center", flex: "0 0 auto" }}>
                             <DialogButton
                                 onClick={cycleFilter}
                                 style={{ width: "auto", minWidth: "auto", height: "32px", padding: "0 12px", whiteSpace: "nowrap", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px" }}
                             >
-                                Showing: {filter === "all" ? "all" : `${filter} only`}
+                                Показано: {filter === "all" ? "все" : `${filter === "unique" ? "уникальные" : "одинаковые"}`}
                             </DialogButton>
                             <DialogButton
                                 onClick={handleClear}
                                 style={{ width: "auto", minWidth: "auto", height: "32px", padding: "0 12px", whiteSpace: "nowrap", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", fontSize: "13px", color: confirmClear ? "#ff4d4d" : undefined }}
                             >
                                 {confirmClear ? <HiExclamationTriangle style={{ fontSize: "16px" }} /> : <HiXCircle style={{ fontSize: "16px" }} />}
-                                {confirmClear ? "Are you sure?" : "Clear all"}
+                                {confirmClear ? "Вы уверены?" : "Очистить всё"}
                             </DialogButton>
                         </Focusable>
                     )}
                 </div>
                 <style>{`.dt-rowfocus { background: rgba(103,160,255,0.22) !important; }`}</style>
-                {entries === null && <p style={{ color: "#aaa" }}>Loading...</p>}
+                {entries === null && <p style={{ color: "#aaa" }}>Загрузка...</p>}
                 {entries !== null && shown.length === 0 && (
-                    <p style={{ color: "#aaa" }}>{all.length === 0 ? "Nothing cached yet." : "Nothing to show."}</p>
+                    <p style={{ color: "#aaa" }}>{all.length === 0 ? "В кэше пока пусто." : "Нечего показывать."}</p>
                 )}
                 {shown.length > 0 && (
                     <div ref={wrapRef} style={{ position: "relative", flex: "1 1 auto", minHeight: 0, display: "flex" }}>
@@ -296,9 +296,9 @@ const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () => void }
                                         style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: "2px", padding: "8px 0 8px 10px", scrollMargin: "8px" }}
                                     >
                                         <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", color: "rgba(255,255,255,0.28)", fontSize: "9px" }}>
-                                            <span><span style={{ fontWeight: "bold" }}>Translated with:</span> {cacheProviderLabel(e.provider)}</span>
-                                            <span><span style={{ fontWeight: "bold" }}>Date:</span> {e.createdAt ? new Date(e.createdAt * 1000).toLocaleString([], { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</span>
-                                            <span><span style={{ fontWeight: "bold" }}>Reused:</span> {e.hits} {e.hits === 1 ? "time" : "times"}</span>
+                                            <span><span style={{ fontWeight: "bold" }}>Переведено с помощью:</span> {cacheProviderLabel(e.provider)}</span>
+                                            <span><span style={{ fontWeight: "bold" }}>Дата:</span> {e.createdAt ? new Date(e.createdAt * 1000).toLocaleString([], { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</span>
+                                            <span><span style={{ fontWeight: "bold" }}>Использовано:</span> {e.hits} {e.hits === 1 ? "раз" : "раз"}</span>
                                         </div>
                                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                                             <span style={{ fontSize: "14px", flexShrink: 0, width: "20px", textAlign: "center" }}>{cacheLangFlag(e.sourceLang)}</span>
@@ -325,12 +325,12 @@ const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () => void }
                 )}
                 {totalPages > 1 && (
                     <Focusable style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", marginTop: "8px", flexShrink: 0 }}>
-                        {pagerButton("Prev", page > 0, () => setPage(p => Math.max(0, p - 1)))}
+                        {pagerButton("Назад", page > 0, () => setPage(p => Math.max(0, p - 1)))}
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: "80px" }}>
-                            <span style={{ fontSize: "12px", color: "#8b929a" }}>Page {page + 1} / {totalPages}</span>
-                            <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.28)" }}>{pageItems.length} of {shown.length}</span>
+                            <span style={{ fontSize: "12px", color: "#8b929a" }}>Страница {page + 1} / {totalPages}</span>
+                            <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.28)" }}>{pageItems.length} из {shown.length}</span>
                         </div>
-                        {pagerButton("Next", page < totalPages - 1, () => setPage(p => Math.min(totalPages - 1, p + 1)))}
+                        {pagerButton("Вперёд", page < totalPages - 1, () => setPage(p => Math.min(totalPages - 1, p + 1)))}
                     </Focusable>
                 )}
             </Focusable>
@@ -391,7 +391,7 @@ const GeminiModelSelector: VFC<{
             <style>{`@keyframes gemini-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
             <PanelSectionRow>
                 <Field
-                    label="Gemini Model"
+                    label="Модель Gemini"
                     childrenContainerWidth="max"
                     childrenLayout="below"
                     focusable={false}
@@ -488,10 +488,10 @@ function useModelDownload(opts: {
     const installedSize = status.size ? ` (${formatBytes(status.size)})` : '';
     const approxSize = status.approx_size_mb ? ` (${formatApproxSize(status.approx_size_mb)})` : '';
     const statusText = isDownloading
-        ? `downloading ${progressPct}%`
+        ? `загрузка ${progressPct}%`
         : isDownloaded
-            ? `Installed${installedSize}`
-            : `Not installed${approxSize}`;
+            ? `Установлено${installedSize}`
+            : `Не установлено${approxSize}`;
     const ActionIcon = isDownloading ? HiXMark : isDownloaded ? HiTrash : HiInboxArrowDown;
     const onActionClick = isDownloading ? handleCancel : isDownloaded ? handleDelete : handleDownload;
 
@@ -626,8 +626,8 @@ const StarRating: VFC<{ label: string; filled: number; total?: number }> = ({ la
 
 const ProviderRating: VFC<{ quality: number; speed: number }> = ({ quality, speed }) => (
     <div style={{ display: "flex", gap: "16px", marginBottom: "6px" }}>
-        <StarRating label="Quality" filled={quality} />
-        <StarRating label="Speed" filled={speed} />
+        <StarRating label="Качество" filled={quality} />
+        <StarRating label="Скорость" filled={speed} />
     </div>
 );
 
@@ -706,16 +706,16 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
 
     return (
         <div style={{ paddingBottom: "40px" }}>
-            <PanelSection title="Languages">
+            <PanelSection title="Языки">
                 <PanelSectionRow>
                     <DropdownItem
                         layout="below"
-                        label="Input Language"
+                        label="Исходный язык"
                         description={isCT2
-                            ? "Source language (auto-detect not available for offline translation)"
+                            ? "Язык исходного текста (автоопределение недоступно для оффлайн-перевода)"
                             : settings.ocrProvider === 'rapidocr'
-                                ? "Source language for text recognition"
-                                : "Source language (Select auto-detect if unsure)"}
+                                ? "Язык исходного текста для распознавания"
+                                : "Язык исходного текста (выберите автоопределение, если не уверены)"}
                         rgOptions={inputLanguageOptions}
                         selectedOption={settings.inputLanguage}
                         onChange={(option: any) => updateSetting('inputLanguage', option.data, 'Input language')}
@@ -725,8 +725,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                 <PanelSectionRow>
                     <DropdownItem
                         layout="below"
-                        label="Output Language"
-                        description="Target language for translation"
+                        label="Язык перевода"
+                        description="Язык, на который переводить текст"
                         rgOptions={[...(settings.targetLanguage === '' ? [selectLanguageOption] : []), ...outputLanguageOptions]}
                         selectedOption={settings.targetLanguage}
                         onChange={(option: any) => updateSetting('targetLanguage', option.data, 'Output language')}
@@ -734,11 +734,11 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                 </PanelSectionRow>
             </PanelSection>
 
-            <PanelSection title="Recognition">
+            <PanelSection title="Распознавание">
                 {/* OCR Provider Selection */}
                 <PanelSectionRow>
                     <Field
-                        label="Text Recognition Method"
+                        label="Метод распознавания текста"
                         childrenContainerWidth="max"
                         childrenLayout="below"
                         focusable={false}
@@ -748,10 +748,10 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 <style>{`.dt-ocr-dropdown-wrapper .dt-recommended-tag { display: none !important; }`}</style>
                             <Dropdown
                                 rgOptions={[
-                                    { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(RapidOCR)</span></span>, data: "rapidocr" },
-                                    { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span style={{ display: "flex", alignItems: "center" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Chrome)</span></span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ recommended</span></span>, data: "chromescreenai" },
+                                    { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>Локально</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(RapidOCR)</span></span>, data: "rapidocr" },
+                                    { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span style={{ display: "flex", alignItems: "center" }}><span>Локально</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Chrome)</span></span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ рекомендуемый</span></span>, data: "chromescreenai" },
                                     { label: <span>OCR.space</span>, data: "ocrspace" },
-                                    { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span>Google Cloud</span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ recommended</span></span>, data: "googlecloud" },
+                                    { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span>Google Cloud</span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ рекомендуемый</span></span>, data: "googlecloud" },
                                     { label: <span style={{ display: "flex", alignItems: "center", gap: "6px", height: "20px", lineHeight: "20px" }}>Gemini Vision <BsStars style={{ fontSize: "12px" }} /></span>, data: "gemini_vision" }
                                 ]}
                                 selectedOption={settings.ocrProvider}
@@ -770,8 +770,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                             <ApiKeyModal
                                                 currentKey={settings.googleApiKey}
                                                 onSave={(key) => updateSetting('googleApiKey', key, 'Google API Key')}
-                                                title="Google Cloud API Key"
-                                                description="Enter your Google Cloud API key for Vision and Translation services."
+                                                title="API-ключ Google Cloud"
+                                                description="Введите ваш API-ключ Google Cloud для сервисов Vision и Translation."
                                             />
                                         );
                                     }}
@@ -798,8 +798,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                             <ApiKeyModal
                                                 currentKey={settings.geminiApiKey}
                                                 onSave={(key) => updateSetting('geminiApiKey', key, 'Gemini API Key')}
-                                                title="Gemini API Key"
-                                                description="Enter your free Gemini API key from aistudio.google.com."
+                                                title="API-ключ Gemini"
+                                                description="Введите бесплатный API-ключ Gemini с aistudio.google.com."
                                             />
                                         );
                                     }}
@@ -889,8 +889,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>OCR.space</span>
                                     </div>
                                     <ProviderRating quality={2} speed={3} />
-                                    <div>- Free EU-based cloud OCR API</div>
-                                    <div>- Max usage limits: 500/day and 10/10min</div>
+                                    <div>- Бесплатный облачный OCR API (серверы в ЕС)</div>
+                                    <div>- Лимиты: 500/день и 10/10 мин</div>
                                 </>
                             )}
                             {settings.ocrProvider === 'googlecloud' && (
@@ -900,11 +900,11 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Google Cloud Vision</span>
                                     </div>
                                     <ProviderRating quality={3} speed={3} />
-                                    <div>- Best accuracy and speed available</div>
-                                    <div>- Ideal for complex/stylized text</div>
-                                    <div>- Requires API key</div>
+                                    <div>- Лучшая точность и скорость</div>
+                                    <div>- Идеален для сложного и стилизованного текста</div>
+                                    <div>- Требуется API-ключ</div>
                                     {!settings.googleApiKey && (
-                                        <div style={{ color: "#ff6b6b", marginTop: "4px" }}>You need to add your API Key</div>
+                                        <div style={{ color: "#ff6b6b", marginTop: "4px" }}>Необходимо добавить API-ключ</div>
                                     )}
                                 </>
                             )}
@@ -915,11 +915,11 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Gemini Vision</span>
                                     </div>
                                     <ProviderRating quality={3} speed={1} />
-                                    <div>- AI-based Recognition and Translation</div>
-                                    <div>- Great accuracy, context-aware translations</div>
-                                    <div>- Free API key available at aistudio.google.com</div>
+                                    <div>- Распознавание и перевод на основе ИИ</div>
+                                    <div>- Высокая точность, перевод с учётом контекста</div>
+                                    <div>- Бесплатный API-ключ на aistudio.google.com</div>
                                     {!settings.geminiApiKey && (
-                                        <div style={{ color: "#ff6b6b", marginTop: "4px" }}>You need to add your Gemini API Key</div>
+                                        <div style={{ color: "#ff6b6b", marginTop: "4px" }}>Необходимо добавить API-ключ Gemini</div>
                                     )}
                                 </>
                             )}
@@ -930,8 +930,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                 {settings.ocrProvider === 'rapidocr' && (
                     <PanelSectionRow>
                         <ToggleField
-                            label="Faster Recognition"
-                            description="Keeps the recognition engine loaded in memory between translations"
+                            label="Быстрое распознавание"
+                            description="Держать движок распознавания загруженным в память между переводами"
                             checked={settings.rapidocrPersistentMode}
                             onChange={(value) => {
                                 updateSetting('rapidocrPersistentMode', value, 'Faster recognition');
@@ -943,8 +943,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                 {settings.ocrProvider === 'chromescreenai' && (
                     <PanelSectionRow>
                         <ToggleField
-                            label="Faster Recognition"
-                            description="Keeps the recognition engine loaded in memory between translations"
+                            label="Быстрое распознавание"
+                            description="Держать движок распознавания загруженным в память между переводами"
                             checked={settings.chromeScreenAiPersistentMode}
                             onChange={(value) => {
                                 updateSetting('chromeScreenAiPersistentMode', value, 'Faster recognition');
@@ -956,8 +956,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                 {settings.ocrProvider !== 'ocrspace' && settings.ocrProvider !== 'gemini_vision' && settings.ocrProvider !== 'chromescreenai' && (
                     <PanelSectionRow>
                         <ToggleField
-                            label="Customize Recognition"
-                            description="Fine-tune text recognition parameters. Can make things better or worse"
+                            label="Настройка распознавания"
+                            description="Тонкая настройка параметров распознавания текста. Может улучшить или ухудшить результат"
                             checked={settings.customRecognitionSettings}
                             onChange={(value) => {
                                 updateSetting('customRecognitionSettings', value, 'Custom recognition settings');
@@ -980,8 +980,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 max={1.0}
                                 min={0.0}
                                 step={0.05}
-                                label="Recognition Confidence"
-                                description="Higher = less noise but may miss text. Lower = more text but more errors"
+                                label="Уверенность распознавания"
+                                description="Выше = меньше шума, но можно пропустить текст. Ниже = больше текста, но больше ошибок"
                                 showValue={true}
                                 onChange={(value) => {
                                     updateSetting('rapidocrConfidence', value, 'RapidOCR confidence');
@@ -994,8 +994,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 max={1.0}
                                 min={0.1}
                                 step={0.05}
-                                label="Detection Sensitivity"
-                                description="Lower = finds more text regions, better for small text. Higher = fewer regions, but more confident detections"
+                                label="Чувствительность обнаружения"
+                                description="Ниже = больше областей с текстом, лучше для мелкого текста. Выше = меньше областей, но увереннее"
                                 showValue={true}
                                 onChange={(value) => {
                                     updateSetting('rapidocrBoxThresh', value, 'RapidOCR box threshold');
@@ -1008,8 +1008,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 max={3.0}
                                 min={1.0}
                                 step={0.1}
-                                label="Box Expansion"
-                                description="Higher = larger text boxes, helps capture full words. Lower = tighter boxes around text"
+                                label="Расширение рамок"
+                                description="Выше = крупнее рамки текста, помогает захватить целые слова. Ниже = рамки плотнее к тексту"
                                 showValue={true}
                                 onChange={(value) => {
                                     updateSetting('rapidocrUnclipRatio', value, 'RapidOCR unclip ratio');
@@ -1026,8 +1026,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             max={1.0}
                             min={0.0}
                             step={0.05}
-                            label="Text Recognition Confidence"
-                            description="Minimum confidence level for detected text (higher = fewer false positives)"
+                            label="Уверенность распознавания текста"
+                            description="Минимальный уровень уверенности для распознанного текста (выше = меньше ложных срабатываний)"
                             showValue={true}
                             valueSuffix=""
                             onChange={(value) => {
@@ -1039,10 +1039,10 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
 
             </PanelSection>
 
-            <PanelSection title="Translation">
+            <PanelSection title="Перевод">
                 <PanelSectionRow>
                     <Field
-                        label="Text Translation Method"
+                        label="Метод перевода текста"
                         childrenContainerWidth="max"
                         childrenLayout="below"
                         focusable={false}
@@ -1061,7 +1061,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             <div style={{ flex: 1 }}>
                                 <Dropdown
                                     rgOptions={[
-                                        { label: <span>On-Device</span>, data: "ct2" },
+                                        { label: <span>Локально</span>, data: "ct2" },
                                         { label: <span>Google Translate</span>, data: "freegoogle" },
                                         { label: <span>Google Cloud</span>, data: "googlecloud" }
                                     ]}
@@ -1076,8 +1076,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                             <ApiKeyModal
                                                 currentKey={settings.googleApiKey}
                                                 onSave={(key) => updateSetting('googleApiKey', key, 'Google API Key')}
-                                                title="Google Cloud API Key"
-                                                description="Enter your Google Cloud API key for Translation services."
+                                                title="API-ключ Google Cloud"
+                                                description="Введите ваш API-ключ Google Cloud для сервисов перевода."
                                             />
                                         );
                                     }}
@@ -1119,8 +1119,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Gemini Vision</span>
                                     </div>
                                     <ProviderRating quality={3} speed={1} />
-                                    <div>- Translation is handled by Gemini Vision</div>
-                                    <div>- OCR and translation happen in a single step</div>
+                                    <div>- Перевод выполняется Gemini Vision</div>
+                                    <div>- Распознавание и перевод за один шаг</div>
                                 </>
                             )}
                             {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'freegoogle' && (
@@ -1130,8 +1130,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Google Translate</span>
                                     </div>
                                     <ProviderRating quality={2} speed={3} />
-                                    <div>- Free, no API key needed</div>
-                                    <div>- Good quality for most languages</div>
+                                    <div>- Бесплатно, API-ключ не нужен</div>
+                                    <div>- Хорошее качество для большинства языков</div>
                                 </>
                             )}
                             {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'googlecloud' && (
@@ -1141,10 +1141,10 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Google Cloud Translation</span>
                                     </div>
                                     <ProviderRating quality={3} speed={3} />
-                                    <div>- High quality translations</div>
-                                    <div>- Requires API key</div>
+                                    <div>- Высокое качество перевода</div>
+                                    <div>- Требуется API-ключ</div>
                                     {!settings.googleApiKey && (
-                                        <div style={{ color: "#ff6b6b", marginTop: "4px" }}>You need to add your API Key</div>
+                                        <div style={{ color: "#ff6b6b", marginTop: "4px" }}>Необходимо добавить API-ключ</div>
                                     )}
                                 </>
                             )}
@@ -1153,21 +1153,21 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     <div style={{ display: "inline-flex", flexDirection: "column" }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                                             <img src={steamdeckLogo} alt="" style={{ height: "18px" }} />
-                                            <span style={{ fontWeight: "bold", color: "#dcdedf" }}>On-Device (NLLB-200 1.3B)</span>
+                                            <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Локально (NLLB-200 1.3B)</span>
                                         </div>
                                         <ModelHeadingProgressBar state={nllb} />
                                     </div>
                                     <ModelStatusIndicator state={nllb} />
                                     <ModelDownloadError state={nllb} />
                                     <ProviderRating quality={1} speed={1} />
-                                    <div>- Offline and privacy-friendly translation</div>
-                                    <div>- Requires 1.4GB one-time model download</div>
-                                    <div>- Single model covers most languages</div>
-                                    <div>- Language auto-detect not supported</div>
-                                    <div>- Experimental support</div>
+                                    <div>- Оффлайн-перевод, приватность</div>
+                                    <div>- Требуется разовая загрузка модели (1.4 ГБ)</div>
+                                    <div>- Одна модель для большинства языков</div>
+                                    <div>- Автоопределение языка не поддерживается</div>
+                                    <div>- Экспериментальная поддержка</div>
                                     {(settings.inputLanguage === 'auto' || settings.inputLanguage === '') && (
                                         <div style={{ color: "#ffa726", marginTop: "6px" }}>
-                                            Offline translation needs a specific source language. Select one in the Languages section above.
+                                            Для оффлайн-перевода нужен конкретный исходный язык. Выберите его в разделе «Языки» выше.
                                         </div>
                                     )}
                                 </>
@@ -1179,8 +1179,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                 {settings.translationProvider === 'ct2' && (
                     <PanelSectionRow>
                         <ToggleField
-                            label="Faster Translation"
-                            description="Keeps the translation model loaded in memory between translations"
+                            label="Быстрый перевод"
+                            description="Держать модель перевода загруженной в память между переводами"
                             checked={settings.ct2PersistentMode}
                             onChange={(value) => {
                                 updateSetting('ct2PersistentMode', value, 'Faster translation');
@@ -1191,12 +1191,12 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
 
                 <PanelSectionRow>
                     <ToggleField
-                        label="Cache Translations"
+                        label="Кэшировать переводы"
                         description={<>
-                            Save translated sentences to avoid translating them again and making the process faster.
+                            Сохранять переведённые предложения, чтобы не переводить их повторно и ускорить процесс.
                             <div style={{ display: "flex", alignItems: "center", gap: "5px", marginTop: "5px", fontSize: "11px", opacity: 0.6 }}>
                                 <HiInformationCircle style={{ fontSize: "13px", flexShrink: 0 }} />
-                                <span>A lower-quality engine can reuse results from a higher-quality one, but not the other way around</span>
+                                <span>Менее качественный движок может использовать результаты более качественного, но не наоборот</span>
                             </div>
                         </>}
                         checked={settings.translationCacheEnabled}
@@ -1213,14 +1213,14 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             layout="below"
                             onClick={() => showModal(<CacheEntriesModal onCleared={refreshCacheStats} />)}
                         >
-                            View Cached Translations
+                            Просмотр кэша переводов
                         </ButtonItem>
                     </PanelSectionRow>
                 )}
 
                 {settings.translationCacheEnabled && cacheEntries !== null && (
                     <PanelSectionRow>
-                        <div style={{ width: "100%", textAlign: "center", fontSize: "12px", color: "#8b929a" }}>{cacheEntries} cached items</div>
+                        <div style={{ width: "100%", textAlign: "center", fontSize: "12px", color: "#8b929a" }}>В кэше записей: {cacheEntries}</div>
                     </PanelSectionRow>
                 )}
 

@@ -168,7 +168,7 @@ export function useFontOptions(selectedFontFamily: string, targetLanguage: strin
             );
 
         const options: DropdownOption[] = [
-            { label: "Auto (System Default)", data: "" },
+            { label: "Авто (системный по умолчанию)", data: "" },
         ];
 
         if (selectedFontFamily && !localSet.has(selectedFontFamily) && !webOnly.includes(selectedFontFamily) && !allDyslexiaSet.has(selectedFontFamily)) {
@@ -177,13 +177,13 @@ export function useFontOptions(selectedFontFamily: string, targetLanguage: strin
 
         if (availableFonts.length > 0) {
             options.push({
-                label: "Local Fonts",
+                label: "Локальные шрифты",
                 options: availableFonts.map(f => ({ label: styledLabel(f, f), data: f })),
             });
         }
 
         options.push({
-            label: "Dyslexia-Friendly",
+            label: "Для дислексии",
             options: orderedDyslexiaFonts.map(f => ({
                 label: unavailableDyslexiaFonts.has(f) ? unavailableLabel(f) : styledLabel(f, f),
                 data: f,
@@ -192,7 +192,7 @@ export function useFontOptions(selectedFontFamily: string, targetLanguage: strin
 
         if (webOnly.length > 0) {
             options.push({
-                label: "Web Fonts",
+                label: "Веб-шрифты",
                 options: webOnly.map(f => ({ label: styledLabel(f, f), data: f })),
             });
         }
@@ -222,9 +222,9 @@ export function useFontOptions(selectedFontFamily: string, targetLanguage: strin
 
     const fontDescription = useMemo(() => {
         const webCount = webFonts.filter(f => !availableFonts.includes(f)).length;
-        return `${availableFonts.length} local + ${webCount} web`
-            + (dyslexiaFonts.length > 0 ? ` + ${dyslexiaFonts.length} dyslexia` : '')
-            + ' fonts';
+        return `${availableFonts.length} локальных + ${webCount} веб`
+            + (dyslexiaFonts.length > 0 ? ` + ${dyslexiaFonts.length} для дислексии` : '')
+            + ' шрифтов';
     }, [availableFonts, webFonts, dyslexiaFonts]);
 
     return { availableFonts, webFonts, dyslexiaFonts, unavailableDyslexiaFonts, fontOptions, fontDescription, preloadWebFonts };

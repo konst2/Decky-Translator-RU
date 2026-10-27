@@ -16,30 +16,30 @@ import { useFontOptions, isRemoteFont, loadRemoteFont } from "../fonts";
 
 // Input mode options for dropdown
 const inputModeOptions = [
-    { label: "L3 (Left Stick Click)", data: InputMode.L3_BUTTON },
+    { label: "L3 (Нажатие левого стика)", data: InputMode.L3_BUTTON },
     { label: "L4", data: InputMode.L4_BUTTON },
     { label: "L5", data: InputMode.L5_BUTTON },
-    { label: "R3 (Right Stick Click)", data: InputMode.R3_BUTTON },
+    { label: "R3 (Нажатие правого стика)", data: InputMode.R3_BUTTON },
     { label: "R4", data: InputMode.R4_BUTTON },
     { label: "R5", data: InputMode.R5_BUTTON },
-    { label: "L3 + R3 (Both Sticks Click)", data: InputMode.L3_R3_COMBO },
+    { label: "L3 + R3 (Нажатие обоих стиков)", data: InputMode.L3_R3_COMBO },
     { label: "L4 + R4", data: InputMode.L4_R4_COMBO },
     { label: "L5 + R5", data: InputMode.L5_R5_COMBO },
-    { label: "Both Touchpads Touch", data: InputMode.TOUCHPAD_COMBO }
+    { label: "Касание обоих тачпадов", data: InputMode.TOUCHPAD_COMBO }
 ];
 
 const translatedTextAlignmentOptions = [
-    { label: "Left", data: 'left' },
-    { label: "Right", data: 'right' },
-    { label: "Center", data: 'center' },
-    { label: "Stretch", data: 'justify' }
+    { label: "Слева", data: 'left' },
+    { label: "Справа", data: 'right' },
+    { label: "По центру", data: 'center' },
+    { label: "Растянуть", data: 'justify' }
 ];
 
 const fontStyleLabels: Record<string, string> = {
-    normal: 'Normal',
-    bold: 'Bold',
-    italic: 'Italic',
-    bolditalic: 'Bold Italic'
+    normal: 'Обычный',
+    bold: 'Жирный',
+    italic: 'Курсив',
+    bolditalic: 'Жирный курсив'
 };
 
 // Helper to get button labels for current input mode
@@ -54,7 +54,7 @@ const getInputModeButtons = (mode: string): string => {
         case 'L3_R3_COMBO': return 'L3 + R3';
         case 'L4_R4_COMBO': return 'L4 + R4';
         case 'L5_R5_COMBO': return 'L5 + R5';
-        case 'TOUCHPAD_COMBO': return 'Left Pad + Right Pad';
+        case 'TOUCHPAD_COMBO': return 'Левый + правый тачпад';
         default: return mode;
     }
 };
@@ -74,12 +74,12 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
 
     return (
         <div>
-            <PanelSection title="Control">
+            <PanelSection title="Управление">
                 <PanelSectionRow>
                     <DropdownItem
                         layout="below"
-                        label="Quick Translation Shortcut"
-                        description="Select which buttons to hold to start translaton"
+                        label="Горячая клавиша перевода"
+                        description="Выберите, какие кнопки удерживать для запуска перевода"
                         rgOptions={inputModeOptions}
                         selectedOption={settings.inputMode}
                         onChange={(option) => updateSetting('inputMode', option.data, 'Input method')}
@@ -92,10 +92,10 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         max={3}
                         min={0}
                         step={0.1}
-                        label="Hold Time to Start"
-                        description="Seconds to hold button(s) to translate"
+                        label="Время удержания для перевода"
+                        description="Сколько секунд удерживать кнопки для перевода"
                         showValue={true}
-                        valueSuffix="s"
+                        valueSuffix="с"
                         onChange={(value) => {
                             const milliseconds = Math.round(value * 1000);
                             updateSetting('holdTimeTranslate', milliseconds, 'Hold time');
@@ -109,10 +109,10 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         max={3}
                         min={0}
                         step={0.1}
-                        label="Hold Time to Dismiss"
-                        description="Seconds to hold button(s) to dismiss overlay"
+                        label="Время удержания для закрытия"
+                        description="Сколько секунд удерживать кнопки, чтобы закрыть оверлей"
                         showValue={true}
-                        valueSuffix="s"
+                        valueSuffix="с"
                         onChange={(value) => {
                             const milliseconds = Math.round(value * 1000);
                             updateSetting('holdTimeDismiss', milliseconds, 'Hold time for dismissal');
@@ -128,8 +128,8 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                     <PanelSectionRow>
                         <ToggleField
                             checked={settings.quickToggleEnabled}
-                            label="Quick toggle with Right Button"
-                            description="If double buttons combination is selected, press right button to toggle overlay visibility"
+                            label="Быстрое переключение правой кнопкой"
+                            description="Если выбрана комбинация из двух кнопок, нажмите правую кнопку, чтобы показать или скрыть оверлей"
                             onChange={(value) => {
                                 updateSetting('quickToggleEnabled', value, 'Quick toggle');
                             }}
@@ -138,15 +138,15 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                 )}
             </PanelSection>
 
-            <PanelSection title="Display">
+            <PanelSection title="Отображение">
                 <PanelSectionRow>
                     <SliderField
                         value={settings.fontScale}
                         max={3}
                         min={1}
                         step={0.1}
-                        label="Font Scaling"
-                        description="Increase if translated text is too small. Can be useful for large external monitors"
+                        label="Масштаб шрифта"
+                        description="Увеличьте, если переведённый текст слишком мелкий. Полезно для больших внешних мониторов"
                         showValue={true}
                         valueSuffix="x"
                         onChange={(value) => {
@@ -164,12 +164,12 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         step={0.25}
                         notchCount={4}
                         notchTicksVisible={true}
-                        label="Text Blocks Grouping"
+                        label="Группировка текстовых блоков"
                         description={
-                            settings.groupingPower <= 0.25 ? "Normal - Keeps text blocks separated" :
-                            settings.groupingPower <= 0.5 ? "Increased - Merges text blocks" :
-                            settings.groupingPower <= 0.75 ? "Large - Merges distant text blocks" :
-                            "Huge - Merges very distant text blocks"
+                            settings.groupingPower <= 0.25 ? "Обычная — блоки текста не объединяются" :
+                            settings.groupingPower <= 0.5 ? "Усиленная — объединяет блоки текста" :
+                            settings.groupingPower <= 0.75 ? "Большая — объединяет отдалённые блоки" :
+                            "Максимальная — объединяет очень отдалённые блоки"
                         }
                         onChange={(value) => {
                             updateSetting('groupingPower', value, 'Text grouping');
@@ -180,8 +180,8 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                 <PanelSectionRow>
                     <DropdownItem
                         layout="below"
-                        label="Translated Text Alignment"
-                        description="Choose alignment for translated text labels"
+                        label="Выравнивание переведённого текста"
+                        description="Выберите выравнивание для подписей переведённого текста"
                         rgOptions={translatedTextAlignmentOptions}
                         selectedOption={settings.translatedTextAlignment}
                         onChange={(option) => updateSetting('translatedTextAlignment', option.data, 'Text alignment')}
@@ -192,7 +192,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                     <DropdownItem
                         key={fontDropdownKey}
                         layout="below"
-                        label="Translated Text Font"
+                        label="Шрифт переведённого текста"
                         description={fontDescription}
                         rgOptions={fontOptions}
                         selectedOption={settings.translatedTextFontFamily}
@@ -224,16 +224,16 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                 <PanelSectionRow>
                     <DropdownItem
                         layout="below"
-                        label="Translated Text Style"
-                        description="Font weight and style for translated text"
+                        label="Стиль переведённого текста"
+                        description="Насыщенность и стиль шрифта для переведённого текста"
                         rgOptions={[
-                            { label: <span>Normal</span>, data: "normal" },
-                            { label: <span style={{ fontWeight: 'bold' }}>Bold</span>, data: "bold" },
-                            { label: <span style={{ fontStyle: 'italic' }}>Italic</span>, data: "italic" },
-                            { label: <span style={{ fontWeight: 'bold', fontStyle: 'italic' }}>Bold Italic</span>, data: "bolditalic" }
+                            { label: <span>Обычный</span>, data: "normal" },
+                            { label: <span style={{ fontWeight: 'bold' }}>Жирный</span>, data: "bold" },
+                            { label: <span style={{ fontStyle: 'italic' }}>Курсив</span>, data: "italic" },
+                            { label: <span style={{ fontWeight: 'bold', fontStyle: 'italic' }}>Жирный курсив</span>, data: "bolditalic" }
                         ]}
                         selectedOption={settings.translatedTextFontStyle}
-                        renderButtonValue={() => fontStyleLabels[settings.translatedTextFontStyle] || 'Normal'}
+                        renderButtonValue={() => fontStyleLabels[settings.translatedTextFontStyle] || 'Обычный'}
                         onChange={(option) => updateSetting('translatedTextFontStyle', option.data, 'Text style')}
                     />
                 </PanelSectionRow>
@@ -241,8 +241,8 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                 <PanelSectionRow>
                     <ToggleField
                         checked={settings.hideIdenticalTranslations}
-                        label="Hide Identical Translations"
-                        description="Don't display if translation is the same as original word/sentence"
+                        label="Скрывать одинаковые переводы"
+                        description="Не показывать, если перевод совпадает с исходным словом или предложением"
                         onChange={(value) => {
                             updateSetting('hideIdenticalTranslations', value, 'Hide identical translations');
                         }}
@@ -252,8 +252,8 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                 <PanelSectionRow>
                     <ToggleField
                         checked={settings.allowLabelGrowth}
-                        label="Allow Labels to Expand"
-                        description="Let translated labels grow wider if the text doesn't fit the original box"
+                        label="Разрешить расширение подписей"
+                        description="Позволить подписям перевода расширяться, если текст не помещается в исходный блок"
                         onChange={(value) => {
                             updateSetting('allowLabelGrowth', value, 'Allow label growth');
                         }}
@@ -261,12 +261,12 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                 </PanelSectionRow>
             </PanelSection>
 
-            <PanelSection title="Behavior">
+            <PanelSection title="Поведение">
                 <PanelSectionRow>
                     <ToggleField
                         checked={settings.pauseGameOnOverlay}
-                        label="Pause Game While Translating"
-                        description={<>Pauses the active game and allows you to read the text more thoughtfully. The game is resumed when overlay is dismissed.<br /><br />Doesn't work well with game streaming (moonlight, geforce now, remote play, etc)</>}
+                        label="Ставить игру на паузу при переводе"
+                        description={<>Ставит активную игру на паузу, чтобы можно было спокойно прочитать текст. Игра возобновится после закрытия оверлея.<br /><br />Плохо работает при стриминге игр (Moonlight, GeForce NOW, Remote Play и т.п.)</>}
                         onChange={(value) => {
                             updateSetting('pauseGameOnOverlay', value, 'Pause game while translating');
                         }}
@@ -274,11 +274,11 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                 </PanelSectionRow>
             </PanelSection>
 
-            <PanelSection title="Miscellaneous">
+            <PanelSection title="Разное">
                 <PanelSectionRow>
                     <ToggleField
-                        label="Debug Mode"
-                        description="Enable verbose console logging and diagnostics panel"
+                        label="Режим отладки"
+                        description="Включить подробное логирование в консоли и панель диагностики"
                         checked={settings.debugMode}
                         onChange={(value) => updateSetting('debugMode', value, 'Debug mode')}
                     />
@@ -301,42 +301,42 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                             }}>
                                 <div style={{ display: 'grid', gap: '3px' }}>
                                     <div>
-                                        <span style={{ color: '#888' }}>Status:</span>{' '}
+                                        <span style={{ color: '#888' }}>Статус:</span>{' '}
                                         {inputDiagnostics.enabled ?
-                                            (inputDiagnostics.healthy ? 'Healthy' : 'Unhealthy') :
-                                            'Disabled'
+                                            (inputDiagnostics.healthy ? 'Исправен' : 'Неисправен') :
+                                            'Выключен'
                                         }
                                     </div>
 
                                     <div>
-                                        <span style={{ color: '#888' }}>Input mode:</span>{' '}
+                                        <span style={{ color: '#888' }}>Режим ввода:</span>{' '}
                                         {getInputModeButtons(inputDiagnostics.inputMode)}
                                     </div>
 
                                     <div>
-                                        <span style={{ color: '#888' }}>Input active:</span>{' '}
-                                        {inputDiagnostics.leftTouchpadTouched ? 'Yes' : 'No'}
+                                        <span style={{ color: '#888' }}>Ввод активен:</span>{' '}
+                                        {inputDiagnostics.leftTouchpadTouched ? 'Да' : 'Нет'}
                                     </div>
 
                                     <div>
-                                        <span style={{ color: '#888' }}>Buttons pressed:</span>{' '}
+                                        <span style={{ color: '#888' }}>Нажатые кнопки:</span>{' '}
                                         {inputDiagnostics.currentButtons && inputDiagnostics.currentButtons.length > 0
                                             ? inputDiagnostics.currentButtons.join(', ')
-                                            : 'None'}
+                                            : 'Нет'}
                                     </div>
 
                                     <div>
-                                        <span style={{ color: '#888' }}>Plugin State:</span>{' '}
-                                        {!inputDiagnostics.inCooldown && !inputDiagnostics.waitingForRelease && !inputDiagnostics.overlayVisible ? 'Ready' : ''}
-                                        {inputDiagnostics.inCooldown ? 'Cooldown ' : ''}
-                                        {inputDiagnostics.waitingForRelease ? 'WaitRelease ' : ''}
-                                        {inputDiagnostics.overlayVisible ? 'Overlay ' : ''}
+                                        <span style={{ color: '#888' }}>Состояние плагина:</span>{' '}
+                                        {!inputDiagnostics.inCooldown && !inputDiagnostics.waitingForRelease && !inputDiagnostics.overlayVisible ? 'Готов' : ''}
+                                        {inputDiagnostics.inCooldown ? 'Перезарядка ' : ''}
+                                        {inputDiagnostics.waitingForRelease ? 'Ожидание отпускания ' : ''}
+                                        {inputDiagnostics.overlayVisible ? 'Оверлей ' : ''}
                                     </div>
 
                                     <div>
-                                        <span style={{ color: '#888' }}>Timings:</span>{' '}
-                                        Hold:{inputDiagnostics.translateHoldTime}ms{' '}
-                                        Dismiss:{inputDiagnostics.dismissHoldTime}ms
+                                        <span style={{ color: '#888' }}>Тайминги:</span>{' '}
+                                        Удержание:{inputDiagnostics.translateHoldTime}мс{' '}
+                                        Закрытие:{inputDiagnostics.dismissHoldTime}мс
                                     </div>
                                 </div>
 
@@ -350,7 +350,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                                         borderRadius: '4px',
                                         fontSize: '11px'
                                     }}>
-                                        Input system is unhealthy - try toggling the plugin off/on
+                                        Система ввода неисправна — попробуйте выключить и включить плагин
                                     </div>
                                 )}
                             </div>

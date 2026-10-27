@@ -75,7 +75,7 @@ export class ImageState {
     }
 
     // Show the overlay with loading indicator immediately
-    startLoading(step: string = "Capturing"): void {
+    startLoading(step: string = "Захват экрана"): void {
         // Set internal state immediately
         this.visible = true;
         this.loading = true;
@@ -522,7 +522,7 @@ export const TranslatedTextOverlay: VFC<{
                             border: translationsVisible ? "1px solid #f44336" : "1px solid #ffc107",
                             imageRendering: "pixelated"
                         }}
-                        alt="Screenshot"
+                        alt="Скриншот"
                     />
 
                     {/* Overlay translated text boxes with adaptive font sizing */}

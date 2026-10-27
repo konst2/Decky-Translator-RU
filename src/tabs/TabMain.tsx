@@ -63,14 +63,14 @@ const ReachabilityRow: VFC<{ result: ReachResult; expectedProvider: string }> = 
         return (
             <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
                 <PendingDot />
-                <span>Checking...</span>
+                <span>Проверка...</span>
             </div>
         );
     }
     return (
         <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
             <StatusDot ok={result.ok} />
-            <span>{result.ok ? 'Ready' : `Not ready (${result.reason || 'unreachable'})`}</span>
+            <span>{result.ok ? 'Готово' : `Не готово (${result.reason || 'недоступно'})`}</span>
         </div>
     );
 };
@@ -124,12 +124,12 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
 
     const renderButtonContent = () => {
         if (overlayVisible) {
-            return <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}><BsXLg /> Close Overlay</span>;
+            return <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}><BsXLg /> Закрыть оверлей</span>;
         }
         if (ocrNeedsDownload || translationNeedsDownload) {
-            return <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}><HiInboxArrowDown size={20} /> Download required</span>;
+            return <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}><HiInboxArrowDown size={20} /> Требуется загрузка</span>;
         }
-        return <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}><BsTranslate /> Translate</span>;
+        return <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}><BsTranslate /> Перевести</span>;
     };
 
     return (
@@ -137,8 +137,8 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
             <PanelSection>
                 <PanelSectionRow>
                     <ToggleField
-                        label={settings.enabled ? "Plugin is enabled" : "Plugin is disabled"}
-                        description="Toggle the functionality on or off"
+                        label={settings.enabled ? "Плагин включён" : "Плагин выключен"}
+                        description="Включить или выключить плагин"
                         checked={settings.enabled}
                         onChange={(value) => updateSetting('enabled', value, 'Decky Translator RU')}
                     />
@@ -161,17 +161,17 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                 {settings.ocrProvider === 'gemini_vision' && (
                                     <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
                                         <BsStars style={{ marginRight: '8px', color: '#aaa' }} />
-                                        <span style={{ color: '#888' }}>Recognize + Translate:</span>
+                                        <span style={{ color: '#888' }}>Распознавание + перевод:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>Gemini</span>
                                     </div>
                                 )}
                                 {settings.ocrProvider !== 'gemini_vision' && (
                                     <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
                                         <BsEye style={{ marginRight: '8px', color: '#aaa' }} />
-                                        <span style={{ color: '#888' }}>Text Recognition:</span>
+                                        <span style={{ color: '#888' }}>Распознавание текста:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
-                                            {settings.ocrProvider === 'chromescreenai' ? 'On-Device' :
-                                             settings.ocrProvider === 'rapidocr' ? 'On-Device' :
+                                            {settings.ocrProvider === 'chromescreenai' ? 'Локально' :
+                                             settings.ocrProvider === 'rapidocr' ? 'Локально' :
                                              settings.ocrProvider === 'ocrspace' ? 'OCR.space' : 'Google Cloud'}
                                         </span>
                                     </div>
@@ -180,19 +180,19 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                     <div style={{ marginLeft: '22px', marginBottom: '6px' }}>
                                         {providerStatus?.rapidocr_downloaded && (
                                             <div style={{ color: '#666', fontSize: '10px' }}>
-                                                Installed model: RapidOCR{providerStatus?.rapidocr_info?.version ? ` v${providerStatus.rapidocr_info.version}` : ''}
+                                                Установленная модель: RapidOCR{providerStatus?.rapidocr_info?.version ? ` v${providerStatus.rapidocr_info.version}` : ''}
                                             </div>
                                         )}
                                         <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
                                             {providerStatus?.rapidocr_downloading ? (
                                                 <>
                                                     <InstallingDot />
-                                                    <span>Installing...</span>
+                                                    <span>Установка...</span>
                                                 </>
                                             ) : (
                                                 <>
                                                     <StatusDot ok={!!providerStatus?.rapidocr_downloaded} />
-                                                    <span>{providerStatus?.rapidocr_downloaded ? 'Ready' : 'Not ready (Model not installed)'}</span>
+                                                    <span>{providerStatus?.rapidocr_downloaded ? 'Готово' : 'Не готово (модель не установлена)'}</span>
                                                 </>
                                             )}
                                         </div>
@@ -200,19 +200,19 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                 )}
                                 {settings.ocrProvider === 'chromescreenai' && (
                                     <div style={{ marginLeft: '22px', marginBottom: '6px' }}>
-                                        {providerStatus?.chromescreenai_downloaded && (
-                                            <div style={{ color: '#666', fontSize: '10px', marginBottom: '4px' }}>Engine: Chrome Screen AI</div>
+                                                                        {providerStatus?.chromescreenai_downloaded && (
+                                            <div style={{ color: '#666', fontSize: '10px', marginBottom: '4px' }}>Движок: Chrome Screen AI</div>
                                         )}
                                         <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
                                             {providerStatus?.chromescreenai_downloading ? (
                                                 <>
                                                     <InstallingDot />
-                                                    <span>Installing...</span>
+                                                    <span>Установка...</span>
                                                 </>
                                             ) : (
                                                 <>
                                                     <StatusDot ok={!!providerStatus?.chromescreenai_downloaded} />
-                                                    <span>{providerStatus?.chromescreenai_downloaded ? 'Ready' : 'Not ready (Engine not installed)'}</span>
+                                                    <span>{providerStatus?.chromescreenai_downloaded ? 'Готово' : 'Не готово (движок не установлен)'}</span>
                                                 </>
                                             )}
                                         </div>
@@ -225,7 +225,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                 )}
                                 {settings.ocrProvider === 'ocrspace' && (
                                     <div style={{ marginLeft: '22px', marginBottom: '6px' }}>
-                                        <div style={{ color: '#666', fontSize: '10px', marginBottom: '4px' }}>Free, no API key needed</div>
+                                        <div style={{ color: '#666', fontSize: '10px', marginBottom: '4px' }}>Бесплатно, API-ключ не нужен</div>
                                         {providerStatus?.ocr_usage && (
                                             <>
                                                 <div style={{
@@ -235,7 +235,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                                     marginBottom: '3px'
                                                 }}>
                                                     <span style={{ color: '#666', fontSize: '10px' }}>
-                                                        10 min limit:
+                                                        Лимит 10 мин:
                                                     </span>
                                                     <span style={{
                                                         fontSize: '10px',
@@ -265,7 +265,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                                 </div>
                                                 {providerStatus.ocr_usage.rate_remaining === 0 && providerStatus.ocr_usage.rate_reset_seconds > 0 && (
                                                     <div style={{ color: '#ff6b6b', fontSize: '10px', marginBottom: '4px' }}>
-                                                        Rate limit exceeded - resets in {Math.ceil(providerStatus.ocr_usage.rate_reset_seconds / 60)} min
+                                                        Лимит превышен — сброс через {Math.ceil(providerStatus.ocr_usage.rate_reset_seconds / 60)} мин
                                                     </div>
                                                 )}
 
@@ -276,7 +276,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                                     marginBottom: '3px'
                                                 }}>
                                                     <span style={{ color: '#666', fontSize: '10px' }}>
-                                                        Daily limit:
+                                                        Дневной лимит:
                                                     </span>
                                                     <span style={{
                                                         fontSize: '10px',
@@ -306,7 +306,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                                 </div>
                                                 {providerStatus.ocr_usage.remaining < 50 && (
                                                     <div style={{ color: '#ff6b6b', fontSize: '10px', marginBottom: '4px' }}>
-                                                        Low daily requests remaining
+                                                        Мало запросов на сегодня
                                                     </div>
                                                 )}
                                             </>
@@ -317,10 +317,10 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                 {settings.ocrProvider !== 'gemini_vision' && (
                                     <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2px' }}>
                                         <BsTranslate style={{ marginRight: '8px', color: '#aaa' }} />
-                                        <span style={{ color: '#888' }}>Translation:</span>
+                                        <span style={{ color: '#888' }}>Перевод:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
                                             {settings.translationProvider === 'googlecloud' ? 'Google Cloud' :
-                                             settings.translationProvider === 'ct2' ? 'On-Device' : 'Google Translate'}
+                                             settings.translationProvider === 'ct2' ? 'Локально' : 'Google Translate'}
                                         </span>
                                     </div>
                                 )}
@@ -335,7 +335,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                     )}
                                     {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'freegoogle' && (
                                         <>
-                                            <div style={{ color: '#666', fontSize: '10px' }}>No API key needed</div>
+                                            <div style={{ color: '#666', fontSize: '10px' }}>API-ключ не нужен</div>
                                             <ReachabilityRow result={webReachability?.translation} expectedProvider="freegoogle" />
                                         </>
                                     )}
@@ -347,18 +347,18 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                     {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'ct2' && (
                                         <>
                                             {providerStatus?.nllb_downloaded && (
-                                                <div style={{ color: '#666', fontSize: '10px' }}>Model: NLLB-200 1.3B</div>
+                                                <div style={{ color: '#666', fontSize: '10px' }}>Модель: NLLB-200 1.3B</div>
                                             )}
                                             <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
                                                 {providerStatus?.nllb_downloading ? (
                                                     <>
                                                         <InstallingDot />
-                                                        <span>Installing...</span>
+                                                        <span>Установка...</span>
                                                     </>
                                                 ) : (
                                                     <>
                                                         <StatusDot ok={!!providerStatus?.nllb_downloaded} />
-                                                        <span>{providerStatus?.nllb_downloaded ? 'Ready' : 'Not ready (Model not installed)'}</span>
+                                                        <span>{providerStatus?.nllb_downloaded ? 'Готово' : 'Не готово (модель не установлена)'}</span>
                                                     </>
                                                 )}
                                             </div>
@@ -386,7 +386,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                     Navigation.NavigateToExternalWeb('https://ko-fi.com/alexanderdev');
                                 }}
                                 onSecondaryButton={() => showQrModal('https://ko-fi.com/alexanderdev')}
-                                onSecondaryActionDescription="Show QR Code"
+                                onSecondaryActionDescription="Показать QR-код"
                                 style={{
                                     display: 'flex',
                                     alignItems: 'center',
@@ -397,7 +397,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                 }}
                             >
                                 <SiKofi style={{ fontSize: '13px' }} />
-                                <span>Support on Ko-fi</span>
+                                <span>Поддержать на Ko-fi</span>
                                 <HiQrCode style={{ fontSize: '13px', opacity: 0.6 }} />
                             </DialogButton>
                         </Focusable>

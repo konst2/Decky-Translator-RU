@@ -322,12 +322,12 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 // if (label) logic.notify(`${label} updated successfully`);
                 return true;
             } else {
-                logic.notify(`Failed to update ${label || key}`, 2000);
+                logic.notify(`Не удалось обновить: ${label || key}`, 2000);
                 return false;
             }
         } catch (error) {
             logger.error('SettingsContext', `Failed to update ${key}`, error);
-            logic.notify(`Failed to update ${label || key}`, 2000);
+            logic.notify(`Не удалось обновить: ${label || key}`, 2000);
             return false;
         }
     };
