@@ -1,6 +1,6 @@
 {
-  "name": "decky-translator",
-  "version": "0.9.1",
+  "name": "decky-translator-ru",
+  "version": "0.10.0",
   "type": "module",
   "description": "Translate anything on screen to your language. Works with any game or application - a great tool for language learning or enjoying untranslated games",
   "scripts": {
@@ -11,7 +11,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cat-in-a-box/decky-translator.git"
+    "url": "git+https://github.com/konst2/Decky-Translator-RU.git"
   },
   "keywords": [
     "decky",
@@ -24,9 +24,9 @@
   "author": "cat-in-a-box",
   "license": "GNU GPLv3",
   "bugs": {
-    "url": "https://github.com/cat-in-a-box/decky-translator/issues"
+    "url": "https://github.com/konst2/Decky-Translator-RU/issues"
   },
-  "homepage": "https://github.com/cat-in-a-box/decky-translator",
+  "homepage": "https://github.com/konst2/Decky-Translator-RU",
   "devDependencies": {
     "@decky/api": "^1.1.3",
     "@decky/rollup": "^1.0.1",
@@ -54,7 +54,7 @@
   "remote_binary": [
     {
       "name": "plugin-dependencies.tar.gz",
-      "url": "https://github.com/cat-in-a-box/Decky-Translator/releases/download/0.9.1/plugin-dependencies.tar.gz",
+      "url": "https://github.com/konst2/Decky-Translator-RU/releases/download/0.10.0/plugin-dependencies.tar.gz",
       "sha256hash": "9348f327816abf8de7abd7a4f44a1f625b6fc5c762be2c0f4a479dded4979ba6"
     }
   ]

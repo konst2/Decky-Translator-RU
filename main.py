@@ -55,15 +55,15 @@ def _should_extract_dependencies():
 
 if _should_extract_dependencies():
     try:
-        print(f"[Decky Translator] Extracting dependencies from {DEPENDENCIES_ARCHIVE}...")
+        print(f"[Decky Translator RU] Extracting dependencies from {DEPENDENCIES_ARCHIVE}...")
         with tarfile.open(DEPENDENCIES_ARCHIVE, "r:gz") as tar:
             tar.extractall(path=BIN_DIR)
         # Create marker file to indicate successful extraction
         with open(EXTRACTION_MARKER, "w") as f:
             f.write(f"Extracted at {datetime.now().isoformat()}\n")
-        print(f"[Decky Translator] Dependencies extracted successfully")
+        print(f"[Decky Translator RU] Dependencies extracted successfully")
     except Exception as e:
-        print(f"[Decky Translator] Failed to extract dependencies: {e}")
+        print(f"[Decky Translator RU] Failed to extract dependencies: {e}")
         # Remove marker if it exists, so we retry next time
         if os.path.exists(EXTRACTION_MARKER):
             os.remove(EXTRACTION_MARKER)
@@ -183,15 +183,15 @@ logger.debug(f"GStreamer plugins path: {GSTPLUGINSPATH}")
 os.makedirs(DECKY_PLUGIN_LOG_DIR, exist_ok=True)
 
 # Set up log files
-std_out_file_path = Path(DECKY_PLUGIN_LOG_DIR) / "decky-translator-std-out.log"
+std_out_file_path = Path(DECKY_PLUGIN_LOG_DIR) / "decky-translator-ru-std-out.log"
 std_out_file = open(std_out_file_path, "w")
-std_err_file = open(Path(DECKY_PLUGIN_LOG_DIR) / "decky-translator-std-err.log", "w")
+std_err_file = open(Path(DECKY_PLUGIN_LOG_DIR) / "decky-translator-ru-std-err.log", "w")
 logger.debug(f"Standard output logs: {std_out_file_path}")
 
 # Set up file logging
 from logging.handlers import TimedRotatingFileHandler
 
-log_file = Path(DECKY_PLUGIN_LOG_DIR) / "decky-translator.log"
+log_file = Path(DECKY_PLUGIN_LOG_DIR) / "decky-translator-ru.log"
 log_file_handler = TimedRotatingFileHandler(log_file, when="midnight", backupCount=2)
 log_file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 log_file_handler.addFilter(_url_redact_filter)
@@ -206,7 +206,7 @@ try:
         _plugin_version = json.load(_pkg).get("version", "unknown")
 except Exception as _e:
     _plugin_version = "unknown"
-logger.info(f"Decky Translator v{_plugin_version} starting")
+logger.info(f"Decky Translator RU v{_plugin_version} starting")
 
 
 import threading
@@ -1155,7 +1155,7 @@ def get_base64_image(image_path):
 
 class Plugin:
     _filepath: str = None
-    _screenshotPath: str = "/tmp/decky-translator"  # Temporary directory for screenshots (deleted after OCR)
+    _screenshotPath: str = "/tmp/decky-translator-ru"  # Temporary directory for screenshots (deleted after OCR)
     _settings = None
     _input_language: str = "auto"  # Default to auto-detect
     _target_language: str = "en"
@@ -2674,7 +2674,7 @@ class Plugin:
         logger.info("Plugin initialization started")
         try:
             self._settings = SettingsManager(
-                name="decky-translator-settings",
+                name="decky-translator-ru-settings",
                 settings_directory=settingsDir
             )
             self._settings.read()
@@ -2753,16 +2753,16 @@ class Plugin:
                 self._settings.set_setting("translation_provider", self._translation_provider)
 
             # Set up CT2 translation models directory
-            ct2_models_dir = os.path.join(settingsDir, "decky-translator", "models", "nllb")
+            ct2_models_dir = os.path.join(settingsDir, "decky-translator-ru", "models", "nllb")
             os.makedirs(ct2_models_dir, exist_ok=True)
 
             # Same parent as NLLB so both share the plugin uninstall lifecycle.
-            screenai_models_dir = os.path.join(settingsDir, "decky-translator", "models")
+            screenai_models_dir = os.path.join(settingsDir, "decky-translator-ru", "models")
             os.makedirs(screenai_models_dir, exist_ok=True)
 
             # RapidOCR models download into the same parent dir as NLLB and
             # Chrome Screen AI so they all persist across plugin updates.
-            rapidocr_models_dir = os.path.join(settingsDir, "decky-translator", "models")
+            rapidocr_models_dir = os.path.join(settingsDir, "decky-translator-ru", "models")
             os.makedirs(rapidocr_models_dir, exist_ok=True)
 
             try:

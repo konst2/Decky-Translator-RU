@@ -137,8 +137,8 @@ jobs:
       - name: Commit and tag release
         if: steps.version.outputs.is_release == 'true'
         run: |
-          git config user.name "Alexander Timoshuk"
-          git config user.email "46809884+cat-in-a-box@users.noreply.github.com"
+          git config user.name "konst2"
+          git config user.email "konst2@users.noreply.github.com"
 
           if git diff --quiet package.json; then
             echo "No changes to package.json"
@@ -171,9 +171,9 @@ jobs:
           cd out
           mkdir _staging
           unzip -q "Decky Translator.zip" -d _staging
-          mv "_staging/Decky Translator" "_staging/decky-translator"
+          mv "_staging/Decky Translator RU" "_staging/decky-translator-ru"
           rm "Decky Translator.zip"
-          (cd _staging && zip -qr "../Decky Translator.zip" decky-translator)
+          (cd _staging && zip -qr "../Decky Translator.zip" decky-translator-ru)
           rm -rf _staging
           unzip -l "Decky Translator.zip" | head -5
 
@@ -212,7 +212,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.build.outputs.version }}
-          token: ${{ secrets.RELEASE_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             Decky Translator.zip
             plugin-dependencies.tar.gz

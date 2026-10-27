@@ -179,19 +179,19 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
         <>
             <style>
                 {`
-                .decky-translator-tabs > div > div:first-child::before {
+                .decky-translator-ru-tabs > div > div:first-child::before {
                     background: #0D141C;
                     box-shadow: none;
                     backdrop-filter: none;
                 }
-                .decky-translator-tabs [role="tabpanel"] {
+                .decky-translator-ru-tabs [role="tabpanel"] {
                     padding-left: 0 !important;
                     padding-right: 0 !important;
                 }
                 `}
             </style>
 
-            <div className="decky-translator-tabs" style={{ height: "95%", width: "300px", position: "fixed", marginTop: "-12px", overflow: "hidden" }}>
+            <div className="decky-translator-ru-tabs" style={{ height: "95%", width: "300px", position: "fixed", marginTop: "-12px", overflow: "hidden" }}>
                 <Tabs
                     activeTab={currentTabRoute}
                     // @ts-ignore
@@ -326,25 +326,25 @@ export default definePlugin(() => {
     const logic = new GameTranslatorLogic(imageState);
 
     // Add image overlay as a global component
-    routerHook.addGlobalComponent("ImageOverlay", () => (
+    routerHook.addGlobalComponent("DeckyTranslatorRUImageOverlay", () => (
         <ImageOverlay state={imageState} onDismiss={logic.dismiss}/>
     ));
 
     // Add activation indicator as a global component
-    routerHook.addGlobalComponent("HoldActivationIndicator", () => (
+    routerHook.addGlobalComponent("DeckyTranslatorRUHoldActivationIndicator", () => (
         <ActivationIndicatorWithSettings logic={logic}/>
     ));
 
     return {
-        title: <div className={staticClasses.Title}>Decky Translator</div>,
+        title: <div className={staticClasses.Title}>Decky Translator RU</div>,
         content: <TranslatorApp logic={logic}/>,
         icon: <BsTranslate/>,
         onDismount() {
             // Clean up resources
             logic.cleanup();
             cleanupAllFontDOM();
-            routerHook.removeGlobalComponent("ImageOverlay");
-            routerHook.removeGlobalComponent("HoldActivationIndicator");
+            routerHook.removeGlobalComponent("DeckyTranslatorRUImageOverlay");
+            routerHook.removeGlobalComponent("DeckyTranslatorRUHoldActivationIndicator");
         },
         alwaysRender: true
     };

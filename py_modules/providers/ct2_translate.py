@@ -310,7 +310,7 @@ class CT2TranslateProvider(TranslationProvider):
         self._model_manager = model_manager
         self._plugin_dir = plugin_dir or os.environ.get(
             "DECKY_PLUGIN_DIR",
-            "/home/deck/homebrew/plugins/decky-translator"
+            "/home/deck/homebrew/plugins/decky-translator-ru"
         )
         self._worker_process = None
         self._worker_lock = threading.Lock()
