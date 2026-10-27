@@ -206,12 +206,14 @@ jobs:
         with:
           name: decky-translator-plugin
           path: ./
+          merge-multiple: true
 
       - name: Download dependencies artifact
         uses: actions/download-artifact@v4
         with:
           name: plugin-dependencies
           path: ./
+          merge-multiple: true
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
@@ -221,5 +223,6 @@ jobs:
           files: |
             DeckyTranslatorRu.zip
             plugin-dependencies.tar.gz
+          fail_on_unmatched_files: true
           draft: true
           generate_release_notes: true
