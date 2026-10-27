@@ -169,10 +169,15 @@ jobs:
       - name: Repack zip with kebab-case inner folder
         run: |
           cd out
+          # CLI names the zip after plugin.json "name" (may contain spaces, e.g. "Decky Translator RU.zip")
+          ZIP_FILE=$(ls *.zip | head -1)
+          echo "CLI produced zip: $ZIP_FILE"
           mkdir _staging
-          unzip -q "DeckyTranslatorRu.zip" -d _staging
-          mv "_staging/Decky Translator RU" "_staging/decky-translator-ru"
-          rm "DeckyTranslatorRu.zip"
+          unzip -q "$ZIP_FILE" -d _staging
+          INNER_DIR=$(find _staging -mindepth 1 -maxdepth 1 -type d | head -1)
+          echo "Inner folder: $INNER_DIR"
+          mv "$INNER_DIR" _staging/decky-translator-ru
+          rm "$ZIP_FILE"
           (cd _staging && zip -qr "../DeckyTranslatorRu.zip" decky-translator-ru)
           rm -rf _staging
           unzip -l "DeckyTranslatorRu.zip" | head -5
