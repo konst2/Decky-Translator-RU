@@ -1157,8 +1157,8 @@ class Plugin:
     _filepath: str = None
     _screenshotPath: str = "/tmp/decky-translator-ru"  # Temporary directory for screenshots (deleted after OCR)
     _settings = None
-    _input_language: str = "auto"  # Default to auto-detect
-    _target_language: str = "en"
+    _input_language: str = "en"  # Default to English
+    _target_language: str = "ru"
     _input_mode: int = 0  # 0 = both touchpads, 1 = left touchpad, 2 = right touchpad
     _hold_time_translate: int = 1000  # Default to 1 second
     _hold_time_dismiss: int = 500  # Default to 0.5 seconds for dismissal

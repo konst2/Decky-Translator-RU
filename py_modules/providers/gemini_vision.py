@@ -150,7 +150,7 @@ class GeminiVisionProvider(OCRProvider):
     def __init__(self, api_key: str = "", model: str = DEFAULT_MODEL):
         self._api_key = api_key
         self._model = model
-        self._target_language = "en"
+        self._target_language = "ru"
 
     def set_api_key(self, api_key: str) -> None:
         self._api_key = api_key

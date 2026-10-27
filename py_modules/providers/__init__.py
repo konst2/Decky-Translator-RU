@@ -72,7 +72,7 @@ class ProviderManager:
         self._google_api_key = ""
         self._gemini_api_key = ""
         self._gemini_model = "gemini-2.5-flash"
-        self._gemini_target_language = "en"
+        self._gemini_target_language = "ru"
         self._ocr_provider_preference = "chromescreenai"  # "rapidocr", "ocrspace", "googlecloud", "gemini_vision", or "chromescreenai"
         self._translation_provider_preference = "freegoogle"  # "freegoogle", "googlecloud", or "ct2"
         self._rapidocr_confidence = 0.5  # Default RapidOCR confidence threshold (0.0-1.0)

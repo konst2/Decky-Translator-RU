@@ -16,9 +16,9 @@ export interface TranslatedRegion extends TextRegion {
 
 export class TextTranslator {
     private targetLanguage: string;
-    private inputLanguage: string = "auto"; // Default to auto-detect
+    private inputLanguage: string = "en"; // Default to English
 
-    constructor(initialLanguage: string = "en") {
+    constructor(initialLanguage: string = "ru") {
         this.targetLanguage = initialLanguage;
     }
 
