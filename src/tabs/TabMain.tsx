@@ -133,7 +133,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
     };
 
     return (
-        <div>
+        <div style={{ paddingBottom: "48px" }}>
             <PanelSection>
                 <PanelSectionRow>
                     <ToggleField

@@ -73,7 +73,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
     const [fontDropdownKey, setFontDropdownKey] = useState(0);
 
     return (
-        <div>
+        <div style={{ paddingBottom: "48px" }}>
             <PanelSection title="Управление">
                 <PanelSectionRow>
                     <DropdownItem

@@ -720,7 +720,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
     }, [settings.initialized, settings.translationProvider]);
 
     return (
-        <div style={{ paddingBottom: "40px" }}>
+        <div style={{ paddingBottom: "48px" }}>
             <PanelSection title="Языки">
                 <PanelSectionRow>
                     <DropdownItem
