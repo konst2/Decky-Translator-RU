@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 PROVIDER_TIERS = {
     "ct2": 1,
     "freegoogle": 2,
+    "mymemory": 2,  # free service, quality comparable to free Google
     "googlecloud": 3,
     "yandex": 3,
     "gemini_vision": 3,

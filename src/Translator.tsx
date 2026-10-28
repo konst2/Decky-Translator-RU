@@ -30,7 +30,7 @@ export class GameTranslatorLogic {
 
     // Provider settings for upfront validation
     private ocrProvider: string = "rapidocr";
-    private translationProvider: string = "freegoogle";
+    private translationProvider: string = "mymemory";
     private hasGoogleApiKey: boolean = false;
     private hasGeminiApiKey: boolean = false;
     private hasYandexApiKey: boolean = false;
@@ -536,6 +536,7 @@ export class GameTranslatorLogic {
         const labels: Record<string, string> = {
             ct2: "Локально",
             freegoogle: "Google Translate",
+            mymemory: "MyMemory",
             googlecloud: "Google Cloud",
             yandex: "Яндекс",
         };

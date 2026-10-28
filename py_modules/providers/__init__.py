@@ -20,6 +20,7 @@ from .google_translate import GoogleTranslateProvider
 from .yandex_translate import YandexTranslateProvider
 from .ocrspace import OCRSpaceProvider
 from .free_translate import FreeTranslateProvider
+from .mymemory_translate import MyMemoryTranslateProvider
 from .rapidocr_provider import RapidOCRProvider
 from .chromescreenai_provider import ChromeScreenAIProvider
 from .gemini_vision import GeminiVisionProvider
@@ -32,8 +33,13 @@ logger = logging.getLogger(__name__)
 
 _REACHABILITY_TTL = 4.0
 
+# The frontend asks for reachability every 10 s while the main tab is open.
+# MyMemory has no free endpoint to probe: each probe is a real translation
+# that eats its small daily quota, so its result is kept longer.
+_REACHABILITY_TTL_BY_PROVIDER = {"mymemory": 60.0}
+
 _WEB_OCR_PROVIDERS = {"gemini_vision", "googlecloud", "ocrspace"}
-_WEB_TRANSLATION_PROVIDERS = {"googlecloud", "freegoogle", "yandex"}
+_WEB_TRANSLATION_PROVIDERS = {"googlecloud", "freegoogle", "yandex", "mymemory"}
 
 # Export all public classes
 __all__ = [
@@ -49,6 +55,7 @@ __all__ = [
     'YandexTranslateProvider',
     'OCRSpaceProvider',
     'FreeTranslateProvider',
+    'MyMemoryTranslateProvider',
     'RapidOCRProvider',
     'ChromeScreenAIProvider',
     'GeminiVisionProvider',
@@ -75,10 +82,11 @@ class ProviderManager:
         self._gemini_api_key = ""
         self._yandex_api_key = ""
         self._yandex_folder_id = ""
+        self._mymemory_email = ""
         self._gemini_model = "gemini-2.5-flash"
         self._gemini_target_language = "ru"
         self._ocr_provider_preference = "chromescreenai"  # "rapidocr", "ocrspace", "googlecloud", "gemini_vision", or "chromescreenai"
-        self._translation_provider_preference = "freegoogle"  # "freegoogle", "googlecloud", or "ct2"
+        self._translation_provider_preference = "mymemory"  # "mymemory", "freegoogle", "googlecloud", "yandex", or "ct2"
         self._rapidocr_confidence = 0.5  # Default RapidOCR confidence threshold (0.0-1.0)
         self._rapidocr_box_thresh = 0.5  # Default RapidOCR box detection threshold (0.0-1.0)
         self._rapidocr_unclip_ratio = 1.6  # Default RapidOCR box expansion ratio (1.0-3.0)
@@ -189,6 +197,16 @@ class ProviderManager:
         gemini = self._ocr_providers.get(ProviderType.GEMINI_VISION)
         if gemini:
             gemini.set_target_language(target_lang)
+
+    def set_mymemory_email(self, email: str) -> None:
+        """Set the optional MyMemory contact email (raises its daily quota)."""
+        # A separate setter, not a configure() argument: configure() is called
+        # from many places in main.py with every argument spelled out, and a
+        # call that forgot the new one would silently reset the email to "".
+        self._mymemory_email = email
+        mymemory = self._translation_providers.get(ProviderType.MYMEMORY)
+        if mymemory:
+            mymemory.set_email(email)
 
     def set_gemini_model(self, model: str) -> None:
         """Update the Gemini model. Recreates the provider on next use if model changed."""
@@ -412,6 +430,8 @@ class ProviderManager:
                 provider_type = ProviderType.GOOGLE
             elif self._translation_provider_preference == "yandex":
                 provider_type = ProviderType.YANDEX
+            elif self._translation_provider_preference == "mymemory":
+                provider_type = ProviderType.MYMEMORY
             elif self._translation_provider_preference == "ct2":
                 provider_type = ProviderType.CT2
             else:
@@ -428,6 +448,10 @@ class ProviderManager:
                 self._translation_providers[provider_type] = YandexTranslateProvider(
                     api_key=self._yandex_api_key,
                     folder_id=self._yandex_folder_id,
+                )
+            elif provider_type == ProviderType.MYMEMORY:
+                self._translation_providers[provider_type] = MyMemoryTranslateProvider(
+                    email=self._mymemory_email
                 )
             elif provider_type == ProviderType.CT2:
                 if self._model_manager:
@@ -581,6 +605,10 @@ class ProviderManager:
                 key = self._google_api_key
             elif trans_pref == "yandex":
                 key = f"{self._yandex_api_key}|{self._yandex_folder_id}"
+            elif trans_pref == "mymemory":
+                # Part of the cache key, so a corrected email is re-probed at
+                # once instead of showing "wrong email" for up to a minute.
+                key = self._mymemory_email
             else:
                 key = ""
             result["translation"] = await self._probe_cached(trans_pref, "translation", key)
@@ -592,7 +620,8 @@ class ProviderManager:
         cache_key = (provider, kind, key_hash)
         cached = self._reachability_cache.get(cache_key)
         now = time.time()
-        if cached and (now - cached[0]) < _REACHABILITY_TTL:
+        ttl = _REACHABILITY_TTL_BY_PROVIDER.get(provider, _REACHABILITY_TTL)
+        if cached and (now - cached[0]) < ttl:
             return cached[1]
 
         ok, reason = await self._probe_provider(provider, kind)
@@ -614,6 +643,8 @@ class ProviderManager:
                 p = self.get_ocr_provider(ProviderType.OCR_SPACE)
             elif provider == "freegoogle":
                 p = self.get_translation_provider(ProviderType.FREE_GOOGLE)
+            elif provider == "mymemory":
+                p = self.get_translation_provider(ProviderType.MYMEMORY)
             else:
                 return False, f"Unknown provider ({provider})"
 

@@ -101,6 +101,8 @@ SENSITIVE_SETTING_KEYS = {
     "google_translate_api_key",
     "gemini_api_key",
     "yandex_api_key",
+    # Not a secret, but personal data: masked in logs the same way.
+    "mymemory_email",
 }
 
 # Keys are cleaned of whitespace/invisible characters, but folder IDs are not
@@ -131,25 +133,39 @@ def _clean_api_key(value):
 
 _URL_KEY_RE = re.compile(r"\bkey=([A-Za-z0-9_\-]{16,})")
 
+# MyMemory takes the user's email as a "de" URL parameter, and urllib3 logs
+# request URLs at debug level. The value runs up to the next "&", whitespace
+# or quote: one character class repeated, so matching stays linear even on
+# huge log lines (no nested quantifiers to backtrack). "\b" keeps "code=" or
+# "mode=" from matching.
+_URL_EMAIL_RE = re.compile(r"\bde=([^&\s\"']+)")
+
+
+def _may_contain_url_secret(text):
+    # Cheap check before running the regexes; "de=" also hits "code=" and
+    # the like, which only costs a regex pass that changes nothing.
+    return "key=" in text or "de=" in text
+
 
 def _redact_url_keys(text):
-    return _URL_KEY_RE.sub(lambda m: f"key={_mask_secret(m.group(1))}", text)
+    text = _URL_KEY_RE.sub(lambda m: f"key={_mask_secret(m.group(1))}", text)
+    return _URL_EMAIL_RE.sub(lambda m: f"de={_mask_secret(m.group(1))}", text)
 
 
 class UrlKeyRedactFilter(logging.Filter):
     def filter(self, record):
         try:
-            if isinstance(record.msg, str) and "key=" in record.msg:
+            if isinstance(record.msg, str) and _may_contain_url_secret(record.msg):
                 record.msg = _redact_url_keys(record.msg)
             if record.args:
                 if isinstance(record.args, dict):
                     record.args = {
-                        k: _redact_url_keys(v) if isinstance(v, str) and "key=" in v else v
+                        k: _redact_url_keys(v) if isinstance(v, str) and _may_contain_url_secret(v) else v
                         for k, v in record.args.items()
                     }
                 else:
                     record.args = tuple(
-                        _redact_url_keys(a) if isinstance(a, str) and "key=" in a else a
+                        _redact_url_keys(a) if isinstance(a, str) and _may_contain_url_secret(a) else a
                         for a in record.args
                     )
         except Exception:
@@ -1186,7 +1202,7 @@ class Plugin:
     _provider_manager: ProviderManager = None
     _use_free_providers: bool = True  # Default to free providers (no API key needed)
     _ocr_provider: str = "chromescreenai"  # "rapidocr" (RapidOCR), "ocrspace" (OCR.space), or "googlecloud" (Google Cloud)
-    _translation_provider: str = "freegoogle"  # "freegoogle" or "googlecloud"
+    _translation_provider: str = "mymemory"  # "mymemory", "freegoogle", "googlecloud", "yandex" or "ct2"
 
     # Translation cache
     _translation_cache: TranslationCache = None
@@ -1199,6 +1215,7 @@ class Plugin:
     _gemini_model: str = "gemini-2.5-flash"
     _yandex_api_key: str = ""
     _yandex_folder_id: str = ""
+    _mymemory_email: str = ""  # Optional; raises MyMemory's daily quota 10x
 
     _has_pngenc = None
     _fallback_dims = None
@@ -1401,6 +1418,10 @@ class Plugin:
                         ocr_provider=self._ocr_provider,
                         translation_provider=self._translation_provider
                     )
+            elif key == "mymemory_email":
+                self._mymemory_email = value
+                if self._provider_manager:
+                    self._provider_manager.set_mymemory_email(value)
             elif key == "hold_time_translate":
                 self._hold_time_translate = value
             elif key == "hold_time_dismiss":
@@ -1557,6 +1578,7 @@ class Plugin:
                 "gemini_model": self._gemini_model,
                 "yandex_api_key": self._yandex_api_key,
                 "yandex_folder_id": self._yandex_folder_id,
+                "mymemory_email": self._mymemory_email,
                 "hold_time_translate": self._settings.get_setting("hold_time_translate", 1000),
                 "hold_time_dismiss": self._settings.get_setting("hold_time_dismiss", 500),
                 "confidence_threshold": self._settings.get_setting("confidence_threshold", 0.6),
@@ -2776,6 +2798,7 @@ class Plugin:
             yandex_folder_id = load_api_key("yandex_folder_id")
             if yandex_folder_id:
                 self._yandex_folder_id = yandex_folder_id
+            self._mymemory_email = load_api_key("mymemory_email")
 
             saved_ocr_provider = self._settings.get_setting("ocr_provider")
             if saved_ocr_provider is not None:
@@ -2798,10 +2821,15 @@ class Plugin:
             if saved_translation_provider is not None:
                 self._translation_provider = saved_translation_provider
             else:
+                # First launch only: the choice is saved right below, so existing
+                # installs keep whatever they had (free Google before MyMemory
+                # became the default) and are deliberately not migrated.
                 if self._ocr_provider == "googlecloud":
                     self._translation_provider = "googlecloud"
                 else:
-                    self._translation_provider = "freegoogle"
+                    # Free Google is often blocked from Russia; MyMemory works
+                    # without a key (see the MyMemory provider for its limits).
+                    self._translation_provider = "mymemory"
                 self._settings.set_setting("translation_provider", self._translation_provider)
 
             # Set up CT2 translation models directory
@@ -2839,6 +2867,7 @@ class Plugin:
                 screenai_models_dir=screenai_models_dir,
                 rapidocr_models_dir=rapidocr_models_dir,
             )
+            self._provider_manager.set_mymemory_email(self._mymemory_email)
 
             # Load and apply RapidOCR-specific settings
             if self._settings.get_setting("custom_recognition_settings", False):

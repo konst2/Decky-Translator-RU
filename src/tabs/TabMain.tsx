@@ -321,7 +321,8 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
                                             {settings.translationProvider === 'googlecloud' ? 'Google Cloud' :
                                              settings.translationProvider === 'ct2' ? 'Локально' :
-                                             settings.translationProvider === 'yandex' ? 'Яндекс' : 'Google Translate'}
+                                             settings.translationProvider === 'yandex' ? 'Яндекс' :
+                                             settings.translationProvider === 'mymemory' ? 'MyMemory' : 'Google Translate'}
                                         </span>
                                     </div>
                                 )}
@@ -338,6 +339,12 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                         <>
                                             <div style={{ color: '#666', fontSize: '10px' }}>API-ключ не нужен</div>
                                             <ReachabilityRow result={webReachability?.translation} expectedProvider="freegoogle" />
+                                        </>
+                                    )}
+                                    {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'mymemory' && (
+                                        <>
+                                            <div style={{ color: '#666', fontSize: '10px' }}>API-ключ не нужен, лимит 5 000 символов в день</div>
+                                            <ReachabilityRow result={webReachability?.translation} expectedProvider="mymemory" />
                                         </>
                                     )}
                                     {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'googlecloud' && (

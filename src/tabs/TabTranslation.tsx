@@ -20,7 +20,7 @@ import {
 import { VFC, useState, useEffect, useRef, useCallback, RefObject } from "react";
 import { call } from "@decky/api";
 import { useSettings } from "../SettingsContext";
-import { HiKey, HiLockClosed, HiInboxArrowDown, HiTrash, HiXMark, HiXCircle, HiExclamationTriangle, HiInformationCircle } from "react-icons/hi2";
+import { HiKey, HiEnvelope, HiLockClosed, HiInboxArrowDown, HiTrash, HiXMark, HiXCircle, HiExclamationTriangle, HiInformationCircle } from "react-icons/hi2";
 import { BsArrowRepeat, BsStars } from "react-icons/bs";
 
 // @ts-ignore
@@ -96,7 +96,11 @@ const ApiKeyModal: VFC<{
     closeModal?: () => void;
     title?: string;
     description?: string;
-}> = ({ currentKey, onSave, currentFolderId, onSaveFolderId, closeModal, title, description }) => {
+    // Reused for fields that are not API keys (e.g. the MyMemory email):
+    // own label, and shown in plain text since such a value is not a secret.
+    fieldLabel?: string;
+    isPassword?: boolean;
+}> = ({ currentKey, onSave, currentFolderId, onSaveFolderId, closeModal, title, description, fieldLabel = "API-ключ", isPassword = true }) => {
     const [apiKey, setApiKey] = useState(currentKey || "");
     const [folderId, setFolderId] = useState(currentFolderId || "");
 
@@ -108,9 +112,9 @@ const ApiKeyModal: VFC<{
                     {description || "Введите ваш API-ключ."}
                 </p>
                 <TextField
-                    label="API-ключ"
+                    label={fieldLabel}
                     value={apiKey}
-                    bIsPassword={true}
+                    bIsPassword={isPassword}
                     bShowClearAction={true}
                     onChange={(e) => setApiKey(e.target.value)}
                 />
@@ -148,6 +152,7 @@ const ApiKeyModal: VFC<{
 const cacheProviderLabel = (p: string) => ({
     ct2: "Локально",
     freegoogle: "Google Translate",
+    mymemory: "MyMemory",
     googlecloud: "Google Cloud",
     yandex: "Яндекс",
     gemini_vision: "Gemini Vision",
@@ -1079,6 +1084,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     rgOptions={[
                                         { label: <span>Локально</span>, data: "ct2" },
                                         { label: <span>Google Translate</span>, data: "freegoogle" },
+                                        { label: <span>MyMemory</span>, data: "mymemory" },
                                         { label: <span>Google Cloud</span>, data: "googlecloud" },
                                         { label: <span>Яндекс</span>, data: "yandex" }
                                     ]}
@@ -1144,6 +1150,40 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     </div>
                                 </DialogButton>
                             )}
+                            {settings.translationProvider === 'mymemory' && (
+                                <DialogButton
+                                    onClick={() => {
+                                        showModal(
+                                            <ApiKeyModal
+                                                currentKey={settings.myMemoryEmail}
+                                                onSave={(email) => updateSetting('myMemoryEmail', email, 'MyMemory email')}
+                                                title="Email для MyMemory"
+                                                description="Необязательно. С email дневной лимит MyMemory вырастает с 5 000 до 50 000 символов. Адрес передаётся только сервису MyMemory."
+                                                fieldLabel="Email"
+                                                isPassword={false}
+                                            />
+                                        );
+                                    }}
+                                    style={{ minWidth: "40px", width: "40px", padding: "10px 0" }}
+                                >
+                                    <div style={{ position: "relative", display: "inline-flex" }}>
+                                        <HiEnvelope />
+                                        {/* Green once an email is set; no red dot without
+                                            one, because the email is optional. */}
+                                        {settings.myMemoryEmail && (
+                                            <div style={{
+                                                position: "absolute",
+                                                bottom: "-8px",
+                                                right: "-6px",
+                                                width: "6px",
+                                                height: "6px",
+                                                borderRadius: "50%",
+                                                backgroundColor: "#4caf50"
+                                            }} />
+                                        )}
+                                    </div>
+                                </DialogButton>
+                            )}
                             {settings.translationProvider === 'ct2' && (
                                 <ModelActionButton state={nllb} actionRef={ct2ActionRef} />
                             )}
@@ -1179,6 +1219,27 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     <ProviderRating quality={2} speed={3} />
                                     <div>- Бесплатно, API-ключ не нужен</div>
                                     <div>- Хорошее качество для большинства языков</div>
+                                </>
+                            )}
+                            {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'mymemory' && (
+                                <>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                                        <span style={{ fontWeight: "bold", color: "#dcdedf" }}>MyMemory</span>
+                                    </div>
+                                    <ProviderRating quality={1} speed={2} />
+                                    <div>- Бесплатно, API-ключ не нужен, работает из России</div>
+                                    <div>- Качество ниже, чем у Google и Яндекса</div>
+                                    <div>- Лимит 5 000 символов в день (примерно 5–15 экранов), с email — 50 000</div>
+                                    {/* MyMemory is the default only so that the plugin works right
+                                        after install; its free quota runs out fast, so the user is
+                                        pointed to a lasting option right away. */}
+                                    {settings.myMemoryEmail ? (
+                                        <div style={{ marginTop: "6px" }}>- Email указан: лимит 50 000 символов в день</div>
+                                    ) : (
+                                        <div style={{ color: "#ffa726", marginTop: "6px" }}>
+                                            Выбран по умолчанию, чтобы плагин можно было сразу попробовать. Надолго его не хватит: укажите email (кнопка с конвертом справа), а лучше переключитесь на Яндекс.
+                                        </div>
+                                    )}
                                 </>
                             )}
                             {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'googlecloud' && (

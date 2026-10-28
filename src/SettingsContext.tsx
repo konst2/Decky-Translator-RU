@@ -25,11 +25,12 @@ export interface Settings {
     quickToggleEnabled: boolean; // Quick toggle overlay with right button in combo modes
     useFreeProviders: boolean; // Use free providers (OCR.space + free Google Translate) - deprecated, use ocrProvider
     ocrProvider: 'rapidocr' | 'ocrspace' | 'googlecloud' | 'gemini_vision' | 'chromescreenai'; // OCR provider
-    translationProvider: 'freegoogle' | 'googlecloud' | 'ct2' | 'yandex'; // Translation provider
+    translationProvider: 'mymemory' | 'freegoogle' | 'googlecloud' | 'ct2' | 'yandex'; // Translation provider
     googleApiKey: string; // Google Cloud Vision API key for text recognition
     geminiApiKey: string; // Gemini API key for Gemini Vision (free tier available)
     yandexApiKey: string; // Yandex Cloud API key for Yandex Translate
     yandexFolderId: string; // Yandex Cloud folder ID for Yandex Translate
+    myMemoryEmail: string; // Optional email for MyMemory: raises its daily quota from 5 000 to 50 000 chars
     geminiModel: string; // Gemini model to use
     debugMode: boolean; // Debug mode for verbose console logging
     fontScale: number; // Overlay font scale multiplier for external monitors
@@ -69,11 +70,12 @@ const initialSettings: Settings = {
     quickToggleEnabled: false, // Default to disabled
     useFreeProviders: true, // Default to free providers (no API key needed) - deprecated
     ocrProvider: "chromescreenai", // Default to chromescreenai (Chrome Screen AI) provider
-    translationProvider: "freegoogle", // Default to free Google Translate
+    translationProvider: "mymemory", // Default to MyMemory: free, no key, works from Russia
     googleApiKey: "", // Empty by default, only needed for Google Cloud
     geminiApiKey: "", // Empty by default, needed for Gemini Vision
     yandexApiKey: "", // Empty by default, needed for Yandex Translate
     yandexFolderId: "", // Empty by default, needed for Yandex Translate
+    myMemoryEmail: "", // Empty by default, optional for MyMemory
     geminiModel: "gemini-2.5-flash", // Default Gemini model
     debugMode: false, // Debug mode off by default
     fontScale: 1.0,
@@ -148,11 +150,12 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     quickToggleEnabled: serverSettings.quick_toggle_enabled || false, // Add default if not present
                     useFreeProviders: serverSettings.use_free_providers !== false, // Default to true (deprecated)
                     ocrProvider: serverSettings.ocr_provider || "chromescreenai", // OCR provider setting
-                    translationProvider: serverSettings.translation_provider || "freegoogle", // Translation provider setting
+                    translationProvider: serverSettings.translation_provider || "mymemory", // Translation provider setting
                     googleApiKey: serverSettings.google_api_key || "", // Google API key
                     geminiApiKey: serverSettings.gemini_api_key || "", // Gemini API key
                     yandexApiKey: serverSettings.yandex_api_key || "", // Yandex API key
                     yandexFolderId: serverSettings.yandex_folder_id || "", // Yandex folder ID
+                    myMemoryEmail: serverSettings.mymemory_email || "", // MyMemory email
                     geminiModel: serverSettings.gemini_model || "gemini-2.5-flash",
                     debugMode: serverSettings.debug_mode || false,
                     fontScale: serverSettings.font_scale ?? 1.0,
@@ -183,7 +186,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
 
                 // Set provider settings for upfront API key validation
                 logic.setOcrProvider(serverSettings.ocr_provider || "chromescreenai");
-                logic.setTranslationProvider(serverSettings.translation_provider || "freegoogle");
+                logic.setTranslationProvider(serverSettings.translation_provider || "mymemory");
                 logic.setHasGoogleApiKey(!!serverSettings.google_api_key);
                 logic.setHasGeminiApiKey(!!serverSettings.gemini_api_key);
                 logic.setHasYandexApiKey(!!serverSettings.yandex_api_key);
@@ -240,6 +243,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 geminiApiKey: 'gemini_api_key',
                 yandexApiKey: 'yandex_api_key',
                 yandexFolderId: 'yandex_folder_id',
+                myMemoryEmail: 'mymemory_email',
                 geminiModel: 'gemini_model',
                 debugMode: 'debug_mode',
                 fontScale: 'font_scale',

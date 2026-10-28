@@ -50,6 +50,7 @@ class ProviderType(Enum):
     CT2 = "ct2"                 # CTranslate2 translation
     CHROME_SCREEN_AI = "chromescreenai"  # Chrome Screen AI
     YANDEX = "yandex"           # Yandex Cloud Translate (requires API key + folder ID)
+    MYMEMORY = "mymemory"       # MyMemory (free, no key; optional email raises the quota)
 
 
 @dataclass
