@@ -11,6 +11,7 @@ import {
     ButtonItem,
     showModal,
     ModalRoot,
+    ConfirmModal,
     DialogButton,
     TextField,
     Field,
@@ -469,6 +470,7 @@ function useModelDownload(opts: {
     deleteCall: string;
     clearErrorCall: string;
     defaultApproxMb: number;
+    modelName: string; // shown in the delete confirmation
 }): ModelDownloadState {
     const [status, setStatus] = useState<any>({
         downloaded: false, size: 0, approx_size_mb: opts.defaultApproxMb,
@@ -505,7 +507,24 @@ function useModelDownload(opts: {
         }
     };
     const handleCancel = async () => { await call(opts.cancelCall); };
-    const handleDelete = async () => { await call(opts.deleteCall); refresh(); };
+    // The same button downloads the model and, once it is downloaded, deletes
+    // it. A second press right after the download used to wipe the model
+    // (1.4 GB for NLLB) without a question, so deletion asks first.
+    const handleDelete = () => {
+        const sizeText = status.size
+            ? formatBytes(status.size)
+            : formatApproxSize(status.approx_size_mb || opts.defaultApproxMb);
+        showModal(
+            <ConfirmModal
+                strTitle="Удалить модель?"
+                strDescription={`${opts.modelName} (${sizeText}) будет удалена. Чтобы снова пользоваться этим методом, её придётся скачать заново.`}
+                strOKButtonText="Удалить"
+                strCancelButtonText="Отмена"
+                bDestructiveWarning={true}
+                onOK={async () => { await call(opts.deleteCall); refresh(); }}
+            />
+        );
+    };
 
     const isDownloading = status.downloading;
     const isDownloaded = status.downloaded;
@@ -532,6 +551,7 @@ function useChromeScreenAIStatus() {
         deleteCall: 'delete_chromescreenai',
         clearErrorCall: 'clear_chromescreenai_error',
         defaultApproxMb: 120,
+        modelName: 'Модель Chrome Screen AI',
     });
 }
 
@@ -543,6 +563,7 @@ function useNllbModelStatus() {
         deleteCall: 'delete_nllb_model',
         clearErrorCall: 'clear_nllb_model_error',
         defaultApproxMb: 1410,
+        modelName: 'Модель перевода NLLB-200',
     });
 }
 
@@ -554,6 +575,7 @@ function useRapidOCRStatus() {
         deleteCall: 'delete_rapidocr_models',
         clearErrorCall: 'clear_rapidocr_models_error',
         defaultApproxMb: 75,
+        modelName: 'Модель RapidOCR',
     });
 }
 
