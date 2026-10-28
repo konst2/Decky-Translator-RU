@@ -90,7 +90,7 @@ import urllib3
 import requests
 
 # Import provider system
-from providers import ProviderManager, TextRegion, NetworkError, ApiKeyError, RateLimitError
+from providers import ProviderManager, TextRegion, NetworkError, ApiKeyError, RateLimitError, TranslationUnavailableError
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
 
 _processing_lock = False
@@ -2310,7 +2310,7 @@ class Plugin:
 
             if not self._provider_manager:
                 logger.error("Provider manager not initialized")
-                return None
+                return {"error": "translation_error", "message": "Плагин ещё запускается. Попробуйте через несколько секунд"}
 
             # If regions already have translatedText (e.g. from Gemini Vision),
             # skip the translation step entirely
@@ -2404,10 +2404,20 @@ class Plugin:
         except RateLimitError as e:
             logger.error(f"Rate limit during translation: {e}")
             return {"error": "rate_limit_error", "message": str(e)}
+        except TranslationUnavailableError as e:
+            logger.error(f"Translation unavailable: {e}")
+            return {"error": "translation_error", "message": str(e)}
         except Exception as e:
+            # Any other failure used to return None, and the frontend then
+            # silently showed the original text as if it were translated
+            # (bug B13). The exception type tells the user (and a bug report)
+            # what broke; the details stay in the log.
             logger.error(f"Translation error: {e}")
             logger.error(traceback.format_exc())
-            return None
+            return {
+                "error": "translation_error",
+                "message": f"Ошибка перевода: {type(e).__name__}. Подробности — в логе плагина",
+            }
 
     async def get_enabled_state(self):
         return await self.get_setting("enabled", True)

@@ -34,6 +34,16 @@ export class ModelNotAvailableError extends Error {
     }
 }
 
+// Any other translation failure. Shown to the user instead of silently
+// falling back to the original text, which looked like a successful
+// translation (bug B13).
+export class TranslationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'TranslationError';
+    }
+}
+
 function isErrorResponse(value: unknown): value is ErrorResponse {
     return typeof value === 'object' && value !== null && 'error' in value && 'message' in value;
 }

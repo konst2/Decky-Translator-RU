@@ -14,6 +14,7 @@ from .base import (
     NetworkError,
     ApiKeyError,
     RateLimitError,
+    TranslationUnavailableError,
 )
 from .google_ocr import GoogleVisionProvider
 from .google_translate import GoogleTranslateProvider
@@ -50,6 +51,7 @@ __all__ = [
     'NetworkError',
     'ApiKeyError',
     'RateLimitError',
+    'TranslationUnavailableError',
     'GoogleVisionProvider',
     'GoogleTranslateProvider',
     'YandexTranslateProvider',
@@ -514,8 +516,13 @@ class ProviderManager:
             logger.debug(f"Using {provider_name} for translation")
             return await provider.translate_batch(texts, source_lang, target_lang)
 
+        # Returning the original texts here looked like a successful
+        # translation to the user (bug B13), so this is an error now.
         logger.warning("No translation provider available")
-        return texts  # Return original texts as fallback
+        raise TranslationUnavailableError(
+            "Выбранный метод перевода не настроен или не поддерживает эту пару языков. "
+            "Проверьте вкладку «Перевод»"
+        )
 
     def get_provider_status(self) -> dict:
         """

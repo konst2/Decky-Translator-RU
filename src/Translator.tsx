@@ -2,7 +2,7 @@
 
 import { call, toaster } from "@decky/api";
 import { Router } from "@decky/ui";
-import { TextRecognizer, NetworkError, ApiKeyError, RateLimitError, ModelNotAvailableError } from "./TextRecognizer";
+import { TextRecognizer, NetworkError, ApiKeyError, RateLimitError, ModelNotAvailableError, TranslationError } from "./TextRecognizer";
 import { TextTranslator } from "./TextTranslator";
 import { Input, InputMode, ActionType, ProgressInfo } from "./Input";
 import { ImageState } from "./Overlay";
@@ -428,6 +428,11 @@ export class GameTranslatorLogic {
                 setTimeout(() => {
                     this.imageState.hideImage();
                 }, 3000); // 3 seconds delay for rate limit error
+            } else if (error instanceof TranslationError) {
+                this.imageState.updateProcessingStep(error.message, true);
+                setTimeout(() => {
+                    this.imageState.hideImage();
+                }, 3000); // longer: the message may name the exception to report
             } else {
                 this.imageState.hideImage();
             }

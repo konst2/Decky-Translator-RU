@@ -1,7 +1,7 @@
 // TextTranslator.tsx
 
 import { call } from "@decky/api";
-import { TextRegion, NetworkError, ApiKeyError, RateLimitError, ModelNotAvailableError, ErrorResponse } from "./TextRecognizer";
+import { TextRegion, NetworkError, ApiKeyError, RateLimitError, ModelNotAvailableError, TranslationError, ErrorResponse } from "./TextRecognizer";
 import { logger } from "./Logger";
 
 // Type guard to check if response is an error
@@ -74,35 +74,26 @@ export class TextTranslator {
                         logger.error('TextTranslator', `Rate limit error: ${errorResponse.message}`);
                         throw new RateLimitError(errorResponse.message);
                     }
+                    // "translation_error" and any code this version does not know
                     logger.error('TextTranslator', `Error from backend: ${errorResponse.error} - ${errorResponse.message}`);
-                    // Return original text on error
-                    return textRegions.map(region => ({
-                        ...region,
-                        translatedText: region.text
-                    }));
+                    throw new TranslationError(errorResponse.message || "Ошибка перевода");
                 }
 
                 return response as TranslatedRegion[];
             }
 
-            logger.error('TextTranslator', 'Failed to translate text');
-
-            // If translation fails, at least return the original text
-            return textRegions.map(region => ({
-                ...region,
-                translatedText: region.text
-            }));
+            logger.error('TextTranslator', 'Failed to translate text: empty response from backend');
+            throw new TranslationError("Ошибка перевода: плагин не вернул результат");
         } catch (error) {
             // Re-throw known errors to be handled by caller
-            if (error instanceof NetworkError || error instanceof ApiKeyError || error instanceof RateLimitError || error instanceof ModelNotAvailableError) {
+            if (error instanceof NetworkError || error instanceof ApiKeyError || error instanceof RateLimitError
+                || error instanceof ModelNotAvailableError || error instanceof TranslationError) {
                 throw error;
             }
+            // E.g. the backend call itself failed. Before B13 the original text
+            // was returned here, which looked like a successful translation.
             logger.error('TextTranslator', 'Text translation error', error);
-            // Return the original text if translation fails
-            return textRegions.map(region => ({
-                ...region,
-                translatedText: region.text
-            }));
+            throw new TranslationError("Ошибка перевода: нет ответа от плагина");
         }
     }
 }

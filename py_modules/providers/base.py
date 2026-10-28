@@ -22,6 +22,12 @@ class RateLimitError(Exception):
     pass
 
 
+class TranslationUnavailableError(Exception):
+    """Raised when the selected translation provider cannot serve the request
+    (not configured, or the language pair is not supported)."""
+    pass
+
+
 def classify_google_error(status_code: int, body: str) -> str:
     """Logging for a non-200 Google API response."""
     body = body or ""
