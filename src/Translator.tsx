@@ -33,7 +33,8 @@ export class GameTranslatorLogic {
     private translationProvider: string = "freegoogle";
     private hasGoogleApiKey: boolean = false;
     private hasGeminiApiKey: boolean = false;
-    private hasYandexCredentials: boolean = false;
+    private hasYandexApiKey: boolean = false;
+    private hasYandexFolderId: boolean = false;
 
     isOverlayVisible(): boolean {
         return this.imageState.isVisible();
@@ -562,9 +563,14 @@ export class GameTranslatorLogic {
         logger.debug('Translator', `Gemini API key available: ${hasKey}`);
     }
 
-    setHasYandexCredentials = (hasCredentials: boolean): void => {
-        this.hasYandexCredentials = hasCredentials;
-        logger.debug('Translator', `Yandex credentials available: ${hasCredentials}`);
+    setHasYandexApiKey = (hasKey: boolean): void => {
+        this.hasYandexApiKey = hasKey;
+        logger.debug('Translator', `Yandex API key available: ${hasKey}`);
+    }
+
+    setHasYandexFolderId = (hasFolderId: boolean): void => {
+        this.hasYandexFolderId = hasFolderId;
+        logger.debug('Translator', `Yandex folder ID available: ${hasFolderId}`);
     }
 
     // Runs all pre-checks that would prevent a translation from starting.
@@ -623,7 +629,7 @@ export class GameTranslatorLogic {
             }
         }
 
-        if (this.translationProvider === 'yandex' && !this.hasYandexCredentials) {
+        if (this.translationProvider === 'yandex' && !(this.hasYandexApiKey && this.hasYandexFolderId)) {
             return { missing: true, message: "Для Яндекс Перевода требуются API-ключ и folder_id" };
         }
 

@@ -186,7 +186,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 logic.setTranslationProvider(serverSettings.translation_provider || "freegoogle");
                 logic.setHasGoogleApiKey(!!serverSettings.google_api_key);
                 logic.setHasGeminiApiKey(!!serverSettings.gemini_api_key);
-                logic.setHasYandexCredentials(!!(serverSettings.yandex_api_key && serverSettings.yandex_folder_id));
+                logic.setHasYandexApiKey(!!serverSettings.yandex_api_key);
+                logic.setHasYandexFolderId(!!serverSettings.yandex_folder_id);
 
                 logic.setFontScale(serverSettings.font_scale ?? 1.0);
                 logic.setGroupingPower(serverSettings.grouping_power ?? 0.25);
@@ -323,10 +324,10 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     logic.setHasGeminiApiKey(!!value);
                     break;
                 case 'yandexApiKey':
-                    logic.setHasYandexCredentials(!!value && !!settings.yandexFolderId);
+                    logic.setHasYandexApiKey(!!value);
                     break;
                 case 'yandexFolderId':
-                    logic.setHasYandexCredentials(!!settings.yandexApiKey && !!value);
+                    logic.setHasYandexFolderId(!!value);
                     break;
             }
 
