@@ -90,11 +90,14 @@ function formatBytes(bytes: number): string {
 const ApiKeyModal: VFC<{
     currentKey: string;
     onSave: (key: string) => void;
+    currentFolderId?: string;
+    onSaveFolderId?: (folderId: string) => void;
     closeModal?: () => void;
     title?: string;
     description?: string;
-}> = ({ currentKey, onSave, closeModal, title, description }) => {
+}> = ({ currentKey, onSave, currentFolderId, onSaveFolderId, closeModal, title, description }) => {
     const [apiKey, setApiKey] = useState(currentKey || "");
+    const [folderId, setFolderId] = useState(currentFolderId || "");
 
     return (
         <ModalRoot onCancel={closeModal} onEscKeypress={closeModal}>
@@ -110,6 +113,16 @@ const ApiKeyModal: VFC<{
                     bShowClearAction={true}
                     onChange={(e) => setApiKey(e.target.value)}
                 />
+                {onSaveFolderId && (
+                    <div style={{ marginTop: "12px" }}>
+                        <TextField
+                            label="folder_id"
+                            value={folderId}
+                            bShowClearAction={true}
+                            onChange={(e) => setFolderId(e.target.value)}
+                        />
+                    </div>
+                )}
                 <Focusable
                     style={{ display: "flex", gap: "10px", marginTop: "20px", justifyContent: "flex-end" }}
                 >
@@ -119,6 +132,7 @@ const ApiKeyModal: VFC<{
                     <DialogButton
                         onClick={() => {
                             onSave(apiKey.trim());
+                            onSaveFolderId?.(folderId.trim());
                             closeModal?.();
                         }}
                     >
@@ -134,6 +148,7 @@ const cacheProviderLabel = (p: string) => ({
     ct2: "Локально",
     freegoogle: "Google Translate",
     googlecloud: "Google Cloud",
+    yandex: "Яндекс",
     gemini_vision: "Gemini Vision",
 } as Record<string, string>)[p] || p || "?";
 
@@ -1063,7 +1078,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     rgOptions={[
                                         { label: <span>Локально</span>, data: "ct2" },
                                         { label: <span>Google Translate</span>, data: "freegoogle" },
-                                        { label: <span>Google Cloud</span>, data: "googlecloud" }
+                                        { label: <span>Google Cloud</span>, data: "googlecloud" },
+                                        { label: <span>Яндекс</span>, data: "yandex" }
                                     ]}
                                     selectedOption={settings.translationProvider}
                                     onChange={(option) => updateSetting('translationProvider', option.data, 'Translation provider')}
@@ -1093,6 +1109,36 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                             height: "6px",
                                             borderRadius: "50%",
                                             backgroundColor: settings.googleApiKey ? "#4caf50" : "#ff6b6b"
+                                        }} />
+                                    </div>
+                                </DialogButton>
+                            )}
+                            {settings.translationProvider === 'yandex' && (
+                                <DialogButton
+                                    onClick={() => {
+                                        showModal(
+                                            <ApiKeyModal
+                                                currentKey={settings.yandexApiKey}
+                                                currentFolderId={settings.yandexFolderId}
+                                                onSave={(key) => updateSetting('yandexApiKey', key, 'Yandex API Key')}
+                                                onSaveFolderId={(folderId) => updateSetting('yandexFolderId', folderId, 'Yandex folder ID')}
+                                                title="Ключи Яндекс Облака"
+                                                description="Введите API-ключ сервисного аккаунта и folder_id каталога (роль ai.translate.user)."
+                                            />
+                                        );
+                                    }}
+                                    style={{ minWidth: "40px", width: "40px", padding: "10px 0" }}
+                                >
+                                    <div style={{ position: "relative", display: "inline-flex" }}>
+                                        <HiKey />
+                                        <div style={{
+                                            position: "absolute",
+                                            bottom: "-8px",
+                                            right: "-6px",
+                                            width: "6px",
+                                            height: "6px",
+                                            borderRadius: "50%",
+                                            backgroundColor: (settings.yandexApiKey && settings.yandexFolderId) ? "#4caf50" : "#ff6b6b"
                                         }} />
                                     </div>
                                 </DialogButton>
@@ -1145,6 +1191,19 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     <div>- Требуется API-ключ</div>
                                     {!settings.googleApiKey && (
                                         <div style={{ color: "#ff6b6b", marginTop: "4px" }}>Необходимо добавить API-ключ</div>
+                                    )}
+                                </>
+                            )}
+                            {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'yandex' && (
+                                <>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                                        <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Яндекс Перевод</span>
+                                    </div>
+                                    <ProviderRating quality={3} speed={3} />
+                                    <div>- Работает из России</div>
+                                    <div>- Требуется API-ключ и folder_id Яндекс Облака</div>
+                                    {(!settings.yandexApiKey || !settings.yandexFolderId) && (
+                                        <div style={{ color: "#ff6b6b", marginTop: "4px" }}>Необходимо добавить API-ключ и folder_id</div>
                                     )}
                                 </>
                             )}

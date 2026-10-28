@@ -49,6 +49,7 @@ class ProviderType(Enum):
     GEMINI_VISION = "gemini_vision"  # Gemini Vision (OCR + translation in one step)
     CT2 = "ct2"                 # CTranslate2 translation
     CHROME_SCREEN_AI = "chromescreenai"  # Chrome Screen AI
+    YANDEX = "yandex"           # Yandex Cloud Translate (requires API key + folder ID)
 
 
 @dataclass

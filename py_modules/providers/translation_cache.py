@@ -12,6 +12,7 @@ PROVIDER_TIERS = {
     "ct2": 1,
     "freegoogle": 2,
     "googlecloud": 3,
+    "yandex": 3,
     "gemini_vision": 3,
 }
 

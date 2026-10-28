@@ -33,6 +33,7 @@ export class GameTranslatorLogic {
     private translationProvider: string = "freegoogle";
     private hasGoogleApiKey: boolean = false;
     private hasGeminiApiKey: boolean = false;
+    private hasYandexCredentials: boolean = false;
 
     isOverlayVisible(): boolean {
         return this.imageState.isVisible();
@@ -535,6 +536,7 @@ export class GameTranslatorLogic {
             ct2: "Локально",
             freegoogle: "Google Translate",
             googlecloud: "Google Cloud",
+            yandex: "Яндекс",
         };
         return labels[this.translationProvider] || this.translationProvider;
     }
@@ -558,6 +560,11 @@ export class GameTranslatorLogic {
     setHasGeminiApiKey = (hasKey: boolean): void => {
         this.hasGeminiApiKey = hasKey;
         logger.debug('Translator', `Gemini API key available: ${hasKey}`);
+    }
+
+    setHasYandexCredentials = (hasCredentials: boolean): void => {
+        this.hasYandexCredentials = hasCredentials;
+        logger.debug('Translator', `Yandex credentials available: ${hasCredentials}`);
     }
 
     // Runs all pre-checks that would prevent a translation from starting.
@@ -615,6 +622,11 @@ export class GameTranslatorLogic {
                 return { missing: true, message: "Требуется API-ключ для перевода" };
             }
         }
+
+        if (this.translationProvider === 'yandex' && !this.hasYandexCredentials) {
+            return { missing: true, message: "Для Яндекс Перевода требуются API-ключ и folder_id" };
+        }
+
         return { missing: false, message: "" };
     }
 }

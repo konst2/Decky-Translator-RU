@@ -25,9 +25,11 @@ export interface Settings {
     quickToggleEnabled: boolean; // Quick toggle overlay with right button in combo modes
     useFreeProviders: boolean; // Use free providers (OCR.space + free Google Translate) - deprecated, use ocrProvider
     ocrProvider: 'rapidocr' | 'ocrspace' | 'googlecloud' | 'gemini_vision' | 'chromescreenai'; // OCR provider
-    translationProvider: 'freegoogle' | 'googlecloud' | 'ct2'; // Translation provider
+    translationProvider: 'freegoogle' | 'googlecloud' | 'ct2' | 'yandex'; // Translation provider
     googleApiKey: string; // Google Cloud Vision API key for text recognition
     geminiApiKey: string; // Gemini API key for Gemini Vision (free tier available)
+    yandexApiKey: string; // Yandex Cloud API key for Yandex Translate
+    yandexFolderId: string; // Yandex Cloud folder ID for Yandex Translate
     geminiModel: string; // Gemini model to use
     debugMode: boolean; // Debug mode for verbose console logging
     fontScale: number; // Overlay font scale multiplier for external monitors
@@ -70,6 +72,8 @@ const initialSettings: Settings = {
     translationProvider: "freegoogle", // Default to free Google Translate
     googleApiKey: "", // Empty by default, only needed for Google Cloud
     geminiApiKey: "", // Empty by default, needed for Gemini Vision
+    yandexApiKey: "", // Empty by default, needed for Yandex Translate
+    yandexFolderId: "", // Empty by default, needed for Yandex Translate
     geminiModel: "gemini-2.5-flash", // Default Gemini model
     debugMode: false, // Debug mode off by default
     fontScale: 1.0,
@@ -147,6 +151,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     translationProvider: serverSettings.translation_provider || "freegoogle", // Translation provider setting
                     googleApiKey: serverSettings.google_api_key || "", // Google API key
                     geminiApiKey: serverSettings.gemini_api_key || "", // Gemini API key
+                    yandexApiKey: serverSettings.yandex_api_key || "", // Yandex API key
+                    yandexFolderId: serverSettings.yandex_folder_id || "", // Yandex folder ID
                     geminiModel: serverSettings.gemini_model || "gemini-2.5-flash",
                     debugMode: serverSettings.debug_mode || false,
                     fontScale: serverSettings.font_scale ?? 1.0,
@@ -180,6 +186,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 logic.setTranslationProvider(serverSettings.translation_provider || "freegoogle");
                 logic.setHasGoogleApiKey(!!serverSettings.google_api_key);
                 logic.setHasGeminiApiKey(!!serverSettings.gemini_api_key);
+                logic.setHasYandexCredentials(!!(serverSettings.yandex_api_key && serverSettings.yandex_folder_id));
 
                 logic.setFontScale(serverSettings.font_scale ?? 1.0);
                 logic.setGroupingPower(serverSettings.grouping_power ?? 0.25);
@@ -230,6 +237,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 translationProvider: 'translation_provider',
                 googleApiKey: 'google_api_key',
                 geminiApiKey: 'gemini_api_key',
+                yandexApiKey: 'yandex_api_key',
+                yandexFolderId: 'yandex_folder_id',
                 geminiModel: 'gemini_model',
                 debugMode: 'debug_mode',
                 fontScale: 'font_scale',
@@ -312,6 +321,12 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     break;
                 case 'geminiApiKey':
                     logic.setHasGeminiApiKey(!!value);
+                    break;
+                case 'yandexApiKey':
+                    logic.setHasYandexCredentials(!!value && !!settings.yandexFolderId);
+                    break;
+                case 'yandexFolderId':
+                    logic.setHasYandexCredentials(!!settings.yandexApiKey && !!value);
                     break;
             }
 

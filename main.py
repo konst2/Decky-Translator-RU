@@ -100,7 +100,12 @@ SENSITIVE_SETTING_KEYS = {
     "google_vision_api_key",
     "google_translate_api_key",
     "gemini_api_key",
+    "yandex_api_key",
 }
+
+# Keys are cleaned of whitespace/invisible characters, but folder IDs are not
+# secret, so they stay readable in logs.
+_CLEANED_SETTING_KEYS = SENSITIVE_SETTING_KEYS | {"yandex_folder_id"}
 
 
 def _mask_secret(value):
@@ -1192,6 +1197,8 @@ class Plugin:
     _google_translate_api_key: str = ""
     _gemini_api_key: str = ""
     _gemini_model: str = "gemini-2.5-flash"
+    _yandex_api_key: str = ""
+    _yandex_folder_id: str = ""
 
     _has_pngenc = None
     _fallback_dims = None
@@ -1295,7 +1302,7 @@ class Plugin:
 
     async def set_setting(self, key, value):
         logger.debug(f"Setting {key} to: {_mask_for_log(key, value)}")
-        if key in SENSITIVE_SETTING_KEYS and isinstance(value, str):
+        if key in _CLEANED_SETTING_KEYS and isinstance(value, str):
             cleaned = _clean_api_key(value)
             if cleaned != value:
                 logger.warning(
@@ -1334,6 +1341,8 @@ class Plugin:
                         use_free_providers=self._use_free_providers,
                         google_api_key=value,
                         gemini_api_key=self._gemini_api_key,
+                        yandex_api_key=self._yandex_api_key,
+                        yandex_folder_id=self._yandex_folder_id,
                         ocr_provider=self._ocr_provider,
                         translation_provider=self._translation_provider
                     )
@@ -1345,6 +1354,8 @@ class Plugin:
                         use_free_providers=self._use_free_providers,
                         google_api_key=value,
                         gemini_api_key=self._gemini_api_key,
+                        yandex_api_key=self._yandex_api_key,
+                        yandex_folder_id=self._yandex_folder_id,
                         ocr_provider=self._ocr_provider,
                         translation_provider=self._translation_provider
                     )
@@ -1361,6 +1372,32 @@ class Plugin:
                         use_free_providers=self._use_free_providers,
                         google_api_key=self._google_vision_api_key,
                         gemini_api_key=value,
+                        yandex_api_key=self._yandex_api_key,
+                        yandex_folder_id=self._yandex_folder_id,
+                        ocr_provider=self._ocr_provider,
+                        translation_provider=self._translation_provider
+                    )
+            elif key == "yandex_api_key":
+                self._yandex_api_key = value
+                if self._provider_manager:
+                    self._provider_manager.configure(
+                        use_free_providers=self._use_free_providers,
+                        google_api_key=self._google_vision_api_key,
+                        gemini_api_key=self._gemini_api_key,
+                        yandex_api_key=value,
+                        yandex_folder_id=self._yandex_folder_id,
+                        ocr_provider=self._ocr_provider,
+                        translation_provider=self._translation_provider
+                    )
+            elif key == "yandex_folder_id":
+                self._yandex_folder_id = value
+                if self._provider_manager:
+                    self._provider_manager.configure(
+                        use_free_providers=self._use_free_providers,
+                        google_api_key=self._google_vision_api_key,
+                        gemini_api_key=self._gemini_api_key,
+                        yandex_api_key=self._yandex_api_key,
+                        yandex_folder_id=value,
                         ocr_provider=self._ocr_provider,
                         translation_provider=self._translation_provider
                     )
@@ -1443,6 +1480,8 @@ class Plugin:
                         use_free_providers=value,
                         google_api_key=self._google_vision_api_key,
                         gemini_api_key=self._gemini_api_key,
+                        yandex_api_key=self._yandex_api_key,
+                        yandex_folder_id=self._yandex_folder_id,
                         ocr_provider=self._ocr_provider,
                         translation_provider=self._translation_provider
                     )
@@ -1456,6 +1495,8 @@ class Plugin:
                         use_free_providers=self._use_free_providers,
                         google_api_key=self._google_vision_api_key,
                         gemini_api_key=self._gemini_api_key,
+                        yandex_api_key=self._yandex_api_key,
+                        yandex_folder_id=self._yandex_folder_id,
                         ocr_provider=value,
                         translation_provider=self._translation_provider
                     )
@@ -1478,6 +1519,8 @@ class Plugin:
                         use_free_providers=self._use_free_providers,
                         google_api_key=self._google_vision_api_key,
                         gemini_api_key=self._gemini_api_key,
+                        yandex_api_key=self._yandex_api_key,
+                        yandex_folder_id=self._yandex_folder_id,
                         ocr_provider=self._ocr_provider,
                         translation_provider=value
                     )
@@ -1512,6 +1555,8 @@ class Plugin:
                 "google_translate_api_key": self._google_translate_api_key,
                 "gemini_api_key": self._gemini_api_key,
                 "gemini_model": self._gemini_model,
+                "yandex_api_key": self._yandex_api_key,
+                "yandex_folder_id": self._yandex_folder_id,
                 "hold_time_translate": self._settings.get_setting("hold_time_translate", 1000),
                 "hold_time_dismiss": self._settings.get_setting("hold_time_dismiss", 500),
                 "confidence_threshold": self._settings.get_setting("confidence_threshold", 0.6),
@@ -2725,6 +2770,13 @@ class Plugin:
                 self._gemini_api_key = gemini_api_key
             self._gemini_model = self._settings.get_setting("gemini_model", "gemini-2.5-flash")
 
+            yandex_api_key = load_api_key("yandex_api_key")
+            if yandex_api_key:
+                self._yandex_api_key = yandex_api_key
+            yandex_folder_id = load_api_key("yandex_folder_id")
+            if yandex_folder_id:
+                self._yandex_folder_id = yandex_folder_id
+
             saved_ocr_provider = self._settings.get_setting("ocr_provider")
             if saved_ocr_provider is not None:
                 self._ocr_provider = saved_ocr_provider
@@ -2779,6 +2831,8 @@ class Plugin:
                 use_free_providers=self._use_free_providers,
                 google_api_key=google_api_key,
                 gemini_api_key=gemini_api_key,
+                yandex_api_key=yandex_api_key,
+                yandex_folder_id=yandex_folder_id,
                 ocr_provider=self._ocr_provider,
                 translation_provider=self._translation_provider,
                 ct2_models_dir=ct2_models_dir,

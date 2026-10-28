@@ -320,7 +320,8 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                         <span style={{ color: '#888' }}>Перевод:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
                                             {settings.translationProvider === 'googlecloud' ? 'Google Cloud' :
-                                             settings.translationProvider === 'ct2' ? 'Локально' : 'Google Translate'}
+                                             settings.translationProvider === 'ct2' ? 'Локально' :
+                                             settings.translationProvider === 'yandex' ? 'Яндекс' : 'Google Translate'}
                                         </span>
                                     </div>
                                 )}
@@ -342,6 +343,12 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                     {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'googlecloud' && (
                                         <>
                                             <ReachabilityRow result={webReachability?.translation} expectedProvider="googlecloud" />
+                                        </>
+                                    )}
+                                    {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'yandex' && (
+                                        <>
+                                            <div style={{ color: '#666', fontSize: '10px' }}>Требуется API-ключ и folder_id</div>
+                                            <ReachabilityRow result={webReachability?.translation} expectedProvider="yandex" />
                                         </>
                                     )}
                                     {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'ct2' && (
