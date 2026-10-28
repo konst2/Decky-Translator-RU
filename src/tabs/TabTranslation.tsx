@@ -776,7 +776,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>Локально</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(RapidOCR)</span></span>, data: "rapidocr" },
                                     { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span style={{ display: "flex", alignItems: "center" }}><span>Локально</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Chrome)</span></span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ рекомендуемый</span></span>, data: "chromescreenai" },
                                     { label: <span>OCR.space</span>, data: "ocrspace" },
-                                    { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span>Google Cloud</span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ рекомендуемый</span></span>, data: "googlecloud" },
+                                    { label: <span>Google Cloud</span>, data: "googlecloud" },
                                     { label: <span style={{ display: "flex", alignItems: "center", gap: "6px", height: "20px", lineHeight: "20px" }}>Gemini Vision <BsStars style={{ fontSize: "12px" }} /></span>, data: "gemini_vision" }
                                 ]}
                                 selectedOption={settings.ocrProvider}
@@ -1083,7 +1083,12 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             />
                         ) : (
                         <Focusable style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                            <div style={{ flex: 1 }}>
+                            <div className="dt-trans-dropdown-wrapper" style={{ flex: 1 }}>
+                                {/* Same trick as the OCR list: the note is shown in the opened
+                                    list (rendered outside this wrapper) but hidden on the closed
+                                    dropdown button, where the long text would not fit. The
+                                    provider description below repeats the warning. */}
+                                <style>{`.dt-trans-dropdown-wrapper .dt-option-note { display: none !important; }`}</style>
                                 <Dropdown
                                     rgOptions={[
                                         // What works from Russia goes first: users tend to pick
@@ -1092,7 +1097,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         { label: <span>Яндекс</span>, data: "yandex" },
                                         { label: <span>MyMemory</span>, data: "mymemory" },
                                         { label: <span>Локально</span>, data: "ct2" },
-                                        { label: <span>Google Translate</span>, data: "freegoogle" },
+                                        { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>Google Translate</span><span className="dt-option-note" style={{ fontSize: "10px", color: "#ffa726", marginLeft: "6px", transform: "translateY(1px)" }}>(может не работать из РФ)</span></span>, data: "freegoogle" },
                                         { label: <span>Google Cloud</span>, data: "googlecloud" }
                                     ]}
                                     selectedOption={settings.translationProvider}
@@ -1226,6 +1231,9 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     <ProviderRating quality={2} speed={3} />
                                     <div>- Бесплатно, API-ключ не нужен</div>
                                     <div>- Хорошее качество для большинства языков</div>
+                                    <div style={{ color: "#ffa726", marginTop: "6px" }}>
+                                        Может не работать из РФ: Google блокирует часть российских адресов. Если перевод не появляется, выберите Яндекс или MyMemory.
+                                    </div>
                                 </>
                             )}
                             {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'mymemory' && (

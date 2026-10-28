@@ -534,7 +534,7 @@ export class GameTranslatorLogic {
 
     private translationMethodHint(): string {
         const labels: Record<string, string> = {
-            ct2: "Локально",
+            ct2: "Локально (NLLB)",
             freegoogle: "Google Translate",
             mymemory: "MyMemory",
             googlecloud: "Google Cloud",
@@ -545,8 +545,8 @@ export class GameTranslatorLogic {
 
     private ocrMethodHint(): string {
         const labels: Record<string, string> = {
-            rapidocr: "Локально",
-            chromescreenai: "Локально",
+            rapidocr: "Локально (RapidOCR)",
+            chromescreenai: "Локально (Chrome)",
             ocrspace: "OCR.space",
             googlecloud: "Google Cloud",
             gemini_vision: "Gemini Vision",

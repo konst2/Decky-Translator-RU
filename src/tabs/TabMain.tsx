@@ -170,8 +170,8 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                         <BsEye style={{ marginRight: '8px', color: '#aaa' }} />
                                         <span style={{ color: '#888' }}>Распознавание текста:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
-                                            {settings.ocrProvider === 'chromescreenai' ? 'Локально' :
-                                             settings.ocrProvider === 'rapidocr' ? 'Локально' :
+                                            {settings.ocrProvider === 'chromescreenai' ? 'Локально (Chrome)' :
+                                             settings.ocrProvider === 'rapidocr' ? 'Локально (RapidOCR)' :
                                              settings.ocrProvider === 'ocrspace' ? 'OCR.space' : 'Google Cloud'}
                                         </span>
                                     </div>
@@ -320,7 +320,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                         <span style={{ color: '#888' }}>Перевод:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
                                             {settings.translationProvider === 'googlecloud' ? 'Google Cloud' :
-                                             settings.translationProvider === 'ct2' ? 'Локально' :
+                                             settings.translationProvider === 'ct2' ? 'Локально (NLLB)' :
                                              settings.translationProvider === 'yandex' ? 'Яндекс' :
                                              settings.translationProvider === 'mymemory' ? 'MyMemory' : 'Google Translate'}
                                         </span>
@@ -411,7 +411,9 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                 }}
                             >
                                 <SiKofi style={{ fontSize: '13px' }} />
-                                <span>Поддержать на Ko-fi</span>
+                                {/* The link goes to the author of the original plugin
+                                    (cat-in-a-box), not to this fork: the label says so. */}
+                                <span>Поддержать автора оригинального плагина</span>
                                 <HiQrCode style={{ fontSize: '13px', opacity: 0.6 }} />
                             </DialogButton>
                         </Focusable>
