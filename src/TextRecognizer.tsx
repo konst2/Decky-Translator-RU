@@ -177,7 +177,7 @@ export class TextRecognizer {
         }
 
         const groups = Array.from(uf.getGroups().values());
-        return this.extractMergedRegions(groups, regions, "horizontal", medianH);
+        return this.extractMergedRegions(groups, regions, "horizontal");
     }
 
     // Phase 2: group text lines into paragraphs.
@@ -271,7 +271,7 @@ export class TextRecognizer {
         const groups = Array.from(uf.getGroups().values());
         const refined = this.splitOvermerged(groups, lines, medianH);
         logger.debug('TextRecognizer', `Auto-glue: Split pass refined ${groups.length} groups into ${refined.length} groups`);
-        return this.extractMergedRegions(refined, lines, "vertical", medianH);
+        return this.extractMergedRegions(refined, lines, "vertical");
     }
 
     // Post-merge split pass: break apart over-merged groups by checking
@@ -354,8 +354,7 @@ export class TextRecognizer {
     private extractMergedRegions(
         groups: number[][],
         regions: TextRegion[],
-        direction: "horizontal" | "vertical",
-        medianH: number
+        direction: "horizontal" | "vertical"
     ): TextRegion[] {
         const merged: TextRegion[] = [];
 
@@ -393,7 +392,7 @@ export class TextRecognizer {
             for (let i = 1; i < sorted.length; i++) {
                 const region = sorted[i];
                 const separator = direction === "horizontal"
-                    ? this.getHorizontalSpacing(sorted[i - 1], region, medianH)
+                    ? this.getHorizontalSpacing(sorted[i - 1], region)
                     : "\n";
 
                 combinedText += separator + region.text;
@@ -446,7 +445,7 @@ export class TextRecognizer {
     }
 
     // Spacing for horizontal (same-line) merging
-    private getHorizontalSpacing(a: TextRegion, b: TextRegion, medianH: number): string {
+    private getHorizontalSpacing(a: TextRegion, b: TextRegion): string {
         // No space before closing punctuation
         if (/^[.,!?:;)\]"'\u3002\u3001\uFF09\u300D\u300F\u3011\u3009\u300B)]/.test(b.text)) {
             return "";

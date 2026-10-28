@@ -5,6 +5,7 @@ import {
     PanelSectionRow,
     Dropdown,
     DropdownItem,
+    DropdownOption,
     SliderField,
     ToggleField,
     ButtonItem,
@@ -353,7 +354,7 @@ const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () => void }
     );
 };
 
-const knownGeminiModels: DropdownItem[] = [
+const knownGeminiModels: DropdownOption[] = [
     { label: <span>2.5 Flash</span>, data: "gemini-2.5-flash" },
     { label: <span>2.5 Flash Lite</span>, data: "gemini-2.5-flash-lite" },
     { label: <span>3 Flash (Preview)</span>, data: "gemini-3-flash-preview" },
@@ -367,7 +368,7 @@ const GeminiModelSelector: VFC<{
     hasApiKey: boolean;
     onChange: (model: string) => void;
 }> = ({ selectedModel, hasApiKey, onChange }) => {
-    const [models, setModels] = useState<DropdownItem[]>(knownGeminiModels);
+    const [models, setModels] = useState<DropdownOption[]>(knownGeminiModels);
     const [loading, setLoading] = useState(false);
     const [validated, setValidated] = useState(false);
 
