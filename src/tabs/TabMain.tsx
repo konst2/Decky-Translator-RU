@@ -330,7 +330,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                     {settings.ocrProvider === 'gemini_vision' && (
                                         <>
                                             <div style={{ color: '#666', fontSize: '10px' }}>
-                                                Model: {settings.geminiModel.replace(/^gemini-/, '').split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                                                Модель: {settings.geminiModel.replace(/^gemini-/, '').split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
                                             </div>
                                             <ReachabilityRow result={webReachability?.ocr} expectedProvider="gemini_vision" />
                                         </>

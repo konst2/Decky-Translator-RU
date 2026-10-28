@@ -86,9 +86,9 @@ const rapidocrLanguages = new Set([
 ]);
 
 function formatBytes(bytes: number): string {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
-    return Math.round(bytes / (1024 * 1024)) + ' MB';
+    if (bytes < 1024) return bytes + ' Б';
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' КБ';
+    return Math.round(bytes / (1024 * 1024)) + ' МБ';
 }
 
 // API Key Modal Component
@@ -456,9 +456,10 @@ type ModelDownloadState = {
 
 function formatApproxSize(mb: number): string {
     if (mb >= 1000) {
-        return `${(mb / 1024).toFixed(1)} GB`;
+        // Russian uses a decimal comma: "1,4 ГБ", not "1.4 ГБ".
+        return `${(mb / 1024).toFixed(1).replace('.', ',')} ГБ`;
     }
-    return `${Math.round(mb)} MB`;
+    return `${Math.round(mb)} МБ`;
 }
 
 function useModelDownload(opts: {
@@ -718,14 +719,14 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
     useEffect(() => {
         if (settings.initialized && settings.ocrProvider === 'rapidocr'
             && settings.inputLanguage !== '' && !rapidocrLanguages.has(settings.inputLanguage)) {
-            updateSetting('inputLanguage', '', 'Input language');
+            updateSetting('inputLanguage', '', 'Исходный язык');
         }
     }, [settings.initialized, settings.ocrProvider]);
 
     // When switching to CT2, if source is auto-detect, clear it so user picks a specific language
     useEffect(() => {
         if (settings.initialized && isCT2 && settings.inputLanguage === 'auto') {
-            updateSetting('inputLanguage', '', 'Input language');
+            updateSetting('inputLanguage', '', 'Исходный язык');
         }
     }, [settings.initialized, settings.translationProvider]);
 
@@ -743,7 +744,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 : "Язык исходного текста (выберите автоопределение, если не уверены)"}
                         rgOptions={inputLanguageOptions}
                         selectedOption={settings.inputLanguage}
-                        onChange={(option: any) => updateSetting('inputLanguage', option.data, 'Input language')}
+                        onChange={(option: any) => updateSetting('inputLanguage', option.data, 'Исходный язык')}
                     />
                 </PanelSectionRow>
 
@@ -754,7 +755,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         description="Язык, на который переводить текст"
                         rgOptions={[...(settings.targetLanguage === '' ? [selectLanguageOption] : []), ...outputLanguageOptions]}
                         selectedOption={settings.targetLanguage}
-                        onChange={(option: any) => updateSetting('targetLanguage', option.data, 'Output language')}
+                        onChange={(option: any) => updateSetting('targetLanguage', option.data, 'Язык перевода')}
                     />
                 </PanelSectionRow>
             </PanelSection>
@@ -781,9 +782,9 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 ]}
                                 selectedOption={settings.ocrProvider}
                                 onChange={(option) => {
-                                    updateSetting('ocrProvider', option.data, 'OCR provider');
+                                    updateSetting('ocrProvider', option.data, 'Метод распознавания');
                                     if (option.data === 'rapidocr' && settings.inputLanguage !== '' && !rapidocrLanguages.has(settings.inputLanguage)) {
-                                        updateSetting('inputLanguage', '', 'Input language');
+                                        updateSetting('inputLanguage', '', 'Исходный язык');
                                     }
                                 }}
                             />
@@ -794,7 +795,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         showModal(
                                             <ApiKeyModal
                                                 currentKey={settings.googleApiKey}
-                                                onSave={(key) => updateSetting('googleApiKey', key, 'Google API Key')}
+                                                onSave={(key) => updateSetting('googleApiKey', key, 'API-ключ Google Cloud')}
                                                 title="API-ключ Google Cloud"
                                                 description="Введите ваш API-ключ Google Cloud для сервисов Vision и Translation."
                                             />
@@ -822,7 +823,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         showModal(
                                             <ApiKeyModal
                                                 currentKey={settings.geminiApiKey}
-                                                onSave={(key) => updateSetting('geminiApiKey', key, 'Gemini API Key')}
+                                                onSave={(key) => updateSetting('geminiApiKey', key, 'API-ключ Gemini')}
                                                 title="API-ключ Gemini"
                                                 description="Введите бесплатный API-ключ Gemini с aistudio.google.com."
                                             />
@@ -857,7 +858,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                     <GeminiModelSelector
                         selectedModel={settings.geminiModel}
                         hasApiKey={!!settings.geminiApiKey}
-                        onChange={(model) => updateSetting('geminiModel', model, 'Gemini model')}
+                        onChange={(model) => updateSetting('geminiModel', model, 'Модель Gemini')}
                     />
                 )}
                 <PanelSectionRow>
@@ -872,16 +873,16 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     <div style={{ display: "inline-flex", flexDirection: "column" }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                                             <img src={steamdeckLogo} alt="" style={{ height: "18px" }} />
-                                            <span style={{ fontWeight: "bold", color: "#dcdedf" }}>On-Device (RapidOCR)</span>
+                                            <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Локально (RapidOCR)</span>
                                         </div>
                                         <ModelHeadingProgressBar state={rapidocr} />
                                     </div>
                                     <ModelStatusIndicator state={rapidocr} />
                                     <ModelDownloadError state={rapidocr} />
                                     <ProviderRating quality={1} speed={1} />
-                                    <div>- Offline and privacy-friendly text recognition</div>
-                                    <div>- Requires 75MB one-time model download</div>
-                                    <div>- Customizable parameters</div>
+                                    <div>- Распознавание без интернета, данные не покидают устройство</div>
+                                    <div>- Требуется разовая загрузка модели (75 МБ)</div>
+                                    <div>- Настраиваемые параметры</div>
                                 </>
                             )}
                             {settings.ocrProvider === 'chromescreenai' && (
@@ -889,21 +890,21 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     <div style={{ display: "inline-flex", flexDirection: "column" }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                                             <img src={chromeLogo} alt="" style={{ height: "18px" }} />
-                                            <span style={{ fontWeight: "bold", color: "#dcdedf" }}>On-Device (Chrome Screen AI)</span>
+                                            <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Локально (Chrome Screen AI)</span>
                                         </div>
                                         <ModelHeadingProgressBar state={csai} />
                                     </div>
                                     <ModelStatusIndicator state={csai} />
                                     <ModelDownloadError state={csai} />
                                     <ProviderRating quality={3} speed={2} />
-                                    <div>- Offline and privacy-friendly text recognition</div>
-                                    <div>- Requires 120MB one-time engine download</div>
-                                    <div>- Auto-detects 70+ languages</div>
+                                    <div>- Распознавание без интернета, данные не покидают устройство</div>
+                                    <div>- Требуется разовая загрузка движка (120 МБ)</div>
+                                    <div>- Сам определяет язык, более 70 языков</div>
                                     <div style={{ marginTop: "6px", fontStyle: "italic", color: "#5f6268", fontSize: "10px" }}>
-                                        Downloaded on demand from Google's public server
+                                        Скачивается по запросу с публичного сервера Google
                                     </div>
                                     <div style={{ fontStyle: "italic", color: "#5f6268", fontSize: "10px" }}>
-                                        This plugin is not affiliated with or endorsed by Google
+                                        Плагин не связан с Google и не одобрен им
                                     </div>
                                 </>
                             )}
@@ -959,7 +960,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             description="Держать движок распознавания загруженным в память между переводами"
                             checked={settings.rapidocrPersistentMode}
                             onChange={(value) => {
-                                updateSetting('rapidocrPersistentMode', value, 'Faster recognition');
+                                updateSetting('rapidocrPersistentMode', value, 'RapidOCR: быстрое распознавание');
                             }}
                         />
                     </PanelSectionRow>
@@ -972,7 +973,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             description="Держать движок распознавания загруженным в память между переводами"
                             checked={settings.chromeScreenAiPersistentMode}
                             onChange={(value) => {
-                                updateSetting('chromeScreenAiPersistentMode', value, 'Faster recognition');
+                                updateSetting('chromeScreenAiPersistentMode', value, 'Chrome Screen AI: быстрое распознавание');
                             }}
                         />
                     </PanelSectionRow>
@@ -985,12 +986,12 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             description="Тонкая настройка параметров распознавания текста. Может улучшить или ухудшить результат"
                             checked={settings.customRecognitionSettings}
                             onChange={(value) => {
-                                updateSetting('customRecognitionSettings', value, 'Custom recognition settings');
+                                updateSetting('customRecognitionSettings', value, 'Настройка распознавания');
                                 if (!value) {
-                                    updateSetting('rapidocrConfidence', 0.5, 'RapidOCR confidence');
-                                    updateSetting('rapidocrBoxThresh', 0.5, 'RapidOCR box threshold');
-                                    updateSetting('rapidocrUnclipRatio', 1.6, 'RapidOCR unclip ratio');
-                                    updateSetting('confidenceThreshold', 0.6, 'Text recognition confidence');
+                                    updateSetting('rapidocrConfidence', 0.5, 'RapidOCR: уверенность распознавания');
+                                    updateSetting('rapidocrBoxThresh', 0.5, 'RapidOCR: чувствительность обнаружения');
+                                    updateSetting('rapidocrUnclipRatio', 1.6, 'RapidOCR: расширение рамок');
+                                    updateSetting('confidenceThreshold', 0.6, 'Google Cloud: уверенность распознавания');
                                 }
                             }}
                         />
@@ -1009,7 +1010,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 description="Выше = меньше шума, но можно пропустить текст. Ниже = больше текста, но больше ошибок"
                                 showValue={true}
                                 onChange={(value) => {
-                                    updateSetting('rapidocrConfidence', value, 'RapidOCR confidence');
+                                    updateSetting('rapidocrConfidence', value, 'RapidOCR: уверенность распознавания');
                                 }}
                             />
                         </PanelSectionRow>
@@ -1023,7 +1024,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 description="Ниже = больше областей с текстом, лучше для мелкого текста. Выше = меньше областей, но увереннее"
                                 showValue={true}
                                 onChange={(value) => {
-                                    updateSetting('rapidocrBoxThresh', value, 'RapidOCR box threshold');
+                                    updateSetting('rapidocrBoxThresh', value, 'RapidOCR: чувствительность обнаружения');
                                 }}
                             />
                         </PanelSectionRow>
@@ -1037,7 +1038,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 description="Выше = крупнее рамки текста, помогает захватить целые слова. Ниже = рамки плотнее к тексту"
                                 showValue={true}
                                 onChange={(value) => {
-                                    updateSetting('rapidocrUnclipRatio', value, 'RapidOCR unclip ratio');
+                                    updateSetting('rapidocrUnclipRatio', value, 'RapidOCR: расширение рамок');
                                 }}
                             />
                         </PanelSectionRow>
@@ -1056,7 +1057,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             showValue={true}
                             valueSuffix=""
                             onChange={(value) => {
-                                updateSetting('confidenceThreshold', value, 'Text recognition confidence');
+                                updateSetting('confidenceThreshold', value, 'Google Cloud: уверенность распознавания');
                             }}
                         />
                     </PanelSectionRow>
@@ -1101,7 +1102,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         { label: <span>Google Cloud</span>, data: "googlecloud" }
                                     ]}
                                     selectedOption={settings.translationProvider}
-                                    onChange={(option) => updateSetting('translationProvider', option.data, 'Translation provider')}
+                                    onChange={(option) => updateSetting('translationProvider', option.data, 'Метод перевода')}
                                 />
                             </div>
                             {settings.translationProvider === 'googlecloud' && (
@@ -1110,7 +1111,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         showModal(
                                             <ApiKeyModal
                                                 currentKey={settings.googleApiKey}
-                                                onSave={(key) => updateSetting('googleApiKey', key, 'Google API Key')}
+                                                onSave={(key) => updateSetting('googleApiKey', key, 'API-ключ Google Cloud')}
                                                 title="API-ключ Google Cloud"
                                                 description="Введите ваш API-ключ Google Cloud для сервисов перевода."
                                             />
@@ -1139,8 +1140,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                             <ApiKeyModal
                                                 currentKey={settings.yandexApiKey}
                                                 currentFolderId={settings.yandexFolderId}
-                                                onSave={(key) => updateSetting('yandexApiKey', key, 'Yandex API Key')}
-                                                onSaveFolderId={(folderId) => updateSetting('yandexFolderId', folderId, 'Yandex folder ID')}
+                                                onSave={(key) => updateSetting('yandexApiKey', key, 'API-ключ Яндекса')}
+                                                onSaveFolderId={(folderId) => updateSetting('yandexFolderId', folderId, 'folder_id Яндекса')}
                                                 title="Ключи Яндекс Облака"
                                                 description="Введите API-ключ сервисного аккаунта и folder_id каталога (роль ai.translate.user)."
                                             />
@@ -1168,7 +1169,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         showModal(
                                             <ApiKeyModal
                                                 currentKey={settings.myMemoryEmail}
-                                                onSave={(email) => updateSetting('myMemoryEmail', email, 'MyMemory email')}
+                                                onSave={(email) => updateSetting('myMemoryEmail', email, 'Email для MyMemory')}
                                                 title="Email для MyMemory"
                                                 description="Необязательно. С email дневной лимит MyMemory вырастает с 5 000 до 50 000 символов. Адрес передаётся только сервису MyMemory."
                                                 fieldLabel="Email"
@@ -1324,7 +1325,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             description="Держать модель перевода загруженной в память между переводами"
                             checked={settings.ct2PersistentMode}
                             onChange={(value) => {
-                                updateSetting('ct2PersistentMode', value, 'Faster translation');
+                                updateSetting('ct2PersistentMode', value, 'Быстрый перевод');
                             }}
                         />
                     </PanelSectionRow>
@@ -1342,7 +1343,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         </>}
                         checked={settings.translationCacheEnabled}
                         onChange={(value) => {
-                            updateSetting('translationCacheEnabled', value, 'Translation cache');
+                            updateSetting('translationCacheEnabled', value, 'Кэшировать переводы');
                             if (value) refreshCacheStats();
                         }}
                     />

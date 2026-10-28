@@ -169,7 +169,7 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
         return (
             <PanelSection>
                 <PanelSectionRow>
-                    <div>Loading...</div>
+                    <div>Загрузка…</div>
                 </PanelSectionRow>
             </PanelSection>
         );

@@ -68,7 +68,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
     const { fontOptions, fontDescription, preloadWebFonts, unavailableDyslexiaFonts } = useFontOptions(
         settings.translatedTextFontFamily,
         settings.targetLanguage,
-        () => updateSetting('translatedTextFontFamily', '', 'Text font'),
+        () => updateSetting('translatedTextFontFamily', '', 'Шрифт переведённого текста'),
     );
     const [fontDropdownKey, setFontDropdownKey] = useState(0);
 
@@ -82,7 +82,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         description="Выберите, какие кнопки удерживать для запуска перевода"
                         rgOptions={inputModeOptions}
                         selectedOption={settings.inputMode}
-                        onChange={(option) => updateSetting('inputMode', option.data, 'Input method')}
+                        onChange={(option) => updateSetting('inputMode', option.data, 'Горячая клавиша перевода')}
                     />
                 </PanelSectionRow>
 
@@ -98,7 +98,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         valueSuffix="с"
                         onChange={(value) => {
                             const milliseconds = Math.round(value * 1000);
-                            updateSetting('holdTimeTranslate', milliseconds, 'Hold time');
+                            updateSetting('holdTimeTranslate', milliseconds, 'Время удержания для перевода');
                         }}
                     />
                 </PanelSectionRow>
@@ -115,7 +115,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         valueSuffix="с"
                         onChange={(value) => {
                             const milliseconds = Math.round(value * 1000);
-                            updateSetting('holdTimeDismiss', milliseconds, 'Hold time for dismissal');
+                            updateSetting('holdTimeDismiss', milliseconds, 'Время удержания для закрытия');
                         }}
                     />
                 </PanelSectionRow>
@@ -131,7 +131,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                             label="Быстрое переключение правой кнопкой"
                             description="Если выбрана комбинация из двух кнопок, нажмите правую кнопку, чтобы показать или скрыть оверлей"
                             onChange={(value) => {
-                                updateSetting('quickToggleEnabled', value, 'Quick toggle');
+                                updateSetting('quickToggleEnabled', value, 'Быстрое переключение правой кнопкой');
                             }}
                         />
                     </PanelSectionRow>
@@ -151,7 +151,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         valueSuffix="x"
                         onChange={(value) => {
                             const rounded = Math.round(value * 10) / 10;
-                            updateSetting('fontScale', rounded, 'Font scale');
+                            updateSetting('fontScale', rounded, 'Масштаб шрифта');
                         }}
                     />
                 </PanelSectionRow>
@@ -172,7 +172,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                             "Максимальная — объединяет очень отдалённые блоки"
                         }
                         onChange={(value) => {
-                            updateSetting('groupingPower', value, 'Text grouping');
+                            updateSetting('groupingPower', value, 'Группировка текстовых блоков');
                         }}
                     />
                 </PanelSectionRow>
@@ -184,7 +184,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         description="Выберите выравнивание для подписей переведённого текста"
                         rgOptions={translatedTextAlignmentOptions}
                         selectedOption={settings.translatedTextAlignment}
-                        onChange={(option) => updateSetting('translatedTextAlignment', option.data, 'Text alignment')}
+                        onChange={(option) => updateSetting('translatedTextAlignment', option.data, 'Выравнивание переведённого текста')}
                     />
                 </PanelSectionRow>
 
@@ -208,14 +208,14 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                             }
                             if (fontName && isRemoteFont(fontName)) {
                                 const previousFont = settings.translatedTextFontFamily;
-                                updateSetting('translatedTextFontFamily', fontName, 'Text font');
+                                updateSetting('translatedTextFontFamily', fontName, 'Шрифт переведённого текста');
                                 loadRemoteFont(fontName).then((ok) => {
                                     if (!ok) {
-                                        updateSetting('translatedTextFontFamily', previousFont, 'Text font');
+                                        updateSetting('translatedTextFontFamily', previousFont, 'Шрифт переведённого текста');
                                     }
                                 });
                             } else {
-                                updateSetting('translatedTextFontFamily', fontName, 'Text font');
+                                updateSetting('translatedTextFontFamily', fontName, 'Шрифт переведённого текста');
                             }
                         }}
                     />
@@ -234,7 +234,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         ]}
                         selectedOption={settings.translatedTextFontStyle}
                         renderButtonValue={() => fontStyleLabels[settings.translatedTextFontStyle] || 'Обычный'}
-                        onChange={(option) => updateSetting('translatedTextFontStyle', option.data, 'Text style')}
+                        onChange={(option) => updateSetting('translatedTextFontStyle', option.data, 'Стиль переведённого текста')}
                     />
                 </PanelSectionRow>
 
@@ -244,7 +244,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         label="Скрывать одинаковые переводы"
                         description="Не показывать, если перевод совпадает с исходным словом или предложением"
                         onChange={(value) => {
-                            updateSetting('hideIdenticalTranslations', value, 'Hide identical translations');
+                            updateSetting('hideIdenticalTranslations', value, 'Скрывать одинаковые переводы');
                         }}
                     />
                 </PanelSectionRow>
@@ -255,7 +255,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         label="Разрешить расширение подписей"
                         description="Позволить подписям перевода расширяться, если текст не помещается в исходный блок"
                         onChange={(value) => {
-                            updateSetting('allowLabelGrowth', value, 'Allow label growth');
+                            updateSetting('allowLabelGrowth', value, 'Разрешить расширение подписей');
                         }}
                     />
                 </PanelSectionRow>
@@ -268,7 +268,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         label="Ставить игру на паузу при переводе"
                         description={<>Ставит активную игру на паузу, чтобы можно было спокойно прочитать текст. Игра возобновится после закрытия оверлея.<br /><br />Плохо работает при стриминге игр (Moonlight, GeForce NOW, Remote Play и т.п.)</>}
                         onChange={(value) => {
-                            updateSetting('pauseGameOnOverlay', value, 'Pause game while translating');
+                            updateSetting('pauseGameOnOverlay', value, 'Ставить игру на паузу при переводе');
                         }}
                     />
                 </PanelSectionRow>
@@ -280,7 +280,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         label="Режим отладки"
                         description="Включить подробное логирование в консоли и панель диагностики"
                         checked={settings.debugMode}
-                        onChange={(value) => updateSetting('debugMode', value, 'Debug mode')}
+                        onChange={(value) => updateSetting('debugMode', value, 'Режим отладки')}
                     />
                 </PanelSectionRow>
 
