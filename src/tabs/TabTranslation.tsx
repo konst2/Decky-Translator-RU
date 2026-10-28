@@ -32,6 +32,10 @@ import googletranslateLogo from "../../assets/googletranslate-logo.png";
 // @ts-ignore
 import geminiLogo from "../../assets/gemini-logo.png";
 // @ts-ignore
+import yandexTranslateLogo from "../../assets/yandex-translate-logo.png";
+// @ts-ignore
+import mymemoryLogo from "../../assets/mymemory-logo.png";
+// @ts-ignore
 import steamdeckLogo from "../../assets/steamdeck-logo.png";
 // @ts-ignore
 import chromeLogo from "../../assets/chrome-logo.png";
@@ -1082,11 +1086,14 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             <div style={{ flex: 1 }}>
                                 <Dropdown
                                     rgOptions={[
+                                        // What works from Russia goes first: users tend to pick
+                                        // from the top of the list. Only the order changed; the
+                                        // saved setting is the "data" value, not the position.
+                                        { label: <span>Яндекс</span>, data: "yandex" },
+                                        { label: <span>MyMemory</span>, data: "mymemory" },
                                         { label: <span>Локально</span>, data: "ct2" },
                                         { label: <span>Google Translate</span>, data: "freegoogle" },
-                                        { label: <span>MyMemory</span>, data: "mymemory" },
-                                        { label: <span>Google Cloud</span>, data: "googlecloud" },
-                                        { label: <span>Яндекс</span>, data: "yandex" }
+                                        { label: <span>Google Cloud</span>, data: "googlecloud" }
                                     ]}
                                     selectedOption={settings.translationProvider}
                                     onChange={(option) => updateSetting('translationProvider', option.data, 'Translation provider')}
@@ -1224,6 +1231,10 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'mymemory' && (
                                 <>
                                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                                        {/* The official mark is black on transparent and would vanish on
+                                            the dark panel; a white round backing keeps it visible without
+                                            altering the logo itself. */}
+                                        <img src={mymemoryLogo} alt="" style={{ height: "18px", backgroundColor: "#ffffff", borderRadius: "50%" }} />
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>MyMemory</span>
                                     </div>
                                     <ProviderRating quality={1} speed={2} />
@@ -1259,6 +1270,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'yandex' && (
                                 <>
                                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                                        <img src={yandexTranslateLogo} alt="" style={{ height: "18px" }} />
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Яндекс Перевод</span>
                                     </div>
                                     <ProviderRating quality={3} speed={3} />
