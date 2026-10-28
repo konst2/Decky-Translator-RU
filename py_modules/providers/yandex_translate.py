@@ -16,6 +16,12 @@ logger = logging.getLogger(__name__)
 _MAX_CHARS_PER_REQUEST = 10000
 _MAX_TEXTS_PER_REQUEST = 100
 
+# Yandex's error text is shown in the overlay as is; a long one would
+# overflow it, so it is cut to this length.
+_MAX_ERROR_MESSAGE_LENGTH = 200
+
+_INVALID_RESPONSE_MESSAGE = "Яндекс Перевод вернул некорректный ответ"
+
 # The plugin uses Google-style codes; Yandex has a single code for Chinese.
 _LANGUAGE_ALIASES = {
     "zh-CN": "zh",
@@ -29,6 +35,45 @@ def _normalize_language(code: str) -> str:
     if not code:
         return code
     return _LANGUAGE_ALIASES.get(code, code)
+
+
+def _error_message(response) -> str:
+    """Return the "message" field of a Yandex error response, or "" if there is none."""
+    # Error bodies look like {"code": 3, "message": "...", "details": [...]},
+    # but a proxy or balancer in between may answer with HTML or plain text.
+    try:
+        payload = response.json()
+    except ValueError:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    message = payload.get("message")
+    if not isinstance(message, str):
+        return ""
+    message = message.strip()
+    if len(message) > _MAX_ERROR_MESSAGE_LENGTH:
+        message = message[:_MAX_ERROR_MESSAGE_LENGTH].rstrip() + "…"
+    return message
+
+
+def _error_summary(response) -> str:
+    """Return Yandex error code and requestId of an error response, without its text."""
+    # requestId sits in "details": [{"@type": "...RequestInfo", "requestId": "..."}].
+    try:
+        payload = response.json()
+    except ValueError:
+        return "body is not JSON"
+    if not isinstance(payload, dict):
+        return "body is not a JSON object"
+
+    request_id = None
+    details = payload.get("details")
+    if isinstance(details, list):
+        for item in details:
+            if isinstance(item, dict) and "requestId" in item:
+                request_id = item["requestId"]
+                break
+    return f"yandex code={payload.get('code')}, requestId={request_id}"
 
 
 def _split_oversized(text: str) -> List[str]:
@@ -157,9 +202,9 @@ class YandexTranslateProvider(TranslationProvider):
         for batch in _make_batches(flat):
             batch_texts = [flat[i] for i in batch]
             logger.debug(f"Translating {len(batch_texts)} texts: {source} -> {target}")
+            # Any failure raises: returning the original text here would look
+            # like a successful translation to the user (bug B3).
             results = await self._translate_request(batch_texts, source, target)
-            if results is None:
-                continue
             for index, result in zip(batch, results):
                 translated[index] = result
 
@@ -174,8 +219,14 @@ class YandexTranslateProvider(TranslationProvider):
 
     async def _translate_request(
         self, texts: List[str], source_lang: str, target_lang: str
-    ) -> Optional[List[str]]:
-        """Send one request. Returns None when the request failed but is recoverable."""
+    ) -> List[str]:
+        """
+        Send one request and return translations in the same order as texts.
+
+        Every failure raises NetworkError / ApiKeyError / RateLimitError:
+        only these three reach the user (main.py translate_text), any other
+        exception ends up as a silently untranslated overlay.
+        """
         request_data = {
             "folderId": self._folder_id,
             "texts": texts,
@@ -207,36 +258,58 @@ class YandexTranslateProvider(TranslationProvider):
             raise NetworkError("Превышено время ожидания ответа Yandex Translate") from e
         except Exception as e:
             logger.error(f"Yandex Translate request error: {e}")
-            return None
+            raise NetworkError(
+                f"Ошибка запроса к Яндекс Переводу: {type(e).__name__}"
+            ) from e
 
         if response.status_code != 200:
             self._handle_error(response)
-            return None
 
         try:
             payload = response.json()
-        except ValueError:
+        except ValueError as e:
             logger.error("Yandex Translate returned invalid JSON")
-            return None
+            raise NetworkError(_INVALID_RESPONSE_MESSAGE) from e
 
-        translations = payload.get("translations") or []
-        if len(translations) != len(texts):
-            logger.error(
-                f"Yandex Translate returned {len(translations)} translations "
-                f"for {len(texts)} texts"
-            )
-            return None
+        return self._parse_translations(payload, len(texts))
 
-        logger.debug(f"Successfully translated {len(translations)} texts")
-        return [str(item.get("text", "")) for item in translations]
+    def _parse_translations(self, payload, expected_count: int) -> List[str]:
+        """Extract translated texts, rejecting any response of unexpected shape."""
+        # The shape is checked explicitly: an unexpected type here would raise
+        # AttributeError/TypeError, which main.py does not show to the user.
+        if not isinstance(payload, dict):
+            logger.error(f"Yandex Translate returned {type(payload).__name__} instead of an object")
+            raise NetworkError(_INVALID_RESPONSE_MESSAGE)
+
+        translations = payload.get("translations")
+        if not isinstance(translations, list) or len(translations) != expected_count:
+            count = len(translations) if isinstance(translations, list) else "no"
+            logger.error(f"Yandex Translate returned {count} translations for {expected_count} texts")
+            raise NetworkError(_INVALID_RESPONSE_MESSAGE)
+
+        results: List[str] = []
+        for item in translations:
+            if not isinstance(item, dict):
+                logger.error("Yandex Translate returned a translation that is not an object")
+                raise NetworkError(_INVALID_RESPONSE_MESSAGE)
+            results.append(str(item.get("text", "")))
+
+        logger.debug(f"Successfully translated {len(results)} texts")
+        return results
 
     def _handle_error(self, response) -> None:
-        """Log a non-200 response and raise for errors the user can act on."""
+        """Log a non-200 response and raise an error with a message for the user."""
         body = (response.text or "")[:500]
-        logger.error(f"Yandex Translate API error: {response.status_code}")
-        logger.error(f"Response: {body}")
-
         lowered = body.lower()
+        logger.error(f"Yandex Translate API error: {response.status_code}")
+        # Errors about the folder quote the real folder ID of the service
+        # account, so their body is not logged. Yandex code and requestId are
+        # enough for Yandex support to find the request.
+        if "folder" in lowered:
+            logger.error(f"Response hidden (mentions folder ID), {_error_summary(response)}")
+        else:
+            logger.error(f"Response: {body}")
+
         if response.status_code == 401:
             raise ApiKeyError("Неверный API-ключ Яндекс Облака")
         if response.status_code == 403:
@@ -251,6 +324,18 @@ class YandexTranslateProvider(TranslationProvider):
             raise ApiKeyError("Неверный folder_id")
         if response.status_code == 429:
             raise RateLimitError("Превышен лимит запросов Yandex Translate. Попробуйте позже")
+        if response.status_code >= 500:
+            raise NetworkError(
+                f"Сервис Яндекс Перевода временно недоступен (код {response.status_code})"
+            )
+        if response.status_code == 400:
+            # Usually an unsupported language pair or a malformed request.
+            # Yandex's own text is more precise than any paraphrase of ours.
+            reason = _error_message(response)
+            if reason:
+                raise NetworkError(f"Яндекс Перевод отклонил запрос: {reason}")
+            raise NetworkError("Яндекс Перевод отклонил запрос (код 400)")
+        raise NetworkError(f"Ошибка Яндекс Перевода (код {response.status_code})")
 
     async def test_network(self) -> tuple:
         if not self._api_key:
@@ -282,6 +367,9 @@ class YandexTranslateProvider(TranslationProvider):
                 return False, "Неверный API-ключ"
             if resp.status_code == 403:
                 return False, "Нет доступа к folder_id"
+            # A wrong folder_id comes back as 400, not 403 (checked live 28.10.2026).
+            if resp.status_code == 400 and "folder" in (resp.text or "").lower():
+                return False, "Неверный folder_id"
             return False, f"Ошибка API ({resp.status_code})"
 
         return await asyncio.to_thread(_probe)
