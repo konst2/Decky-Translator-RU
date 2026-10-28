@@ -23,13 +23,13 @@ jobs:
       sha256: ${{ steps.dependencies_hash.outputs.sha256 }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
 
@@ -49,7 +49,7 @@ jobs:
           chmod +x cli/decky
 
       - name: Setup Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
@@ -183,13 +183,13 @@ jobs:
           unzip -l "DeckyTranslatorRu.zip" | head -5
 
       - name: Upload plugin artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: decky-translator-ru-plugin
           path: out/*.zip
 
       - name: Upload dependencies artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: plugin-dependencies
           path: plugin-dependencies.tar.gz
@@ -202,14 +202,14 @@ jobs:
       contents: write
     steps:
       - name: Download plugin artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: decky-translator-ru-plugin
           path: ./
           merge-multiple: true
 
       - name: Download dependencies artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: plugin-dependencies
           path: ./
