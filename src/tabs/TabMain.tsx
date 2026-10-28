@@ -19,6 +19,7 @@ import showQrModal from "../showQrModal";
 import { useSettings } from "../SettingsContext";
 import { GameTranslatorLogic } from "../Translator";
 import { logger } from "../Logger";
+import { inputModeOptions } from "./TabControls";
 
 const StatusDot: VFC<{ ok: boolean }> = ({ ok }) => (
     <span style={{
@@ -122,6 +123,21 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
         }, 200);
     };
 
+    // Newcomers often don't know that translation works in game without
+    // opening this menu. Built from the settings, so it follows the user's
+    // choice of buttons and hold time.
+    const hotkeyHint = (): string => {
+        const option = inputModeOptions.find(o => o.data === settings.inputMode);
+        const buttons = option ? option.label : String(settings.inputMode);
+        const seconds = settings.holdTimeTranslate / 1000;
+        if (seconds <= 0) {
+            return `Перевод в игре без меню: ${buttons}, нажатие`;
+        }
+        // 1 -> "1", 1.5 -> "1,5" (decimal comma in Russian)
+        const secondsText = String(Number(seconds.toFixed(1))).replace('.', ',');
+        return `Перевод в игре без меню: ${buttons}, удерживать ${secondsText} с`;
+    };
+
     const renderButtonContent = () => {
         if (overlayVisible) {
             return <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}><BsXLg /> Закрыть оверлей</span>;
@@ -153,6 +169,12 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                 onClick={handleButtonClick}>
                                 {renderButtonContent()}
                             </ButtonItem>
+                        </PanelSectionRow>
+
+                        <PanelSectionRow>
+                            <div style={{ fontSize: '11px', color: '#8b929a', marginTop: '4px' }}>
+                                {hotkeyHint()}
+                            </div>
                         </PanelSectionRow>
 
                         {/* Provider Status */}

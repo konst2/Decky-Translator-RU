@@ -14,8 +14,9 @@ import { useSettings } from "../SettingsContext";
 import { InputMode } from "../Input";
 import { useFontOptions, isRemoteFont, loadRemoteFont } from "../fonts";
 
-// Input mode options for dropdown
-const inputModeOptions = [
+// Input mode options for dropdown. Also used by the hotkey hint on the main tab,
+// so the hint names the buttons exactly as this list does.
+export const inputModeOptions = [
     { label: "L3 (Нажатие левого стика)", data: InputMode.L3_BUTTON },
     { label: "L4", data: InputMode.L4_BUTTON },
     { label: "L5", data: InputMode.L5_BUTTON },
