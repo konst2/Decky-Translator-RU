@@ -12,7 +12,7 @@ import {
 } from "@decky/ui";
 
 import { VFC } from "react";
-import { BsTranslate, BsXLg, BsEye, BsStars } from "react-icons/bs";
+import { BsTranslate, BsXLg, BsEye, BsStars, BsGithub } from "react-icons/bs";
 import { SiKofi } from "react-icons/si";
 import { HiQrCode, HiInboxArrowDown } from "react-icons/hi2";
 import showQrModal from "../showQrModal";
@@ -125,6 +125,13 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
         setTimeout(() => {
             logic.takeScreenshotAndTranslate().catch(err => logger.error('TabMain', 'Screenshot failed', err));
         }, 200);
+    };
+
+    // Link to this fork, not to the original plugin: issues and update notes
+    // live in the fork's repository.
+    const openSourcePage = () => {
+        Navigation.CloseSideMenus();
+        Navigation.NavigateToExternalWeb('https://github.com/konst2/Decky-Translator-RU');
     };
 
     // Newcomers often don't know that translation works in game without
@@ -432,7 +439,26 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                 )}
 
                 <PanelSectionRow>
-                    <VersionBadge />
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                        <VersionBadge />
+                        <Focusable onActivate={openSourcePage}>
+                            <div
+                                onClick={openSourcePage}
+                                style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    padding: '2px 9px',
+                                    fontSize: '10px',
+                                    color: '#7c848d',
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                <BsGithub style={{ fontSize: '11px' }} />
+                                <span>Исходники и обновления</span>
+                            </div>
+                        </Focusable>
+                    </div>
                 </PanelSectionRow>
 
                 {/* Ko-fi Support Button */}
