@@ -21,6 +21,7 @@ import { GameTranslatorLogic } from "../Translator";
 import { logger } from "../Logger";
 import { inputModeOptions } from "./TabControls";
 import { BottomSpacer } from "./BottomSpacer";
+import { VersionBadge } from "./VersionBadge";
 import { DataFlowIcon, OCR_DATA_FLOW, TRANSLATION_DATA_FLOW } from "./DataFlowBadge";
 
 const StatusDot: VFC<{ ok: boolean }> = ({ ok }) => (
@@ -472,6 +473,10 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                             </DialogButton>
                         </Focusable>
                     </div>
+                </PanelSectionRow>
+
+                <PanelSectionRow>
+                    <VersionBadge />
                 </PanelSectionRow>
             </PanelSection>
             <BottomSpacer />

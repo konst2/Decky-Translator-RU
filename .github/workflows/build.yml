@@ -40,6 +40,10 @@ jobs:
         run: pnpm install
 
       - name: Build frontend
+        env:
+          # The version badge on the main tab is baked into the bundle; pass the
+          # release version explicitly, because package.json is updated later.
+          PLUGIN_VERSION: ${{ inputs.release_version }}
         run: pnpm run build
 
       - name: Download Decky CLI
