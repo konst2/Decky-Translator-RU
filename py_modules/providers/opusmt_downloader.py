@@ -44,8 +44,17 @@ MODEL_FILES = {
     ),
 }
 
-REQUIRED_MODEL_FILES = ["model.bin", "source.spm", "target.spm"]
-OPTIONAL_MODEL_FILES = ["shared_vocabulary.json", "config.json"]
+# All five are needed: ctranslate2.Translator cannot load the model without
+# shared_vocabulary.json and config.json, so a download missing them must fail
+# instead of reporting "installed" and then silently returning untranslated text.
+REQUIRED_MODEL_FILES = [
+    "model.bin",
+    "source.spm",
+    "target.spm",
+    "shared_vocabulary.json",
+    "config.json",
+]
+OPTIONAL_MODEL_FILES = []
 
 
 def _sha256(path: str) -> str:

@@ -10,7 +10,9 @@ logger = logging.getLogger(__name__)
 # A request reuses a cached entry only if its tier is >= the selected provider's tier, so quality only flows downward
 PROVIDER_TIERS = {
     "ct2": 1,
-    "opusmt": 1,  # light offline model, same quality tier as NLLB
+    # Light offline model, weaker than NLLB: it may reuse NLLB entries, NLLB never
+    # reuses its entries and overwrites them on the next translate
+    "opusmt": 0,
     "freegoogle": 2,
     "mymemory": 2,  # free service, quality comparable to free Google
     "googlecloud": 3,

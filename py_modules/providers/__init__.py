@@ -341,27 +341,39 @@ class ProviderManager:
                 f"CT2 persistent_mode preference: {self._ct2_persistent_mode} (not applied)"
             )
             return
-        for provider_type, preference in (
-            (ProviderType.CT2, "ct2"),
-            (ProviderType.OPUSMT, "opusmt"),
+        for provider_type, preference, stop_worker in (
+            (ProviderType.CT2, "ct2", self.stop_ct2_worker),
+            (ProviderType.OPUSMT, "opusmt", self.stop_opusmt_worker),
         ):
-            if self._ct2_persistent_mode and self._translation_provider_preference == preference:
+            is_selected = self._translation_provider_preference == preference
+            if not is_selected:
+                # Only the selected offline model may be warmed up: two models
+                # loaded at once do not fit comfortably in Steam Deck RAM.
+                stop_worker()
+            elif self._ct2_persistent_mode:
                 provider = self.get_translation_provider(provider_type)
+                if provider:
+                    provider.set_persistent_mode(True)
             else:
                 provider = self._translation_providers.get(provider_type)
-            if provider:
-                provider.set_persistent_mode(self._ct2_persistent_mode)
+                if provider:
+                    provider.set_persistent_mode(False)
         logger.debug(f"CT2 persistent_mode set to {self._ct2_persistent_mode}")
 
     def stop_ct2_worker(self) -> None:
         provider = self._translation_providers.get(ProviderType.CT2)
         if provider:
             provider.set_persistent_mode(False)
+            # set_persistent_mode(False) is a no-op when the flag is already off,
+            # but a worker started by a normal translate may still be alive
+            provider.shutdown()
 
     def stop_opusmt_worker(self) -> None:
         provider = self._translation_providers.get(ProviderType.OPUSMT)
         if provider:
             provider.set_persistent_mode(False)
+            # Same as stop_ct2_worker: shut down explicitly, see comment there
+            provider.shutdown()
 
     def stop_local_translation_workers(self) -> None:
         """Unload both offline models (e.g. the plugin was disabled)."""
