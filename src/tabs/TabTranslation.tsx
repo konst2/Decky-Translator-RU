@@ -21,6 +21,7 @@ import {
 import { VFC, useState, useEffect, useRef, useCallback, RefObject } from "react";
 import { call } from "@decky/api";
 import { useSettings } from "../SettingsContext";
+import { BottomSpacer } from "./BottomSpacer";
 import { HiKey, HiEnvelope, HiLockClosed, HiInboxArrowDown, HiTrash, HiXMark, HiXCircle, HiExclamationTriangle, HiInformationCircle } from "react-icons/hi2";
 import { BsArrowRepeat, BsStars } from "react-icons/bs";
 
@@ -753,7 +754,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
     }, [settings.initialized, settings.translationProvider]);
 
     return (
-        <div style={{ paddingBottom: "48px" }}>
+        <div>
             <PanelSection title="Языки">
                 <PanelSectionRow>
                     <DropdownItem
@@ -1387,15 +1388,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         <div style={{ width: "100%", textAlign: "center", fontSize: "12px", color: "#8b929a" }}>В кэше записей: {cacheEntries}</div>
                     </PanelSectionRow>
                 )}
-
-                {/* Invisible spacer to help with scroll when focusing last element */}
-                {/* <PanelSectionRow>
-                    <Focusable
-                        style={{ height: "1px", opacity: 0 }}
-                        onActivate={() => {}}
-                    />
-                </PanelSectionRow> */}
             </PanelSection>
+            <BottomSpacer />
         </div>
     );
 };

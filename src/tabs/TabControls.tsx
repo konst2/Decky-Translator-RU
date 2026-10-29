@@ -13,6 +13,7 @@ import { VFC, useState } from "react";
 import { useSettings } from "../SettingsContext";
 import { InputMode } from "../Input";
 import { useFontOptions, isRemoteFont, loadRemoteFont } from "../fonts";
+import { BottomSpacer } from "./BottomSpacer";
 
 // Input mode options for dropdown. Also used by the hotkey hint on the main tab,
 // so the hint names the buttons exactly as this list does.
@@ -74,7 +75,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
     const [fontDropdownKey, setFontDropdownKey] = useState(0);
 
     return (
-        <div style={{ paddingBottom: "48px" }}>
+        <div>
             <PanelSection title="Управление">
                 <PanelSectionRow>
                     <DropdownItem
@@ -359,6 +360,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                     </PanelSectionRow>
                 )}
             </PanelSection>
+            <BottomSpacer />
         </div>
     );
 };

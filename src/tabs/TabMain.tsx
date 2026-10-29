@@ -20,6 +20,7 @@ import { useSettings } from "../SettingsContext";
 import { GameTranslatorLogic } from "../Translator";
 import { logger } from "../Logger";
 import { inputModeOptions } from "./TabControls";
+import { BottomSpacer } from "./BottomSpacer";
 
 const StatusDot: VFC<{ ok: boolean }> = ({ ok }) => (
     <span style={{
@@ -149,7 +150,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
     };
 
     return (
-        <div style={{ paddingBottom: "48px" }}>
+        <div>
             <PanelSection>
                 <PanelSectionRow>
                     <ToggleField
@@ -411,10 +412,19 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                     <div
                         style={{
                             display: 'flex',
-                            justifyContent: 'center',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: '6px',
                             marginTop: '12px',
                         }}
                     >
+                        {/* The link goes to the author of the original plugin, not to
+                            this fork. The note says so above the button, so the button
+                            label stays short and fits on one line in the 300px panel
+                            (a long label wrapped to two lines and made it tall). */}
+                        <div style={{ fontSize: '11px', color: '#8b929a', textAlign: 'center' }}>
+                            Этот плагин — форк Decky Translator от cat-in-a-box
+                        </div>
                         <Focusable>
                             <DialogButton
                                 onClick={() => {
@@ -433,15 +443,15 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                 }}
                             >
                                 <SiKofi style={{ fontSize: '13px' }} />
-                                {/* The link goes to the author of the original plugin
-                                    (cat-in-a-box), not to this fork: the label says so. */}
-                                <span>Поддержать автора оригинального плагина</span>
+                                {/* GitHub name of the author; on Ko-fi the account is "alexanderdev" */}
+                                <span>Ko-fi cat-in-a-box</span>
                                 <HiQrCode style={{ fontSize: '13px', opacity: 0.6 }} />
                             </DialogButton>
                         </Focusable>
                     </div>
                 </PanelSectionRow>
             </PanelSection>
+            <BottomSpacer />
         </div>
     );
 };
