@@ -30,6 +30,10 @@ class OpusMtTranslateProvider(CT2TranslateProvider):
     # input ("Your health is low. Find a medic...") - exactly how visual
     # novel text boxes arrive, so split on every sentence boundary.
     SENTENCE_SPLIT_CHAR_LIMIT = 0
+    # Clauses translated one by one lose their commas and come out
+    # capitalised mid-sentence. Pinned off here so the NLLB switch
+    # (_NLLB_SPLIT_ON_CLAUSES) never affects this model.
+    SPLIT_ON_CLAUSES = False
 
     def __init__(self, model_manager: OpusMtDownloader, plugin_dir: str = ""):
         super().__init__(model_manager, plugin_dir)

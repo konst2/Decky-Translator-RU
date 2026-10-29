@@ -3,6 +3,7 @@
 
 import json
 import logging
+import math
 import os
 import re
 import subprocess
@@ -52,10 +53,53 @@ _SENTENCE_END_RE = re.compile(r"[.!?。！？]+[\s　]+")
 _CLAUSE_BREAK_RE = re.compile(r"[,;、，；][\s　]+")
 _CLAUSE_SPLIT_MIN_CHARS = 80
 
+# Whether NLLB splits long sentences on commas/semicolons (see above).
+# Off by default: each clause is translated as a standalone sentence, so the
+# output loses its commas and gets capitalised mid-sentence ("...башни Ветер
+# вопил..."). On Opus-MT this clearly hurt quality. NLLB was split for speed
+# (its decoder is O(n^2)); set to True to bring that back if long lines get
+# too slow on the Deck. Opus-MT never splits on clauses regardless.
+_NLLB_SPLIT_ON_CLAUSES = False
+
+# Safety net while clause splitting is off: the worker caps the output at 256
+# tokens, and a single sentence without periods hit it at ~1300 chars on
+# Opus-MT - the tail of the translation was silently lost. A sentence longer
+# than this is cut into roughly equal chunks at commas (between words as a
+# last resort), each chunk below this limit. Applies to both models.
+# Why 700 and not just below the cap: measured on Opus-MT, sentences of
+# 631-705 chars translated cleanly in one piece, but at 883-919 chars the
+# tail already degraded (wrong words, dropped phrases) before reaching the
+# cap, while the same sentences cut in two came out right.
+_CLAUSE_SPLIT_FORCE_CHARS = 700
+
+# Clause punctuation kept at the end of a forced chunk. It is taken off before
+# translation (an unterminated fragment invites the model to invent a
+# continuation) and put back on the translated chunk.
+_CLAUSE_END_PUNCT = ",;、，；"
+
+# Words ending in a period that don't end a sentence ("Mr. Smith"). Compared
+# lowercased against the last word of a candidate sentence. Words that
+# often do end a sentence ("etc.", "no.") are deliberately left out.
+_NON_TERMINAL_ABBREVIATIONS = {
+    "mr.", "mrs.", "ms.", "dr.", "st.", "jr.", "sr.", "prof.",
+    "capt.", "lt.", "sgt.", "gen.", "mt.", "vs.", "e.g.", "i.e.",
+}
+
 _SENTENCE_ENDERS = set(".!?。！？।…")
 _TRAILING_ENDERS = ".!?。！？।…"
 
 _BULLET_RE = re.compile(r"^(?:[-*•·▪●‣◦›»]|\d{1,3}[.)])(?:\s|$)")
+
+# English words a finished line practically never ends on: a line that ends
+# with one is cut by the text box width ("Listen carefully. The" + "King has
+# ordered..."). Particles that do close a phrase or a menu item ("Log in",
+# "Zoom out", "Turn off") are deliberately left out.
+_DANGLING_LINE_END_WORDS = {
+    "a", "an", "the",
+    "my", "your", "his", "her", "its", "our", "their",
+    "and", "or", "but", "nor",
+    "of", "to", "with", "from", "into", "onto", "at", "by", "for",
+}
 
 _FAMILY_LANGS = {}
 for _code, _nllb in NLLB_LANG_MAP.items():
@@ -149,6 +193,23 @@ def _append_terminal_punct(frag: str):
     return stripped + ".", True
 
 
+def _is_title_case_row(text: str) -> bool:
+    """True for Title Case menu items ("New Game", "Load Saved Game"): every
+    word starts with a capital and there are lowercase letters too.
+
+    Narrow on purpose, long prose matters more than short menu rows. ALL CAPS
+    text (common in game dialogue) and caseless scripts (Arabic, Devanagari)
+    have no lowercase letters and must stay joinable: a broader "has no
+    lowercase word" check split a wrapped ALL CAPS sentence into fragments.
+    """
+    if not any(c.islower() for c in text):
+        return False
+    for word in text.split():
+        if word[0].isalpha() and not word[0].isupper():
+            return False
+    return True
+
+
 def _soft_wrap_joiner(prev: str, line: str):
     """Joiner if `line` continues `prev`, else None."""
     if prev[-1] in _SENTENCE_ENDERS or prev.endswith(":"):
@@ -157,24 +218,34 @@ def _soft_wrap_joiner(prev: str, line: str):
         return None
     if prev.endswith("-"):
         return ""
+    # Checked before the capital-letter rules below: those refuse to join
+    # "Listen carefully. The" + "King ...", and "The" alone then translates
+    # into garbage ("::").
+    if prev.split()[-1].lower() in _DANGLING_LINE_END_WORDS:
+        return " "
     first = line[0]
     if first.isalpha() and first.islower():
         return " "
     if prev.endswith(","):
         return " "
+    # Two rules below join a line that starts with a capital letter. Neither
+    # may fire on Title Case menu rows: "New Game" + "Continue" + "Options" +
+    # "Quit" got glued into one phrase and translated as "Выход из игры".
+    prev_is_prose = not _is_title_case_row(prev)
     # Wrapped label/title ending on a single capitalized word. The previous
     # line must be more than one word: otherwise "Settings" + "Audio" menu
     # rows would be glued into one phrase.
     if (first.isalpha() and first.isupper()
             and prev[-1].isalpha() and prev[-1].islower()
             and len(prev.split()) >= 2
-            and len(line.split()) == 1):
+            and len(line.split()) == 1
+            and prev_is_prose):
         return " "
     # Prose cut by the text box width: the previous line has several words but
     # no terminal punctuation, and the next one starts a new phrase
     # ("You must find the" + "Ancient Gate before dawn"). Visual-novel text
     # boxes often break mid-sentence before a proper noun or a capitalised word.
-    if len(prev.split()) >= 4 and prev[-1].isalnum():
+    if len(prev.split()) >= 4 and prev[-1].isalnum() and prev_is_prose:
         return " "
     pf = dominant_family(prev)
     if pf in CJK_FAMILIES and dominant_family(line) in CJK_FAMILIES and len(prev) >= 20:
@@ -251,23 +322,125 @@ def _route_line(text: str, src_code: str, tgt_code: str):
 
 
 def _build_frags(body: str, was_caps: bool,
-                 split_limit: int = _SPLIT_SENTENCES_CHAR_LIMIT) -> List[dict]:
+                 split_limit: int = _SPLIT_SENTENCES_CHAR_LIMIT,
+                 split_on_clauses: bool = _NLLB_SPLIT_ON_CLAUSES) -> List[dict]:
     fragments = [body]
     if len(body) >= split_limit:
-        split = _split_sentences(body)
+        split = _split_sentences(body, split_on_clauses)
         if len(split) > 1:
             fragments = split
     frags = []
+    prev_clause_end = ""
     for f in fragments:
+        # A chunk that continues a sentence after a forced comma cut. The
+        # model starts every chunk with a capital ("...у окна, И если..."),
+        # so its first letter is lowered back, unless the source chunk itself
+        # starts with a capital (a name: ", Captain Reynolds said").
+        continues_clause = bool(prev_clause_end) and _first_letter_is_lower(f)
         if was_caps:
             f = _sentence_case(f)
+        # Only forced chunks of an overlong sentence end like this
+        # (see _split_long_sentence); the comma goes back after translation.
+        clause_end = ""
+        if len(fragments) > 1 and len(f) > 1 and f[-1] in _CLAUSE_END_PUNCT:
+            clause_end = f[-1]
+            f = f[:-1].rstrip()
+        prev_clause_end = clause_end
         f, punct_added = _append_terminal_punct(f)
         frags.append({"text": f, "caps": was_caps,
-                      "punct": punct_added, "idx": None})
+                      "punct": punct_added, "clause_end": clause_end,
+                      "continues_clause": continues_clause, "idx": None})
     return frags
 
 
-def _split_sentences(text: str) -> List[str]:
+def _first_letter_is_lower(s: str) -> bool:
+    for c in s:
+        if c.isalpha():
+            return c.islower()
+    return False
+
+
+def _lowercase_first_letter(s: str) -> str:
+    for i, c in enumerate(s):
+        if c.isalpha():
+            return s[:i] + c.lower() + s[i + 1:]
+    return s
+
+
+def _ends_with_abbreviation(text: str, start: int, period_pos: int) -> bool:
+    """Is the word ending with the period at `period_pos` an abbreviation?
+
+    Walks back from the period instead of slicing text[start:...]: when
+    abbreviations keep `start` in place, slicing the growing candidate on
+    every match would be quadratic in the text length.
+    """
+    word_start = period_pos
+    while word_start > start and not text[word_start - 1].isspace():
+        word_start -= 1
+    last_word = text[word_start:period_pos + 1]
+    # Strip an opening quote/bracket: '("Mr.' should still count
+    last_word = last_word.lstrip("\"'([«").lower()
+    return last_word in _NON_TERMINAL_ABBREVIATIONS
+
+
+def _split_at_clause_breaks(sentence: str) -> List[str]:
+    """Cut after every comma/semicolon, keeping the punctuation."""
+    pieces = []
+    start = 0
+    for match in _CLAUSE_BREAK_RE.finditer(sentence):
+        pieces.append(sentence[start:match.end()].rstrip())
+        start = match.end()
+    tail = sentence[start:].rstrip()
+    if tail:
+        pieces.append(tail)
+    return pieces
+
+
+def _pack_pieces(pieces: List[str], limit: int) -> List[str]:
+    """Glue neighbouring pieces into chunks of about equal size, none longer
+    than `limit` (unless a single piece already is).
+
+    Equal sizes rather than "fill up to the limit": greedy filling turns 850
+    chars into 800 + 50, and the 50-char tail is translated with no context.
+    """
+    total = sum(len(p) for p in pieces) + len(pieces) - 1
+    chunk_count = math.ceil(total / limit)
+    target = math.ceil(total / chunk_count)
+    chunks = []
+    current = ""
+    for piece in pieces:
+        if not current:
+            current = piece
+            continue
+        candidate = current + " " + piece
+        # Grow the chunk while that brings it closer to the target size
+        is_closer = abs(len(candidate) - target) < abs(len(current) - target)
+        if len(candidate) <= limit and is_closer:
+            current = candidate
+        else:
+            chunks.append(current)
+            current = piece
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _split_long_sentence(sentence: str, limit: int) -> List[str]:
+    if len(sentence) <= limit:
+        return [sentence]
+    pieces = []
+    for clause in _split_at_clause_breaks(sentence):
+        if len(clause) <= limit:
+            pieces.append(clause)
+        else:
+            # Last resort, no comma for too long: cut between words. Text
+            # without spaces (CJK) stays as one piece and may still be cut
+            # off by the output cap.
+            pieces.extend(_pack_pieces(clause.split(), limit))
+    return _pack_pieces(pieces, limit)
+
+
+def _split_sentences(text: str, split_on_clauses: bool) -> List[str]:
     text = text.strip()
     if not text:
         return []
@@ -275,8 +448,12 @@ def _split_sentences(text: str) -> List[str]:
     start = 0
     for match in _SENTENCE_END_RE.finditer(text):
         end = match.end()
+        # "Mr. Smith" got cut into "...мистер." + "Смит...". Keep start as is
+        # so the piece merges with the next one.
+        if _ends_with_abbreviation(text, start, match.start()):
+            continue
         candidate = text[start:end].rstrip()
-        # Drop tiny pieces so "Mr." and "e.g." don't split.
+        # Drop tiny pieces so a leading "Mr." or "e.g." doesn't split.
         if len(candidate) < 5:
             continue
         sentences.append(candidate)
@@ -285,6 +462,12 @@ def _split_sentences(text: str) -> List[str]:
         tail = text[start:].rstrip()
         if tail:
             sentences.append(tail)
+
+    if not split_on_clauses:
+        result = []
+        for s in sentences:
+            result.extend(_split_long_sentence(s, _CLAUSE_SPLIT_FORCE_CHARS))
+        return result
 
     # Long fragments get a second pass on commas/semicolons.
     result = []
@@ -325,6 +508,7 @@ class CT2TranslateProvider(TranslationProvider):
     DISPLAY_NAME = "Offline (NLLB)"
     PROVIDER_TYPE = ProviderType.CT2
     SENTENCE_SPLIT_CHAR_LIMIT = _SPLIT_SENTENCES_CHAR_LIMIT
+    SPLIT_ON_CLAUSES = _NLLB_SPLIT_ON_CLAUSES
     # Narrow Marian models serve exactly one language pair and carry no
     # language tags; NLLB subclasses keep this None.
     SINGLE_PAIR = None
@@ -551,7 +735,8 @@ class CT2TranslateProvider(TranslationProvider):
                                        "kind": "translate",
                                        "frags": _build_frags(
                                            body, was_caps,
-                                           self.SENTENCE_SPLIT_CHAR_LIMIT),
+                                           self.SENTENCE_SPLIT_CHAR_LIMIT,
+                                           self.SPLIT_ON_CLAUSES),
                                        "tag": None if self.SINGLE_PAIR else
                                        (NLLB_LANG_MAP.get(route) or src_nllb)})
             slots.append({"source": t, "kind": "translate",
@@ -591,7 +776,8 @@ class CT2TranslateProvider(TranslationProvider):
                                  (NLLB_LANG_MAP.get(code) or src_nllb))
                     lm["frags"] = _build_frags(
                         lm["body"], lm["caps"],
-                        self.SENTENCE_SPLIT_CHAR_LIMIT)
+                        self.SENTENCE_SPLIT_CHAR_LIMIT,
+                        self.SPLIT_ON_CLAUSES)
 
         # Dedupe identical fragments (repeated UI strings, names, HP/Lv labels)
         unique_fragments = []
@@ -681,6 +867,13 @@ class CT2TranslateProvider(TranslationProvider):
                         break
                     if fe["punct"]:
                         out = out.rstrip().rstrip(_TRAILING_ENDERS).rstrip()
+                    if fe["clause_end"]:
+                        # The model may close a chunk with its own period
+                        # even when we added none; avoid "текст.,"
+                        out = out.rstrip().rstrip(_TRAILING_ENDERS).rstrip()
+                        out += fe["clause_end"]
+                    if fe["continues_clause"]:
+                        out = _lowercase_first_letter(out)
                     if fe["caps"]:
                         out = out.upper()
                     pieces.append(out)
