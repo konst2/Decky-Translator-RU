@@ -22,6 +22,7 @@ import { VFC, useState, useEffect, useRef, useCallback, RefObject } from "react"
 import { call } from "@decky/api";
 import { useSettings } from "../SettingsContext";
 import { BottomSpacer } from "./BottomSpacer";
+import { DataFlowBadge, OCR_DATA_FLOW, TRANSLATION_DATA_FLOW } from "./DataFlowBadge";
 import { HiKey, HiEnvelope, HiLockClosed, HiInboxArrowDown, HiTrash, HiXMark, HiXCircle, HiExclamationTriangle, HiInformationCircle } from "react-icons/hi2";
 import { BsArrowRepeat, BsStars } from "react-icons/bs";
 
@@ -903,6 +904,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     <ModelStatusIndicator state={rapidocr} />
                                     <ModelDownloadError state={rapidocr} />
                                     <ProviderRating quality={1} speed={1} />
+                                    <DataFlowBadge flow={OCR_DATA_FLOW.rapidocr} />
                                     <div>- Распознавание без интернета, данные не покидают устройство</div>
                                     <div>- Требуется разовая загрузка модели (75 МБ)</div>
                                     <div>- Настраиваемые параметры</div>
@@ -920,6 +922,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     <ModelStatusIndicator state={csai} />
                                     <ModelDownloadError state={csai} />
                                     <ProviderRating quality={3} speed={2} />
+                                    <DataFlowBadge flow={OCR_DATA_FLOW.chromescreenai} />
                                     <div>- Распознавание без интернета, данные не покидают устройство</div>
                                     <div>- Требуется разовая загрузка движка (120 МБ)</div>
                                     <div>- Сам определяет язык, более 70 языков</div>
@@ -938,6 +941,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>OCR.space</span>
                                     </div>
                                     <ProviderRating quality={2} speed={3} />
+                                    <DataFlowBadge flow={OCR_DATA_FLOW.ocrspace} />
                                     <div>- Бесплатный облачный OCR API (серверы в ЕС)</div>
                                     <div>- Лимиты: 500/день и 10/10 мин</div>
                                 </>
@@ -949,6 +953,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Google Cloud Vision</span>
                                     </div>
                                     <ProviderRating quality={3} speed={3} />
+                                    <DataFlowBadge flow={OCR_DATA_FLOW.googlecloud} />
                                     <div>- Лучшая точность и скорость</div>
                                     <div>- Идеален для сложного и стилизованного текста</div>
                                     <div>- Требуется API-ключ</div>
@@ -964,6 +969,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Gemini Vision</span>
                                     </div>
                                     <ProviderRating quality={3} speed={1} />
+                                    <DataFlowBadge flow={OCR_DATA_FLOW.gemini_vision} />
                                     <div>- Распознавание и перевод на основе ИИ</div>
                                     <div>- Высокая точность, перевод с учётом контекста</div>
                                     <div>- Бесплатный API-ключ на aistudio.google.com</div>
@@ -1242,6 +1248,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Gemini Vision</span>
                                     </div>
                                     <ProviderRating quality={3} speed={1} />
+                                    <DataFlowBadge flow={OCR_DATA_FLOW.gemini_vision} />
                                     <div>- Перевод выполняется Gemini Vision</div>
                                     <div>- Распознавание и перевод за один шаг</div>
                                 </>
@@ -1253,6 +1260,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Google Translate</span>
                                     </div>
                                     <ProviderRating quality={2} speed={3} />
+                                    <DataFlowBadge flow={TRANSLATION_DATA_FLOW.freegoogle} />
                                     <div>- Бесплатно, API-ключ не нужен</div>
                                     <div>- Хорошее качество для большинства языков</div>
                                     <div style={{ color: "#ffa726", marginTop: "6px" }}>
@@ -1270,6 +1278,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>MyMemory</span>
                                     </div>
                                     <ProviderRating quality={1} speed={2} />
+                                    <DataFlowBadge flow={TRANSLATION_DATA_FLOW.mymemory} />
                                     <div>- Бесплатно, API-ключ не нужен, работает из России</div>
                                     <div>- Качество ниже, чем у Google и Яндекса</div>
                                     <div>- Лимит 5 000 символов в день (примерно 5–15 экранов), с email — 50 000</div>
@@ -1292,6 +1301,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Google Cloud Translation</span>
                                     </div>
                                     <ProviderRating quality={3} speed={3} />
+                                    <DataFlowBadge flow={TRANSLATION_DATA_FLOW.googlecloud} />
                                     <div>- Высокое качество перевода</div>
                                     <div>- Требуется API-ключ</div>
                                     {!settings.googleApiKey && (
@@ -1306,6 +1316,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Яндекс Перевод</span>
                                     </div>
                                     <ProviderRating quality={3} speed={3} />
+                                    <DataFlowBadge flow={TRANSLATION_DATA_FLOW.yandex} />
                                     <div>- Работает из России</div>
                                     <div>- Требуется API-ключ и folder_id Яндекс Облака</div>
                                     {(!settings.yandexApiKey || !settings.yandexFolderId) && (
@@ -1325,6 +1336,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     <ModelStatusIndicator state={nllb} />
                                     <ModelDownloadError state={nllb} />
                                     <ProviderRating quality={1} speed={1} />
+                                    <DataFlowBadge flow={TRANSLATION_DATA_FLOW.ct2} />
                                     <div>- Оффлайн-перевод, приватность</div>
                                     <div>- Требуется разовая загрузка модели (1.4 ГБ)</div>
                                     <div>- Одна модель для большинства языков</div>

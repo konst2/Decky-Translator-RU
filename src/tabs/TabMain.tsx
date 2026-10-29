@@ -21,6 +21,7 @@ import { GameTranslatorLogic } from "../Translator";
 import { logger } from "../Logger";
 import { inputModeOptions } from "./TabControls";
 import { BottomSpacer } from "./BottomSpacer";
+import { DataFlowIcon, OCR_DATA_FLOW, TRANSLATION_DATA_FLOW } from "./DataFlowBadge";
 
 const StatusDot: VFC<{ ok: boolean }> = ({ ok }) => (
     <span style={{
@@ -186,6 +187,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                         <BsStars style={{ marginRight: '8px', color: '#aaa' }} />
                                         <span style={{ color: '#888' }}>Распознавание + перевод:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>Gemini</span>
+                                        <DataFlowIcon flow={OCR_DATA_FLOW.gemini_vision} />
                                     </div>
                                 )}
                                 {settings.ocrProvider !== 'gemini_vision' && (
@@ -197,6 +199,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                              settings.ocrProvider === 'rapidocr' ? 'Локально (RapidOCR)' :
                                              settings.ocrProvider === 'ocrspace' ? 'OCR.space' : 'Google Cloud'}
                                         </span>
+                                        <DataFlowIcon flow={OCR_DATA_FLOW[settings.ocrProvider]} />
                                     </div>
                                 )}
                                 {settings.ocrProvider === 'rapidocr' && (
@@ -347,6 +350,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                              settings.translationProvider === 'yandex' ? 'Яндекс' :
                                              settings.translationProvider === 'mymemory' ? 'MyMemory' : 'Google Translate'}
                                         </span>
+                                        <DataFlowIcon flow={TRANSLATION_DATA_FLOW[settings.translationProvider]} />
                                     </div>
                                 )}
                                 <div style={{ marginLeft: '22px', marginBottom: '6px' }}>
