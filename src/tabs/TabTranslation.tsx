@@ -158,6 +158,7 @@ const ApiKeyModal: VFC<{
 
 const cacheProviderLabel = (p: string) => ({
     ct2: "Локально",
+    opusmt: "Локально (лёгкая)",
     freegoogle: "Google Translate",
     mymemory: "MyMemory",
     googlecloud: "Google Cloud",
@@ -569,6 +570,18 @@ function useNllbModelStatus() {
     });
 }
 
+function useOpusMtModelStatus() {
+    return useModelDownload({
+        getStatusCall: 'get_opusmt_model_status',
+        downloadCall: 'download_opusmt_model',
+        cancelCall: 'cancel_opusmt_download',
+        deleteCall: 'delete_opusmt_model',
+        clearErrorCall: 'clear_opusmt_model_error',
+        defaultApproxMb: 82,
+        modelName: 'Лёгкая модель Opus-MT en→ru',
+    });
+}
+
 function useRapidOCRStatus() {
     return useModelDownload({
         getStatusCall: 'get_rapidocr_models_status',
@@ -691,8 +704,10 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
     const chromescreenaiActionRef = useRef<HTMLDivElement>(null);
     const rapidocrActionRef = useRef<HTMLDivElement>(null);
     const ct2ActionRef = useRef<HTMLDivElement>(null);
+    const opusmtActionRef = useRef<HTMLDivElement>(null);
     const csai = useChromeScreenAIStatus();
     const nllb = useNllbModelStatus();
+    const opusmt = useOpusMtModelStatus();
     const rapidocr = useRapidOCRStatus();
     const [cacheEntries, setCacheEntries] = useState<number | null>(null);
 
@@ -1127,6 +1142,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         { label: <span>Яндекс</span>, data: "yandex" },
                                         { label: <span>MyMemory</span>, data: "mymemory" },
                                         { label: <span>Локально</span>, data: "ct2" },
+                                        { label: <span>Локально (лёгкая, en→ru)</span>, data: "opusmt" },
                                         { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>Google Translate</span><span className="dt-option-note" style={{ fontSize: "10px", color: "#ffa726", marginLeft: "6px", transform: "translateY(1px)" }}>(может не работать из РФ)</span></span>, data: "freegoogle" },
                                         { label: <span>Google Cloud</span>, data: "googlecloud" }
                                     ]}
@@ -1228,6 +1244,9 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             )}
                             {settings.translationProvider === 'ct2' && (
                                 <ModelActionButton state={nllb} actionRef={ct2ActionRef} />
+                            )}
+                            {settings.translationProvider === 'opusmt' && (
+                                <ModelActionButton state={opusmt} actionRef={opusmtActionRef} />
                             )}
                         </Focusable>
                         )}
@@ -1349,11 +1368,36 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     )}
                                 </>
                             )}
+                            {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'opusmt' && (
+                                <>
+                                    <div style={{ display: "inline-flex", flexDirection: "column" }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                            <img src={steamdeckLogo} alt="" style={{ height: "18px" }} />
+                                            <span style={{ fontWeight: "bold", color: "#dcdedf" }}>Локально (Opus-MT en→ru)</span>
+                                        </div>
+                                        <ModelHeadingProgressBar state={opusmt} />
+                                    </div>
+                                    <ModelStatusIndicator state={opusmt} />
+                                    <ModelDownloadError state={opusmt} />
+                                    <ProviderRating quality={1} speed={2} />
+                                    <DataFlowBadge flow={TRANSLATION_DATA_FLOW.opusmt} />
+                                    <div>- Оффлайн-перевод, приватность</div>
+                                    <div>- Лёгкая модель: ~82 МБ вместо 1.4 ГБ</div>
+                                    <div>- Быстрее NLLB, качество ниже</div>
+                                    <div>- Только английский → русский</div>
+                                    <div>- Экспериментальная поддержка</div>
+                                    {(settings.inputLanguage !== 'en' || settings.targetLanguage !== 'ru') && (
+                                        <div style={{ color: "#ffa726", marginTop: "6px" }}>
+                                            Этот метод переводит только английский → русский. Выберите другую пару языков в разделе «Языки» выше или другой метод перевода.
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </div>
                     </Field>
                 </PanelSectionRow>
 
-                {settings.translationProvider === 'ct2' && (
+                {(settings.translationProvider === 'ct2' || settings.translationProvider === 'opusmt') && (
                     <PanelSectionRow>
                         <ToggleField
                             label="Быстрый перевод"

@@ -99,9 +99,10 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
 
     const translationNeedsDownload =
         settings.ocrProvider !== 'gemini_vision'
-        && settings.translationProvider === 'ct2'
-        && !!providerStatus
-        && !providerStatus.nllb_downloaded;
+        && ((settings.translationProvider === 'ct2'
+                && !!providerStatus && !providerStatus.nllb_downloaded)
+            || (settings.translationProvider === 'opusmt'
+                && !!providerStatus && !providerStatus.opusmt_downloaded));
 
     const handleButtonClick = () => {
         if (overlayVisible) {
@@ -347,6 +348,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
                                             {settings.translationProvider === 'googlecloud' ? 'Google Cloud' :
                                              settings.translationProvider === 'ct2' ? 'Локально (NLLB)' :
+                                             settings.translationProvider === 'opusmt' ? 'Локально (лёгкая, en→ru)' :
                                              settings.translationProvider === 'yandex' ? 'Яндекс' :
                                              settings.translationProvider === 'mymemory' ? 'MyMemory' : 'Google Translate'}
                                         </span>
@@ -400,6 +402,23 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                                     <>
                                                         <StatusDot ok={!!providerStatus?.nllb_downloaded} />
                                                         <span>{providerStatus?.nllb_downloaded ? 'Готово' : 'Не готово (модель не установлена)'}</span>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
+                                    {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'opusmt' && (
+                                        <>
+                                            <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
+                                                {providerStatus?.opusmt_downloading ? (
+                                                    <>
+                                                        <InstallingDot />
+                                                        <span>Установка...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <StatusDot ok={!!providerStatus?.opusmt_downloaded} />
+                                                        <span>{providerStatus?.opusmt_downloaded ? 'Готово (модель 82 МБ)' : 'Не готово (модель не установлена)'}</span>
                                                     </>
                                                 )}
                                             </div>

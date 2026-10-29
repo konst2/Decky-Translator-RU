@@ -33,6 +33,22 @@ Python 3.11
 https://github.com/astral-sh/python-build-standalone
 License: Mozilla Public License 2.0
 
+CTranslate2
+https://github.com/OpenNMT/CTranslate2
+License: MIT License
+
+SentencePiece
+https://github.com/google/sentencepiece
+License: Apache License 2.0
+
+Opus-MT en→ru (Helsinki-NLP/opus-mt-en-ru)
+https://huggingface.co/Helsinki-NLP/opus-mt-en-ru
+Model: Helsinki-NLP, OPUS-MT project
+License: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+The plugin downloads a ready-made INT8 CTranslate2 conversion
+(manancode/opus-mt-en-ru-ctranslate2-android). The conversion is a derivative
+of the model above and is distributed under the same license.
+
 Trademarks and logos
 The logos and names of third-party services shown in the plugin (Google Translate, Google Cloud,
 Gemini, Chrome Screen AI, OCR.space, Yandex Translate, MyMemory and others) are trademarks of their

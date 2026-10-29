@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-Persistent subprocess worker for CTranslate2 + NLLB-200 translation.
+Persistent subprocess worker for CTranslate2 translation.
+
+Serves two model flavours, detected from the model directory contents:
+  - NLLB-200: sentencepiece.bpe.model, FLORES language tags, target_prefix
+  - Marian/Opus-MT: source.spm + target.spm (no language tags)
 
 Communicates via stdin/stdout JSON-lines protocol.
 Commands:
@@ -125,7 +129,10 @@ except Exception:
 
 def main():
     translator = None
-    tokenizer = None
+    tokenizer = None          # NLLB SentencePiece model
+    src_tokenizer = None      # Marian source-side model
+    tgt_tokenizer = None      # Marian target-side model
+    model_kind = None
     last_activity = time.monotonic()
     loaded_model_dir = None
 
@@ -144,17 +151,22 @@ def main():
         sys.stdout.flush()
 
     def load_model(model_dir):
-        nonlocal translator, tokenizer, loaded_model_dir
+        nonlocal translator, tokenizer, src_tokenizer, tgt_tokenizer
+        nonlocal model_kind, loaded_model_dir
 
         unload_model()
 
         model_bin = os.path.join(model_dir, "model.bin")
-        sp_model = os.path.join(model_dir, "sentencepiece.bpe.model")
+        nllb_sp_model = os.path.join(model_dir, "sentencepiece.bpe.model")
+        src_sp_model = os.path.join(model_dir, "source.spm")
+        tgt_sp_model = os.path.join(model_dir, "target.spm")
 
         if not os.path.exists(model_bin):
             return {"ok": False, "error": f"model.bin not found in {model_dir}"}
-        if not os.path.exists(sp_model):
-            return {"ok": False, "error": f"sentencepiece.bpe.model not found in {model_dir}"}
+
+        is_marian = os.path.exists(src_sp_model) and os.path.exists(tgt_sp_model)
+        if not is_marian and not os.path.exists(nllb_sp_model):
+            return {"ok": False, "error": f"No tokenizer found in {model_dir}"}
 
         try:
             translator = ctranslate2.Translator(
@@ -164,35 +176,131 @@ def main():
                 intra_threads=4,
                 compute_type="int8",
             )
-            tokenizer = spm.SentencePieceProcessor(sp_model)
+            if is_marian:
+                src_tokenizer = spm.SentencePieceProcessor(src_sp_model)
+                tgt_tokenizer = spm.SentencePieceProcessor(tgt_sp_model)
+                model_kind = "marian"
+            else:
+                tokenizer = spm.SentencePieceProcessor(nllb_sp_model)
+                model_kind = "nllb"
             loaded_model_dir = model_dir
 
             # Warmup
             try:
-                translator.translate_batch(
-                    [
-                        ["eng_Latn", "▁hello", "</s>"],
-                        ["eng_Latn", "▁this", "▁is", "▁a", "▁warmup", "▁batch", "</s>"],
-                    ],
-                    target_prefix=[["eng_Latn"]] * 2,
-                    beam_size=1,
-                    max_decoding_length=12,
-                )
+                if is_marian:
+                    translator.translate_batch(
+                        [src_tokenizer.encode("Hello", out_type=str) + ["</s>"]],
+                        beam_size=1,
+                        max_decoding_length=12,
+                    )
+                else:
+                    translator.translate_batch(
+                        [
+                            ["eng_Latn", "▁hello", "</s>"],
+                            ["eng_Latn", "▁this", "▁is", "▁a", "▁warmup", "▁batch", "</s>"],
+                        ],
+                        target_prefix=[["eng_Latn"]] * 2,
+                        beam_size=1,
+                        max_decoding_length=12,
+                    )
             except Exception:
                 pass
 
-            return {"ok": True}
+            return {"ok": True, "kind": model_kind}
         except Exception as e:
             unload_model()
             return {"ok": False, "error": f"Failed to load model: {e}"}
 
     def unload_model():
-        nonlocal translator, tokenizer, loaded_model_dir
+        nonlocal translator, tokenizer, src_tokenizer, tgt_tokenizer
+        nonlocal model_kind, loaded_model_dir
         translator = None
         tokenizer = None
+        src_tokenizer = None
+        tgt_tokenizer = None
+        model_kind = None
         loaded_model_dir = None
 
+    def translate_marian(texts, tgt_lang):
+        """Marian/Opus-MT: source.spm tokens + </s>, no target prefix."""
+        if translator is None or src_tokenizer is None or tgt_tokenizer is None:
+            return {"ok": False, "error": "No model loaded"}
+
+        try:
+            tokenized = [
+                src_tokenizer.encode(t, out_type=str) + ["</s>"] for t in texts
+            ]
+            max_input_tokens = max(len(t) - 1 for t in tokenized)
+            # Marian outputs are close to the source length; beam search is
+            # cheap here (the model is ~20x smaller than NLLB) and clearly
+            # better on short game UI labels.
+            max_output = min(max(int(max_input_tokens * 2) + 8, 16), 256)
+
+            results = translator.translate_batch(
+                tokenized,
+                beam_size=4,
+                max_decoding_length=max_output,
+                max_input_length=512,
+                repetition_penalty=1.0,
+                length_penalty=1.0,
+                no_repeat_ngram_size=4,
+                return_scores=True,
+            )
+
+            tgt_flores = "rus_Cyrl"
+            translations = []
+            token_counts = []
+            confidences = []
+            fallbacks = []
+            for i, result in enumerate(results):
+                src_text = texts[i]
+                input_token_count = len(tokenized[i]) - 1
+                if not result.hypotheses or not result.hypotheses[0]:
+                    translations.append(src_text)
+                    token_counts.append({"input": input_token_count, "output": 0})
+                    confidences.append(0.0)
+                    fallbacks.append(True)
+                    continue
+
+                tokens = list(result.hypotheses[0])
+                if tokens and tokens[-1] == "</s>":
+                    tokens = tokens[:-1]
+                score = result.scores[0] if result.scores else 0.0
+                token_counts.append({"input": input_token_count, "output": len(tokens)})
+                per_token = score / max(len(tokens), 1)
+                confidences.append(round(per_token, 3))
+                text = tgt_tokenizer.decode(tokens)
+
+                fallback = False
+                if not text.strip():
+                    fallback = True
+                elif _is_dash_hallucination(src_text, text):
+                    fallback = True
+                elif _is_source_copy_with_tail(src_text, text):
+                    fallback = True
+                elif _has_oscillatory_repetition(tokens):
+                    fallback = True
+                elif _output_script_mismatch(src_text, text, tgt_flores):
+                    fallback = True
+
+                if fallback:
+                    text = src_text
+                fallbacks.append(fallback)
+                translations.append(text)
+
+            return {
+                "ok": True,
+                "translations": translations,
+                "token_counts": token_counts,
+                "confidences": confidences,
+                "fallbacks": fallbacks,
+            }
+        except Exception as e:
+            return {"ok": False, "error": f"Translation failed: {e}"}
+
     def translate_texts(texts, src_langs, tgt_lang):
+        if model_kind == "marian":
+            return translate_marian(texts, tgt_lang)
         if translator is None or tokenizer is None:
             return {"ok": False, "error": "No model loaded"}
 

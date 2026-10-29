@@ -26,7 +26,9 @@ from .rapidocr_provider import RapidOCRProvider
 from .chromescreenai_provider import ChromeScreenAIProvider
 from .gemini_vision import GeminiVisionProvider
 from .ct2_translate import CT2TranslateProvider
+from .opusmt_translate import OpusMtTranslateProvider
 from .nllb_downloader import NLLBDownloader
+from .opusmt_downloader import OpusMtDownloader
 from .screenai_downloader import ScreenAIDownloader
 from .rapidocr_downloader import RapidOCRDownloader
 
@@ -62,7 +64,9 @@ __all__ = [
     'ChromeScreenAIProvider',
     'GeminiVisionProvider',
     'CT2TranslateProvider',
+    'OpusMtTranslateProvider',
     'NLLBDownloader',
+    'OpusMtDownloader',
     'ScreenAIDownloader',
     'RapidOCRDownloader',
     'ProviderManager',
@@ -100,6 +104,10 @@ class ProviderManager:
         self._ct2_models_dir = None
         self._model_manager = None
 
+        # Lightweight Opus-MT en→ru model
+        self._opusmt_models_dir = None
+        self._opusmt_model_manager = None
+
         # Created on first configure() that supplies screenai_models_dir.
         self._screenai_downloader: Optional[ScreenAIDownloader] = None
 
@@ -121,6 +129,7 @@ class ProviderManager:
         ocr_provider: str = "",
         translation_provider: str = "",
         ct2_models_dir: str = "",
+        opusmt_models_dir: str = "",
         screenai_models_dir: str = "",
         rapidocr_models_dir: str = "",
     ) -> None:
@@ -140,6 +149,10 @@ class ProviderManager:
             self._ct2_models_dir = ct2_models_dir
             if not self._model_manager:
                 self._model_manager = NLLBDownloader(ct2_models_dir)
+        if opusmt_models_dir:
+            self._opusmt_models_dir = opusmt_models_dir
+            if not self._opusmt_model_manager:
+                self._opusmt_model_manager = OpusMtDownloader(opusmt_models_dir)
         if screenai_models_dir and not self._screenai_downloader:
             self._screenai_downloader = ScreenAIDownloader(screenai_models_dir)
         if rapidocr_models_dir and not self._rapidocr_downloader:
@@ -328,12 +341,16 @@ class ProviderManager:
                 f"CT2 persistent_mode preference: {self._ct2_persistent_mode} (not applied)"
             )
             return
-        if self._ct2_persistent_mode and self._translation_provider_preference == "ct2":
-            provider = self.get_translation_provider(ProviderType.CT2)
-        else:
-            provider = self._translation_providers.get(ProviderType.CT2)
-        if provider:
-            provider.set_persistent_mode(self._ct2_persistent_mode)
+        for provider_type, preference in (
+            (ProviderType.CT2, "ct2"),
+            (ProviderType.OPUSMT, "opusmt"),
+        ):
+            if self._ct2_persistent_mode and self._translation_provider_preference == preference:
+                provider = self.get_translation_provider(provider_type)
+            else:
+                provider = self._translation_providers.get(provider_type)
+            if provider:
+                provider.set_persistent_mode(self._ct2_persistent_mode)
         logger.debug(f"CT2 persistent_mode set to {self._ct2_persistent_mode}")
 
     def stop_ct2_worker(self) -> None:
@@ -341,12 +358,31 @@ class ProviderManager:
         if provider:
             provider.set_persistent_mode(False)
 
+    def stop_opusmt_worker(self) -> None:
+        provider = self._translation_providers.get(ProviderType.OPUSMT)
+        if provider:
+            provider.set_persistent_mode(False)
+
+    def stop_local_translation_workers(self) -> None:
+        """Unload both offline models (e.g. the plugin was disabled)."""
+        self.stop_ct2_worker()
+        self.stop_opusmt_worker()
+
     def resume_ct2_worker(self) -> None:
         if not self._ct2_persistent_mode:
             return
         if self._translation_provider_preference != "ct2":
             return
         provider = self.get_translation_provider(ProviderType.CT2)
+        if provider:
+            provider.set_persistent_mode(True)
+
+    def resume_opusmt_worker(self) -> None:
+        if not self._ct2_persistent_mode:
+            return
+        if self._translation_provider_preference != "opusmt":
+            return
+        provider = self.get_translation_provider(ProviderType.OPUSMT)
         if provider:
             provider.set_persistent_mode(True)
 
@@ -436,6 +472,8 @@ class ProviderManager:
                 provider_type = ProviderType.MYMEMORY
             elif self._translation_provider_preference == "ct2":
                 provider_type = ProviderType.CT2
+            elif self._translation_provider_preference == "opusmt":
+                provider_type = ProviderType.OPUSMT
             else:
                 provider_type = ProviderType.FREE_GOOGLE
 
@@ -459,6 +497,14 @@ class ProviderManager:
                 if self._model_manager:
                     provider = CT2TranslateProvider(
                         model_manager=self._model_manager
+                    )
+                    if self._ct2_persistent_mode:
+                        provider.set_persistent_mode(True)
+                    self._translation_providers[provider_type] = provider
+            elif provider_type == ProviderType.OPUSMT:
+                if self._opusmt_model_manager:
+                    provider = OpusMtTranslateProvider(
+                        model_manager=self._opusmt_model_manager
                     )
                     if self._ct2_persistent_mode:
                         provider.set_persistent_mode(True)
@@ -572,12 +618,20 @@ class ProviderManager:
         status["rapidocr_error"] = rapidocr.get_init_error()
 
         status["nllb_downloaded"] = self.is_nllb_model_downloaded()
+        status["opusmt_downloaded"] = self.is_opusmt_model_downloaded()
         status["chromescreenai_downloaded"] = self.is_chromescreenai_downloaded()
         status["rapidocr_downloaded"] = self.is_rapidocr_models_downloaded()
 
         nllb_dl = self._model_manager.get_download_status() if self._model_manager else {}
         status["nllb_downloading"] = bool(nllb_dl.get("downloading"))
         status["nllb_progress"] = float(nllb_dl.get("progress") or 0)
+
+        opusmt_dl = (
+            self._opusmt_model_manager.get_download_status()
+            if self._opusmt_model_manager else {}
+        )
+        status["opusmt_downloading"] = bool(opusmt_dl.get("downloading"))
+        status["opusmt_progress"] = float(opusmt_dl.get("progress") or 0)
 
         scai_dl = self._screenai_downloader.get_status() if self._screenai_downloader else {}
         status["chromescreenai_downloading"] = bool(scai_dl.get("downloading"))
@@ -705,6 +759,49 @@ class ProviderManager:
         if self._model_manager:
             self._model_manager.clear_download_error()
 
+    # -- Opus-MT model management --
+
+    def is_opusmt_model_downloaded(self):
+        if self._opusmt_model_manager:
+            return self._opusmt_model_manager.is_model_downloaded()
+        return False
+
+    def get_opusmt_model_status(self):
+        if not self._opusmt_model_manager:
+            return {"downloaded": False, "size": 0, "downloading": False,
+                    "progress": 0, "error": None}
+        dl_status = self._opusmt_model_manager.get_download_status()
+        return {
+            "downloaded": self._opusmt_model_manager.is_model_downloaded(),
+            "size": self._opusmt_model_manager.get_model_size(),
+            "approx_size_mb": self._opusmt_model_manager.get_approx_size_mb(),
+            "downloading": dl_status["downloading"],
+            "progress": dl_status["progress"],
+            "error": dl_status["error"],
+        }
+
+    def download_opusmt_model(self):
+        if self._opusmt_model_manager:
+            return self._opusmt_model_manager.start_download()
+        return False
+
+    def delete_opusmt_model(self):
+        if not self._opusmt_model_manager:
+            return False
+        provider = self._translation_providers.get(ProviderType.OPUSMT)
+        if provider and hasattr(provider, '_loaded_model_dir'):
+            if provider._loaded_model_dir == self._opusmt_model_manager.get_model_dir():
+                provider.unload_current_model()
+        return self._opusmt_model_manager.delete_model()
+
+    def cancel_opusmt_download(self):
+        if self._opusmt_model_manager:
+            self._opusmt_model_manager.cancel_download()
+
+    def clear_opusmt_download_error(self):
+        if self._opusmt_model_manager:
+            self._opusmt_model_manager.clear_download_error()
+
     # -- Chrome Screen AI download management --
 
     def is_chromescreenai_downloaded(self) -> bool:
@@ -782,9 +879,10 @@ class ProviderManager:
         return self._rapidocr_downloader.delete()
 
     def shutdown(self):
-        ct2 = self._translation_providers.get(ProviderType.CT2)
-        if ct2 and hasattr(ct2, 'shutdown'):
-            ct2.shutdown()
+        for provider_type in (ProviderType.CT2, ProviderType.OPUSMT):
+            local = self._translation_providers.get(provider_type)
+            if local and hasattr(local, 'shutdown'):
+                local.shutdown()
         rapidocr = self._ocr_providers.get(ProviderType.RAPIDOCR)
         if rapidocr and hasattr(rapidocr, 'stop_worker'):
             rapidocr.stop_worker()

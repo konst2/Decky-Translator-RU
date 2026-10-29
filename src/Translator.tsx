@@ -540,6 +540,7 @@ export class GameTranslatorLogic {
     private translationMethodHint(): string {
         const labels: Record<string, string> = {
             ct2: "Локально (NLLB)",
+            opusmt: "Локально (лёгкая, en→ru)",
             freegoogle: "Google Translate",
             mymemory: "MyMemory",
             googlecloud: "Google Cloud",

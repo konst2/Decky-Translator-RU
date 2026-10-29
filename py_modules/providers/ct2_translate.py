@@ -10,7 +10,11 @@ import threading
 import unicodedata
 from typing import List, Optional
 
-from .base import TranslationProvider, ProviderType
+from .base import (
+    TranslationProvider,
+    ProviderType,
+    TranslationUnavailableError,
+)
 from .nllb_downloader import NLLB_LANG_MAP, NLLBDownloader
 from .language_detection import CJK_FAMILIES, dominant_family, flores_families
 from . import python_runtime
@@ -60,6 +64,9 @@ for _code, _nllb in NLLB_LANG_MAP.items():
 
 _LID_MIN_LETTERS = 12
 _PLUGIN_TO_LID = {"zh-CN": "zh", "zh-TW": "zh", "no": "nb"}
+
+# For user-facing "only en → ru" messages of narrow single-pair models.
+_LANG_NAMES = {"en": "английский", "ru": "русский"}
 
 
 _ZERO_WIDTH_CHARS = "\u200b\u200c\u200d\u200e\u200f\ufeff"
@@ -155,10 +162,19 @@ def _soft_wrap_joiner(prev: str, line: str):
         return " "
     if prev.endswith(","):
         return " "
-    # Wrapped label/title ending on a single capitalized word
+    # Wrapped label/title ending on a single capitalized word. The previous
+    # line must be more than one word: otherwise "Settings" + "Audio" menu
+    # rows would be glued into one phrase.
     if (first.isalpha() and first.isupper()
             and prev[-1].isalpha() and prev[-1].islower()
+            and len(prev.split()) >= 2
             and len(line.split()) == 1):
+        return " "
+    # Prose cut by the text box width: the previous line has several words but
+    # no terminal punctuation, and the next one starts a new phrase
+    # ("You must find the" + "Ancient Gate before dawn"). Visual-novel text
+    # boxes often break mid-sentence before a proper noun or a capitalised word.
+    if len(prev.split()) >= 4 and prev[-1].isalnum():
         return " "
     pf = dominant_family(prev)
     if pf in CJK_FAMILIES and dominant_family(line) in CJK_FAMILIES and len(prev) >= 20:
@@ -234,9 +250,10 @@ def _route_line(text: str, src_code: str, tgt_code: str):
     return "translate", src_code
 
 
-def _build_frags(body: str, was_caps: bool) -> List[dict]:
+def _build_frags(body: str, was_caps: bool,
+                 split_limit: int = _SPLIT_SENTENCES_CHAR_LIMIT) -> List[dict]:
     fragments = [body]
-    if len(body) >= _SPLIT_SENTENCES_CHAR_LIMIT:
+    if len(body) >= split_limit:
         split = _split_sentences(body)
         if len(split) > 1:
             fragments = split
@@ -305,6 +322,13 @@ class CT2TranslateProvider(TranslationProvider):
     """
 
     SUPPORTED_LANGUAGES = list(NLLB_LANG_MAP.keys())
+    DISPLAY_NAME = "Offline (NLLB)"
+    PROVIDER_TYPE = ProviderType.CT2
+    SENTENCE_SPLIT_CHAR_LIMIT = _SPLIT_SENTENCES_CHAR_LIMIT
+    # Narrow Marian models serve exactly one language pair and carry no
+    # language tags; NLLB subclasses keep this None.
+    SINGLE_PAIR = None
+    MODEL_LABEL = "NLLB"
 
     def __init__(self, model_manager: NLLBDownloader, plugin_dir: str = ""):
         self._model_manager = model_manager
@@ -417,18 +441,25 @@ class CT2TranslateProvider(TranslationProvider):
 
     @property
     def name(self) -> str:
-        return "Offline (NLLB)"
+        return self.DISPLAY_NAME
 
     @property
     def provider_type(self) -> ProviderType:
-        return ProviderType.CT2
+        return self.PROVIDER_TYPE
 
     def is_available(self, source_lang: str = "auto", target_lang: str = "en") -> bool:
+        if self.SINGLE_PAIR:
+            return (
+                (source_lang, target_lang) == self.SINGLE_PAIR
+                and self._model_manager.is_model_downloaded()
+            )
         if source_lang == "auto":
             return False
         return self._model_manager.is_model_downloaded()
 
     def get_supported_languages(self) -> List[str]:
+        if self.SINGLE_PAIR:
+            return list(self.SINGLE_PAIR)
         return self.SUPPORTED_LANGUAGES.copy()
 
     async def translate(self, text: str, source_lang: str, target_lang: str) -> str:
@@ -449,19 +480,31 @@ class CT2TranslateProvider(TranslationProvider):
         if not texts:
             return []
 
-        if source_lang == "auto":
-            logger.error("CT2 translation does not support auto-detect")
-            return texts
+        if self.SINGLE_PAIR:
+            if (source_lang, target_lang) != self.SINGLE_PAIR:
+                src, tgt = self.SINGLE_PAIR
+                raise TranslationUnavailableError(
+                    f"Метод «{self.name}» переводит только "
+                    f"{_LANG_NAMES.get(src, src)} → {_LANG_NAMES.get(tgt, tgt)}. "
+                    f"Выберите другой метод перевода или пару языков"
+                )
+            src_nllb = tgt_nllb = None
+        else:
+            if source_lang == "auto":
+                logger.error("CT2 translation does not support auto-detect")
+                return texts
 
-        src_nllb = self._model_manager.get_nllb_lang_code(source_lang)
-        tgt_nllb = self._model_manager.get_nllb_lang_code(target_lang)
-        if not src_nllb or not tgt_nllb:
-            logger.error(f"Unsupported language: {source_lang} or {target_lang}")
-            return texts
+            src_nllb = self._model_manager.get_nllb_lang_code(source_lang)
+            tgt_nllb = self._model_manager.get_nllb_lang_code(target_lang)
+            if not src_nllb or not tgt_nllb:
+                logger.error(f"Unsupported language: {source_lang} or {target_lang}")
+                return texts
 
         if not self._model_manager.is_model_downloaded():
             from .base import NetworkError
-            raise NetworkError("Модель NLLB не скачана. Скачайте её в настройках плагина")
+            raise NetworkError(
+                f"Модель {self.MODEL_LABEL} не скачана. Скачайте её в настройках плагина"
+            )
 
         if not self._ensure_worker():
             logger.error("Could not start CT2 translation worker")
@@ -506,8 +549,11 @@ class CT2TranslateProvider(TranslationProvider):
                 else:
                     lines_meta.append({"orig": line, "sep": sep,
                                        "kind": "translate",
-                                       "frags": _build_frags(body, was_caps),
-                                       "tag": NLLB_LANG_MAP.get(route) or src_nllb})
+                                       "frags": _build_frags(
+                                           body, was_caps,
+                                           self.SENTENCE_SPLIT_CHAR_LIMIT),
+                                       "tag": None if self.SINGLE_PAIR else
+                                       (NLLB_LANG_MAP.get(route) or src_nllb)})
             slots.append({"source": t, "kind": "translate",
                           "start": start, "end": len(lines_meta)})
 
@@ -541,8 +587,11 @@ class CT2TranslateProvider(TranslationProvider):
                     lm["kind"] = "passthrough"
                 else:
                     lm["kind"] = "translate"
-                    lm["tag"] = NLLB_LANG_MAP.get(code) or src_nllb
-                    lm["frags"] = _build_frags(lm["body"], lm["caps"])
+                    lm["tag"] = (None if self.SINGLE_PAIR else
+                                 (NLLB_LANG_MAP.get(code) or src_nllb))
+                    lm["frags"] = _build_frags(
+                        lm["body"], lm["caps"],
+                        self.SENTENCE_SPLIT_CHAR_LIMIT)
 
         # Dedupe identical fragments (repeated UI strings, names, HP/Lv labels)
         unique_fragments = []
@@ -563,7 +612,7 @@ class CT2TranslateProvider(TranslationProvider):
         logger.debug(
             f"CT2 translate: {len(texts)} inputs, {len(lines_meta)} lines "
             f"({len(unique_fragments)} unique fragments, {skipped} regions skipped), "
-            f"{src_nllb} -> {tgt_nllb}"
+            f"{src_nllb or source_lang} -> {tgt_nllb or target_lang}"
         )
         for lm in lines_meta:
             if lm["kind"] == "passthrough":
@@ -580,7 +629,7 @@ class CT2TranslateProvider(TranslationProvider):
                 "cmd": "translate",
                 "texts": unique_fragments,
                 "src_langs": unique_tags,
-                "tgt_lang": tgt_nllb,
+                "tgt_lang": tgt_nllb or target_lang,
             })
             if not result.get("ok"):
                 logger.error(f"Translation failed: {result.get('error')}")

@@ -1344,10 +1344,11 @@ class Plugin:
                             self._provider_manager.resume_chromescreenai_worker()
                         if self._ct2_persistent_mode:
                             self._provider_manager.resume_ct2_worker()
+                            self._provider_manager.resume_opusmt_worker()
                     else:
                         self._provider_manager.stop_rapidocr_worker()
                         self._provider_manager.stop_chromescreenai_worker()
-                        self._provider_manager.stop_ct2_worker()
+                        self._provider_manager.stop_local_translation_workers()
             elif key == "google_api_key":
                 # Single API key for both Vision and Translate
                 self._google_vision_api_key = value
@@ -1470,7 +1471,7 @@ class Plugin:
                         apply_to_provider=plugin_enabled,
                     )
                     if not plugin_enabled and not self._ct2_persistent_mode:
-                        self._provider_manager.stop_ct2_worker()
+                        self._provider_manager.stop_local_translation_workers()
             elif key == "pause_game_on_overlay":
                 self._pause_game_on_overlay = value
             elif key == "quick_toggle_enabled":
@@ -1546,10 +1547,17 @@ class Plugin:
                         translation_provider=value
                     )
                     plugin_enabled = self._settings.get_setting("enabled", True)
-                    if value != "ct2":
+                    if value not in ("ct2", "opusmt"):
+                        self._provider_manager.stop_local_translation_workers()
+                    elif value == "ct2":
+                        # Two offline models must not stay loaded at once (RAM).
+                        self._provider_manager.stop_opusmt_worker()
+                        if plugin_enabled:
+                            self._provider_manager.resume_ct2_worker()
+                    elif value == "opusmt":
                         self._provider_manager.stop_ct2_worker()
-                    elif plugin_enabled:
-                        self._provider_manager.resume_ct2_worker()
+                        if plugin_enabled:
+                            self._provider_manager.resume_opusmt_worker()
             elif key == "translation_cache_enabled":
                 self._translation_cache_enabled = bool(value)
             else:
@@ -2328,9 +2336,16 @@ class Plugin:
                 return text_regions
 
             # Check if CT2 provider has the needed models
-            if self._translation_provider == "ct2":
+            if self._translation_provider in ("ct2", "opusmt"):
                 provider = self._provider_manager.get_translation_provider()
                 if provider and not provider.is_available(input_lang, target_lang):
+                    if self._translation_provider == "opusmt":
+                        if (input_lang, target_lang) != ("en", "ru"):
+                            return {
+                                "error": "model_not_available",
+                                "message": "Метод «Локально (лёгкая, en→ru)» переводит только английский → русский, а выбранная пара — другая. Выберите другой метод перевода или пару языков",
+                            }
+                        return {"error": "model_not_available", "message": "Лёгкая модель перевода не скачана. Скачайте её в настройках плагина"}
                     if input_lang == "auto":
                         return {"error": "model_not_available", "message": "Для офлайн-перевода нужен конкретный исходный язык. Выберите его в настройках плагина"}
                     return {"error": "model_not_available", "message": "Офлайн-модель не найдена. Скачайте её в настройках плагина"}
@@ -2649,6 +2664,53 @@ class Plugin:
             logger.error(f"Error clearing NLLB download error: {e}")
             return False
 
+    # -- Opus-MT model management API --
+
+    async def get_opusmt_model_status(self):
+        try:
+            if not self._provider_manager:
+                return {"downloaded": False, "size": 0, "downloading": False, "progress": 0, "error": None}
+            return self._provider_manager.get_opusmt_model_status()
+        except Exception as e:
+            logger.error(f"Error getting Opus-MT model status: {e}")
+            return {"downloaded": False, "size": 0, "downloading": False, "progress": 0, "error": str(e)}
+
+    async def download_opusmt_model(self):
+        try:
+            if not self._provider_manager:
+                return False
+            return self._provider_manager.download_opusmt_model()
+        except Exception as e:
+            logger.error(f"Error starting Opus-MT model download: {e}")
+            return False
+
+    async def delete_opusmt_model(self):
+        try:
+            if not self._provider_manager:
+                return False
+            return self._provider_manager.delete_opusmt_model()
+        except Exception as e:
+            logger.error(f"Error deleting Opus-MT model: {e}")
+            return False
+
+    async def cancel_opusmt_download(self):
+        try:
+            if self._provider_manager:
+                self._provider_manager.cancel_opusmt_download()
+            return True
+        except Exception as e:
+            logger.error(f"Error cancelling Opus-MT download: {e}")
+            return False
+
+    async def clear_opusmt_model_error(self):
+        try:
+            if self._provider_manager:
+                self._provider_manager.clear_opusmt_download_error()
+            return True
+        except Exception as e:
+            logger.error(f"Error clearing Opus-MT download error: {e}")
+            return False
+
     # -- Chrome Screen AI download API --
 
     async def get_chromescreenai_status(self):
@@ -2846,6 +2908,11 @@ class Plugin:
             ct2_models_dir = os.path.join(settingsDir, "decky-translator-ru", "models", "nllb")
             os.makedirs(ct2_models_dir, exist_ok=True)
 
+            # The light Opus-MT en→ru model lives next to NLLB, outside the
+            # plugin folder, so plugin updates do not re-download it.
+            opusmt_models_dir = os.path.join(settingsDir, "decky-translator-ru", "models")
+            os.makedirs(opusmt_models_dir, exist_ok=True)
+
             # Same parent as NLLB so both share the plugin uninstall lifecycle.
             screenai_models_dir = os.path.join(settingsDir, "decky-translator-ru", "models")
             os.makedirs(screenai_models_dir, exist_ok=True)
@@ -2874,6 +2941,7 @@ class Plugin:
                 ocr_provider=self._ocr_provider,
                 translation_provider=self._translation_provider,
                 ct2_models_dir=ct2_models_dir,
+                opusmt_models_dir=opusmt_models_dir,
                 screenai_models_dir=screenai_models_dir,
                 rapidocr_models_dir=rapidocr_models_dir,
             )
@@ -2911,7 +2979,7 @@ class Plugin:
             self._provider_manager.set_ct2_persistent_mode(
                 self._ct2_persistent_mode,
                 apply_to_provider=plugin_enabled_at_boot
-                                  and self._translation_provider == "ct2",
+                                  and self._translation_provider in ("ct2", "opusmt"),
             )
 
             # Apply debug_mode log level

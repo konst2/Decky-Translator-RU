@@ -25,6 +25,7 @@ export const OCR_DATA_FLOW: Record<Settings["ocrProvider"], DataFlow> = {
 
 export const TRANSLATION_DATA_FLOW: Record<Settings["translationProvider"], DataFlow> = {
     ct2: "local",
+    opusmt: "local",
     freegoogle: "text",
     googlecloud: "text",
     yandex: "text",
