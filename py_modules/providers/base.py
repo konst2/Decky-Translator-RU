@@ -28,22 +28,38 @@ class TranslationUnavailableError(Exception):
     pass
 
 
+# Russian user-facing texts for Google Cloud errors. "Key" reasons point at
+# the user's key/project setup, so call sites compare them as one tuple.
+GOOGLE_ERR_INVALID_KEY = "Неверный API-ключ"
+GOOGLE_ERR_API_DISABLED = "API не включён в Cloud-проекте"
+GOOGLE_ERR_BILLING_DISABLED = "Оплата не включена в Cloud-проекте"
+GOOGLE_ERR_KEY_BLOCKED = "Доступ запрещён (ограничения ключа)"
+GOOGLE_ERR_RATE_LIMITED = "Превышен лимит запросов"
+
+GOOGLE_KEY_ERROR_REASONS = (
+    GOOGLE_ERR_INVALID_KEY,
+    GOOGLE_ERR_API_DISABLED,
+    GOOGLE_ERR_BILLING_DISABLED,
+    GOOGLE_ERR_KEY_BLOCKED,
+)
+
+
 def classify_google_error(status_code: int, body: str) -> str:
-    """Logging for a non-200 Google API response."""
+    """Russian user-facing text for a non-200 Google API response."""
     body = body or ""
     if 'API_KEY_INVALID' in body or 'API key not valid' in body:
-        return "Invalid API key"
+        return GOOGLE_ERR_INVALID_KEY
     if 'SERVICE_DISABLED' in body or 'has not been used' in body or 'it is disabled' in body:
-        return "API not enabled in Cloud project"
+        return GOOGLE_ERR_API_DISABLED
     if 'BILLING_DISABLED' in body or 'billing' in body:
-        return "Billing not enabled"
+        return GOOGLE_ERR_BILLING_DISABLED
     if status_code == 401:
-        return "Invalid API key"
+        return GOOGLE_ERR_INVALID_KEY
     if status_code == 403:
-        return "Access blocked (key restriction)"
+        return GOOGLE_ERR_KEY_BLOCKED
     if status_code == 429:
-        return "Rate limited"
-    return f"API error ({status_code})"
+        return GOOGLE_ERR_RATE_LIMITED
+    return f"Ошибка API (код {status_code})"
 
 
 class ProviderType(Enum):

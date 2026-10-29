@@ -159,7 +159,7 @@ class RapidOCRProvider(OCRProvider):
 
         # Check if subprocess script exists
         if not os.path.exists(self._subprocess_script):
-            self._init_error = f"RapidOCR subprocess script not found: {self._subprocess_script}"
+            self._init_error = f"Не найден скрипт RapidOCR: {self._subprocess_script}"
             logger.warning(self._init_error)
             return False
 
@@ -167,8 +167,8 @@ class RapidOCRProvider(OCRProvider):
         cls_model = os.path.join(self._models_dir, "ch_ppocr_mobile_v2.0_cls_infer.onnx")
         if not (os.path.exists(det_model) and os.path.exists(cls_model)):
             self._init_error = (
-                "RapidOCR models not downloaded. Open the plugin settings, "
-                "select the RapidOCR provider, and download the models."
+                "Модели RapidOCR не скачаны. Откройте настройки плагина, "
+                "выберите RapidOCR и скачайте модели."
             )
             logger.warning(self._init_error)
             return False
@@ -179,8 +179,9 @@ class RapidOCRProvider(OCRProvider):
         self._python_path = python_runtime.find_python(self._plugin_dir)
         if not self._python_path:
             self._init_error = (
-                "Python 3.13 runtime missing. Reinstall the plugin to restore "
-                "the bundled runtime, or install python3.13 on your system."
+                "Не найден Python 3.13. Переустановите плагин, чтобы "
+                "восстановить встроенный интерпретатор, или установите "
+                "python3.13 в систему."
             )
             logger.warning(self._init_error)
             return False

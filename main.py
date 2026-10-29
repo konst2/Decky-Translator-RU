@@ -2239,10 +2239,10 @@ class Plugin:
                 return []
 
             if self._ocr_provider == "chromescreenai" and not self._provider_manager.is_chromescreenai_downloaded():
-                return {"error": "model_not_available", "message": "Chrome Screen AI engine not downloaded.\nDownload it in plugin settings"}
+                return {"error": "model_not_available", "message": "Движок Chrome Screen AI не скачан.\nСкачайте его в настройках плагина"}
 
             if self._ocr_provider == "rapidocr" and not self._provider_manager.is_rapidocr_models_downloaded():
-                return {"error": "model_not_available", "message": "RapidOCR model not downloaded.\nDownload it in plugin settings"}
+                return {"error": "model_not_available", "message": "Модели RapidOCR не скачаны.\nСкачайте их в настройках плагина"}
 
             # If using Gemini Vision, set the target language before OCR
             # so it can translate in the same API call
@@ -2267,7 +2267,7 @@ class Plugin:
             return {"error": "network_error", "message": str(e)}
         except ApiKeyError as e:
             logger.error(f"API key error during OCR: {e}")
-            return {"error": "api_key_error", "message": str(e) or "Invalid API key"}
+            return {"error": "api_key_error", "message": str(e) or "Неверный API-ключ"}
         except RateLimitError as e:
             logger.error(f"Rate limit during OCR: {e}")
             return {"error": "rate_limit_error", "message": str(e)}
@@ -2332,8 +2332,8 @@ class Plugin:
                 provider = self._provider_manager.get_translation_provider()
                 if provider and not provider.is_available(input_lang, target_lang):
                     if input_lang == "auto":
-                        return {"error": "model_not_available", "message": "Offline translation requires a specific source language. Select one in plugin settings"}
-                    return {"error": "model_not_available", "message": "Offline model not found. Download it in plugin settings"}
+                        return {"error": "model_not_available", "message": "Для офлайн-перевода нужен конкретный исходный язык. Выберите его в настройках плагина"}
+                    return {"error": "model_not_available", "message": "Офлайн-модель не найдена. Скачайте её в настройках плагина"}
 
             # Only translate regions that don't already have translatedText
             texts_to_translate = [
@@ -2400,7 +2400,7 @@ class Plugin:
             return {"error": "network_error", "message": str(e)}
         except ApiKeyError as e:
             logger.error(f"API key error during translation: {e}")
-            return {"error": "api_key_error", "message": str(e) or "Invalid API key"}
+            return {"error": "api_key_error", "message": str(e) or "Неверный API-ключ"}
         except RateLimitError as e:
             logger.error(f"Rate limit during translation: {e}")
             return {"error": "rate_limit_error", "message": str(e)}
@@ -2518,9 +2518,9 @@ class Plugin:
                 self._triton_monitor.start()
 
             if hidraw_ok:
-                return {"success": True, "message": "Monitor started"}
+                return {"success": True, "message": "Монитор запущен"}
             else:
-                return {"success": False, "error": "Failed to initialize device"}
+                return {"success": False, "error": "Не удалось инициализировать устройство"}
         except Exception as e:
             logger.error(f"Error starting hidraw monitor: {e}")
             return {"success": False, "error": str(e)}
@@ -2533,7 +2533,7 @@ class Plugin:
                 self._evdev_monitor.stop()
             if self._triton_monitor:
                 self._triton_monitor.stop()
-            return {"success": True, "message": "Monitor stopped"}
+            return {"success": True, "message": "Монитор остановлен"}
         except Exception as e:
             logger.error(f"Error stopping hidraw monitor: {e}")
             return {"success": False, "error": str(e)}
@@ -2544,7 +2544,7 @@ class Plugin:
             if self._hidraw_monitor and self._hidraw_monitor.running:
                 events = self._hidraw_monitor.get_events(max_events)
                 return {"success": True, "events": events}
-            return {"success": False, "events": [], "error": "Monitor not running"}
+            return {"success": False, "events": [], "error": "Монитор не запущен"}
         except Exception as e:
             logger.error(f"Error getting hidraw events: {e}")
             return {"success": False, "events": [], "error": str(e)}
@@ -2573,7 +2573,7 @@ class Plugin:
 
             if any_running:
                 return {"success": True, "buttons": list(buttons)}
-            return {"success": False, "buttons": [], "error": "Monitor not running"}
+            return {"success": False, "buttons": [], "error": "Монитор не запущен"}
         except Exception as e:
             logger.error(f"Error getting hidraw button state: {e}")
             return {"success": False, "buttons": [], "error": str(e)}

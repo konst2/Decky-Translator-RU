@@ -150,10 +150,10 @@ class FreeTranslateProvider(TranslationProvider):
 
         except requests.exceptions.ConnectionError as e:
             logger.error(f"Free Translate connection error: {e}")
-            raise NetworkError("No internet connection") from e
+            raise NetworkError("Нет подключения к интернету") from e
         except requests.exceptions.Timeout as e:
             logger.error(f"Free Translate timeout error: {e}")
-            raise NetworkError("Connection timed out") from e
+            raise NetworkError("Превышено время ожидания Google Translate") from e
         except Exception as e:
             logger.error(f"Translation error: {e}")
             return None
@@ -282,14 +282,14 @@ class FreeTranslateProvider(TranslationProvider):
             try:
                 resp = requests.get(self.TRANSLATE_URL, params=params, timeout=4)
             except (requests.ConnectionError, requests.Timeout):
-                return False, "Network unreachable"
+                return False, "Сеть недоступна"
             except Exception as e:
-                return False, f"Probe failed: {type(e).__name__}"
+                return False, f"Ошибка проверки: {type(e).__name__}"
             code = resp.status_code
             if code == 200:
                 return True, ""
             if code in (403, 429):
-                return False, "Rate limited"
-            return False, f"Service error ({code})"
+                return False, "Превышен лимит запросов"
+            return False, f"Ошибка сервиса (код {code})"
 
         return await asyncio.to_thread(_probe)

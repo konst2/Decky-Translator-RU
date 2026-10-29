@@ -26,6 +26,10 @@ GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 DEFAULT_MODEL = "gemini-2.5-flash"
 REQUEST_TIMEOUT = 30
 
+# Gemini's error text is shown in the overlay as is (same as MyMemory
+# and Yandex); a long one would overflow it, so it is cut to this length.
+_MAX_ERROR_MESSAGE_LENGTH = 200
+
 # Language code to natural name for the prompt
 LANG_NAMES = {
     "auto": "auto-detect",
@@ -141,6 +145,13 @@ def _validate_region(region: dict) -> bool:
     return all(isinstance(v, (int, float)) for v in box)
 
 
+def _shorten(message: str) -> str:
+    message = message.strip()
+    if len(message) > _MAX_ERROR_MESSAGE_LENGTH:
+        message = message[:_MAX_ERROR_MESSAGE_LENGTH].rstrip() + "…"
+    return message
+
+
 class GeminiVisionProvider(OCRProvider):
     """
     Uses Gemini Vision to detect and translate text in screenshots
@@ -252,9 +263,10 @@ class GeminiVisionProvider(OCRProvider):
                 headers={"Content-Type": "application/json"}
             )
         except requests.ConnectionError as e:
-            raise NetworkError(f"Cannot reach Gemini API: {e}")
+            logger.error(f"Gemini connection error: {e}")
+            raise NetworkError("Нет подключения к интернету") from e
         except requests.Timeout:
-            raise NetworkError("Gemini API request timed out")
+            raise NetworkError("Превышено время ожидания Gemini")
 
         if response.status_code == 400:
             try:
@@ -263,14 +275,19 @@ class GeminiVisionProvider(OCRProvider):
                 body = {}
             error_msg = body.get("error", {}).get("message", response.text[:200])
             if "API_KEY_INVALID" in str(error_msg) or "API key" in str(error_msg):
-                raise ApiKeyError(f"Invalid Gemini API key: {error_msg}")
-            raise NetworkError(f"Gemini API error (400): {error_msg}")
+                raise ApiKeyError("Неверный API-ключ Gemini")
+            logger.error(f"Gemini API error (400): {error_msg}")
+            details = _shorten(str(error_msg))
+            if details:
+                raise NetworkError(f"Gemini отклонил запрос: {details}")
+            raise NetworkError("Ошибка Gemini API (код 400)")
         elif response.status_code == 401 or response.status_code == 403:
-            raise ApiKeyError("Invalid or unauthorized Gemini API key")
+            raise ApiKeyError("Неверный API-ключ Gemini")
         elif response.status_code == 429:
-            raise RateLimitError("Gemini API rate limit exceeded. Free tier: 15 req/min, 1000 req/day")
+            raise RateLimitError("Превышен лимит запросов Gemini (бесплатный тариф: 15 запросов в минуту, 1000 в день)")
         elif response.status_code != 200:
-            raise NetworkError(f"Gemini API error ({response.status_code}): {response.text[:200]}")
+            logger.error(f"Gemini API error ({response.status_code}): {response.text[:200]}")
+            raise NetworkError(f"Ошибка Gemini API (код {response.status_code})")
 
         result = response.json()
 
@@ -297,13 +314,13 @@ class GeminiVisionProvider(OCRProvider):
             raise KeyError("No text part found")
         except (KeyError, IndexError):
             logger.error(f"Unexpected Gemini response structure: {json.dumps(result)[:500]}")
-            raise NetworkError("Unexpected response from Gemini API")
+            raise NetworkError("Gemini вернул некорректный ответ")
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
         import asyncio
 
         if not self._api_key:
-            raise ApiKeyError("Gemini API key not configured")
+            raise ApiKeyError("Не задан API-ключ Gemini")
 
         img_width, img_height = _get_png_dimensions(image_data)
         if img_width == 0 or img_height == 0:
@@ -391,7 +408,7 @@ class GeminiVisionProvider(OCRProvider):
         import asyncio
 
         if not self._api_key:
-            return False, "No API key configured"
+            return False, "Не задан API-ключ"
 
         def _check():
             url = f"{GEMINI_API_URL}/{self._model}:generateContent?key={self._api_key}"
@@ -405,7 +422,8 @@ class GeminiVisionProvider(OCRProvider):
                     return True, ""
                 return False, classify_google_error(resp.status_code, resp.text)
             except Exception as e:
-                return False, str(e)
+                logger.error(f"Gemini API key check failed: {e}")
+                return False, f"Ошибка проверки: {type(e).__name__}"
 
         return await asyncio.to_thread(_check)
 
@@ -413,16 +431,16 @@ class GeminiVisionProvider(OCRProvider):
         import asyncio
 
         if not self._api_key:
-            return False, "API key required"
+            return False, "Требуется API-ключ"
 
         def _probe():
             url = f"{GEMINI_API_URL}?key={self._api_key}&pageSize=1"
             try:
                 resp = requests.get(url, timeout=4)
             except (requests.ConnectionError, requests.Timeout):
-                return False, "Network unreachable"
+                return False, "Сеть недоступна"
             except Exception as e:
-                return False, f"Probe failed: {type(e).__name__}"
+                return False, f"Ошибка проверки: {type(e).__name__}"
             if resp.status_code == 200:
                 return True, ""
             return False, classify_google_error(resp.status_code, resp.text)

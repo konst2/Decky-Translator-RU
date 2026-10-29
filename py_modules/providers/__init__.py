@@ -653,15 +653,15 @@ class ProviderManager:
             elif provider == "mymemory":
                 p = self.get_translation_provider(ProviderType.MYMEMORY)
             else:
-                return False, f"Unknown provider ({provider})"
+                return False, f"Неизвестный провайдер: {provider}"
 
             if p is None or not hasattr(p, "test_network"):
-                return False, "Provider unavailable"
+                return False, "Провайдер недоступен"
 
             return await p.test_network()
         except Exception as e:
             logger.warning(f"Reachability probe failed for {provider}/{kind}: {e}")
-            return False, f"Probe failed: {type(e).__name__}"
+            return False, f"Ошибка проверки: {type(e).__name__}"
 
     # -- NLLB model management --
 

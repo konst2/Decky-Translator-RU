@@ -168,7 +168,7 @@ class RapidOCRDownloader:
 
             for url, filename, _approx in MANIFEST:
                 if self._download_cancel:
-                    raise Exception("Download cancelled")
+                    raise Exception("Загрузка отменена")
 
                 dest = os.path.join(staging_dir, filename)
 
@@ -176,26 +176,26 @@ class RapidOCRDownloader:
                     resp = requests.get(url, stream=True, timeout=30)
                 except requests.ConnectionError:
                     raise Exception(
-                        "Cannot reach model server. Check internet connection."
+                        "Сервер моделей недоступен. Проверьте подключение к интернету."
                     )
                 except requests.Timeout:
                     raise Exception(
-                        "Download timed out. Check internet connection."
+                        "Время ожидания загрузки истекло. Проверьте подключение к интернету."
                     )
 
                 if resp.status_code == 404:
-                    raise Exception(f"Required file not found: {filename}")
+                    raise Exception(f"Файл не найден на сервере: {filename}")
                 if resp.status_code == 429:
-                    raise Exception("Too many requests. Try again later.")
+                    raise Exception("Слишком много запросов. Попробуйте позже.")
                 if resp.status_code != 200:
                     raise Exception(
-                        f"HTTP {resp.status_code} downloading {filename}"
+                        f"Ошибка загрузки {filename} (код {resp.status_code})"
                     )
 
                 with open(dest, "wb") as f:
                     for chunk in resp.iter_content(chunk_size=1024 * 256):
                         if self._download_cancel:
-                            raise Exception("Download cancelled")
+                            raise Exception("Загрузка отменена")
                         if not chunk:
                             continue
                         f.write(chunk)
@@ -210,7 +210,7 @@ class RapidOCRDownloader:
             for req in REQUIRED_FILES:
                 if not os.path.exists(os.path.join(staging_dir, req)):
                     raise Exception(
-                        f"Missing required file after download: {req}"
+                        f"После загрузки не найден файл: {req}"
                     )
 
             if os.path.exists(self._target_dir):

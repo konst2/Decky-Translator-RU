@@ -157,11 +157,12 @@ class ScreenAIDownloader:
                 timeout=30,
             )
         except requests.ConnectionError:
-            raise Exception("Cannot reach the remote resource. Check internet connection.")
+            raise Exception("Сервер моделей недоступен. Проверьте подключение к интернету.")
         except requests.Timeout:
-            raise Exception("Connection timed out. Check internet connection.")
+            raise Exception("Время ожидания загрузки истекло. Проверьте подключение к интернету.")
         if resp.status_code != 200:
-            raise Exception(f"pRPC HTTP {resp.status_code}: {resp.text[:200]}")
+            logger.error(f"CIPD pRPC error ({resp.status_code}): {resp.text[:500]}")
+            raise Exception(f"CIPD вернул ошибку (код {resp.status_code})")
         body = resp.content
         if body.startswith(PRPC_PREFIX):
             body = body[len(PRPC_PREFIX):]
@@ -182,7 +183,8 @@ class ScreenAIDownloader:
             hash_algo = instance.get("hashAlgo")
             hex_digest = instance.get("hexDigest")
             if not hash_algo or not hex_digest:
-                raise Exception(f"CIPD resolve returned no instance: {resolved}")
+                logger.error(f"CIPD resolve response: {resolved}")
+                raise Exception("CIPD не вернул данные о пакете")
 
         url_resp = self._prpc_post(PRPC_GET_URL, {
             "package": CIPD_PACKAGE,
@@ -190,7 +192,8 @@ class ScreenAIDownloader:
         })
         signed = url_resp.get("signedUrl")
         if not signed:
-            raise Exception(f"CIPD GetInstanceURL returned no URL: {url_resp}")
+            logger.error(f"CIPD GetInstanceURL response: {url_resp}")
+            raise Exception("CIPD не вернул ссылку для загрузки")
         return signed
 
     def _download(self):
@@ -205,17 +208,17 @@ class ScreenAIDownloader:
             signed_url = self._resolve_signed_url()
 
             if self._download_cancel:
-                raise Exception("Download cancelled")
+                raise Exception("Загрузка отменена")
 
             try:
                 resp = requests.get(signed_url, stream=True, timeout=60)
             except requests.ConnectionError:
-                raise Exception("Cannot reach the remote resource. Check internet connection.")
+                raise Exception("Сервер моделей недоступен. Проверьте подключение к интернету.")
             except requests.Timeout:
-                raise Exception("Connection timed out. Check internet connection.")
+                raise Exception("Время ожидания загрузки истекло. Проверьте подключение к интернету.")
 
             if resp.status_code != 200:
-                raise Exception(f"HTTP {resp.status_code} fetching package")
+                raise Exception(f"Ошибка загрузки пакета (код {resp.status_code})")
 
             total = int(resp.headers.get("content-length") or 0)
             downloaded = 0
@@ -223,7 +226,7 @@ class ScreenAIDownloader:
             with open(zip_path, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=1024 * 256):
                     if self._download_cancel:
-                        raise Exception("Download cancelled")
+                        raise Exception("Загрузка отменена")
                     if not chunk:
                         continue
                     f.write(chunk)
@@ -236,7 +239,7 @@ class ScreenAIDownloader:
                             )
 
             if self._download_cancel:
-                raise Exception("Download cancelled")
+                raise Exception("Загрузка отменена")
 
             if os.path.exists(staging_dir):
                 shutil.rmtree(staging_dir, ignore_errors=True)
@@ -246,7 +249,7 @@ class ScreenAIDownloader:
                 with zipfile.ZipFile(zip_path, "r") as zf:
                     zf.extractall(staging_dir)
             except zipfile.BadZipFile:
-                raise Exception("Downloaded package is not a valid zip")
+                raise Exception("Скачанный пакет повреждён (не zip-архив)")
 
             # Drop the .cipdpkg manifest dir; not needed at runtime.
             cipd_meta = os.path.join(staging_dir, ".cipdpkg")
@@ -255,7 +258,7 @@ class ScreenAIDownloader:
 
             for req in REQUIRED_FILES:
                 if not os.path.exists(os.path.join(staging_dir, req)):
-                    raise Exception(f"Missing required file after extract: {req}")
+                    raise Exception(f"После распаковки не найден файл: {req}")
 
             so_path = os.path.join(staging_dir, RESOURCES_SUBDIR, "libchromescreenai.so")
             if os.path.exists(so_path):

@@ -372,8 +372,8 @@ while True:
                     usage_stats = self.get_usage_stats()
                     reset_seconds = usage_stats.get("rate_reset_seconds", 600)
                     reset_minutes = max(1, (reset_seconds + 59) // 60)  # Round up to nearest minute
-                    raise RateLimitError(f"Rate limit reached. Please wait {reset_minutes} min")
-                raise RateLimitError("Rate limit reached. Please wait 10 min")
+                    raise RateLimitError(f"Превышен лимит запросов OCR.space. Подождите {reset_minutes} мин")
+                raise RateLimitError("Превышен лимит запросов OCR.space. Подождите 10 мин")
 
             if response.status_code != 200:
                 logger.error(f"OCR.space API error: {response.status_code}")
@@ -391,10 +391,10 @@ while True:
 
         except requests.exceptions.ConnectionError as e:
             logger.error(f"OCR.space connection error: {e}")
-            raise NetworkError("No internet connection") from e
+            raise NetworkError("Нет подключения к интернету") from e
         except requests.exceptions.Timeout as e:
             logger.error(f"OCR.space timeout error: {e}")
-            raise NetworkError("Connection timed out") from e
+            raise NetworkError("Превышено время ожидания OCR.space") from e
         except RateLimitError:
             # Re-raise rate limit errors so they can be handled by the caller
             raise
@@ -510,8 +510,8 @@ while True:
                 requests.head("https://api.ocr.space/parse/image", timeout=4)
                 return True, ""
             except (requests.ConnectionError, requests.Timeout):
-                return False, "Network unreachable"
+                return False, "Сеть недоступна"
             except Exception as e:
-                return False, f"Probe failed: {type(e).__name__}"
+                return False, f"Ошибка проверки: {type(e).__name__}"
 
         return await asyncio.to_thread(_probe)

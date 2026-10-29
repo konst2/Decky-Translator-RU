@@ -461,7 +461,7 @@ class CT2TranslateProvider(TranslationProvider):
 
         if not self._model_manager.is_model_downloaded():
             from .base import NetworkError
-            raise NetworkError("NLLB model not downloaded")
+            raise NetworkError("Модель NLLB не скачана. Скачайте её в настройках плагина")
 
         if not self._ensure_worker():
             logger.error("Could not start CT2 translation worker")

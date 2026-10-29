@@ -152,7 +152,7 @@ class NLLBDownloader:
 
             for filename in all_files:
                 if self._download_cancel:
-                    raise Exception("Download cancelled")
+                    raise Exception("Загрузка отменена")
 
                 url = HF_BASE_URL.format(filename=filename)
                 dest = os.path.join(temp_dir, filename)
@@ -163,13 +163,13 @@ class NLLBDownloader:
 
                     if resp.status_code == 404:
                         if is_required:
-                            raise Exception(f"Required file not found: {filename}")
+                            raise Exception(f"Файл не найден на сервере: {filename}")
                         continue
                     elif resp.status_code == 429:
-                        raise Exception("Too many requests. Try again later.")
+                        raise Exception("Слишком много запросов. Попробуйте позже.")
                     elif resp.status_code != 200:
                         if is_required:
-                            raise Exception(f"HTTP {resp.status_code} downloading {filename}")
+                            raise Exception(f"Ошибка загрузки {filename} (код {resp.status_code})")
                         continue
 
                     total_size = int(resp.headers.get('content-length', 0))
@@ -178,7 +178,7 @@ class NLLBDownloader:
                     with open(dest, 'wb') as f:
                         for chunk in resp.iter_content(chunk_size=1024 * 256):
                             if self._download_cancel:
-                                raise Exception("Download cancelled")
+                                raise Exception("Загрузка отменена")
                             f.write(chunk)
                             downloaded += len(chunk)
 
@@ -187,13 +187,13 @@ class NLLBDownloader:
                                     self._download_progress = downloaded / total_size
 
                 except requests.ConnectionError:
-                    raise Exception("Cannot reach model server. Check internet connection.")
+                    raise Exception("Сервер моделей недоступен. Проверьте подключение к интернету.")
                 except requests.Timeout:
-                    raise Exception("Download timed out. Check internet connection.")
+                    raise Exception("Время ожидания загрузки истекло. Проверьте подключение к интернету.")
 
             for req_file in REQUIRED_MODEL_FILES:
                 if not os.path.exists(os.path.join(temp_dir, req_file)):
-                    raise Exception(f"Missing required file after download: {req_file}")
+                    raise Exception(f"После загрузки не найден файл: {req_file}")
 
             if os.path.exists(final_dir):
                 shutil.rmtree(final_dir)

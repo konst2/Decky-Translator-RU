@@ -115,21 +115,22 @@ class ChromeScreenAIProvider(OCRProvider):
 
         if not os.path.exists(self._subprocess_script):
             self._init_error = (
-                f"Chrome Screen AI subprocess script missing: {self._subprocess_script}"
+                f"Не найден скрипт Chrome Screen AI: {self._subprocess_script}"
             )
             logger.warning(self._init_error)
             return False
 
         so_path = os.path.join(self._model_dir or "", "libchromescreenai.so")
         if not self._model_dir or not os.path.exists(so_path):
-            self._init_error = "Chrome Screen AI engine not downloaded"
+            self._init_error = "Движок Chrome Screen AI не скачан"
             return False
 
         self._python_path = python_runtime.find_python(self._plugin_dir)
         if not self._python_path:
             self._init_error = (
-                "Python 3.13 runtime missing. Reinstall the plugin to restore "
-                "the bundled runtime, or install python3.13 on your system."
+                "Не найден Python 3.13. Переустановите плагин, чтобы "
+                "восстановить встроенный интерпретатор, или установите "
+                "python3.13 в систему."
             )
             logger.warning(self._init_error)
             return False

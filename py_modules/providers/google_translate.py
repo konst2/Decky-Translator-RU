@@ -7,7 +7,10 @@ from typing import List
 
 import requests
 
-from .base import TranslationProvider, ProviderType, NetworkError, ApiKeyError, RateLimitError, classify_google_error
+from .base import (
+    TranslationProvider, ProviderType, NetworkError, ApiKeyError, RateLimitError,
+    classify_google_error, GOOGLE_KEY_ERROR_REASONS, GOOGLE_ERR_RATE_LIMITED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -120,14 +123,9 @@ class GoogleTranslateProvider(TranslationProvider):
                 logger.error(f"Google Translate API error: {response.status_code}")
                 logger.error(f"Response: {response.text[:500]}")
                 reason = classify_google_error(response.status_code, response.text)
-                if reason in (
-                    "Invalid API key",
-                    "API not enabled in Cloud project",
-                    "Billing not enabled",
-                    "Access blocked (key restriction)",
-                ):
+                if reason in GOOGLE_KEY_ERROR_REASONS:
                     raise ApiKeyError(reason)
-                if reason == "Rate limited":
+                if reason == GOOGLE_ERR_RATE_LIMITED:
                     raise RateLimitError(reason)
                 return texts
 
@@ -149,26 +147,26 @@ class GoogleTranslateProvider(TranslationProvider):
             raise
         except requests.exceptions.ConnectionError as e:
             logger.error(f"Google Translate connection error: {e}")
-            raise NetworkError("No internet connection") from e
+            raise NetworkError("Нет подключения к интернету") from e
         except requests.exceptions.Timeout as e:
             logger.error(f"Google Translate timeout error: {e}")
-            raise NetworkError("Connection timed out") from e
+            raise NetworkError("Превышено время ожидания Google Cloud Translation") from e
         except Exception as e:
             logger.error(f"Batch translation error: {e}")
             return texts
 
     async def test_network(self) -> tuple:
         if not self._api_key:
-            return False, "API key required"
+            return False, "Требуется API-ключ"
 
         def _probe():
             url = f"{self._endpoint}/languages?key={self._api_key}"
             try:
                 resp = requests.get(url, timeout=4)
             except (requests.ConnectionError, requests.Timeout):
-                return False, "Network unreachable"
+                return False, "Сеть недоступна"
             except Exception as e:
-                return False, f"Probe failed: {type(e).__name__}"
+                return False, f"Ошибка проверки: {type(e).__name__}"
             if resp.status_code == 200:
                 return True, ""
             return False, classify_google_error(resp.status_code, resp.text)
