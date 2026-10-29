@@ -1142,7 +1142,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         { label: <span>Яндекс</span>, data: "yandex" },
                                         { label: <span>MyMemory</span>, data: "mymemory" },
                                         { label: <span>Локально</span>, data: "ct2" },
-                                        { label: <span>Локально (лёгкая, en→ru)</span>, data: "opusmt" },
+                                        { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>Локально (en→ru)</span><span className="dt-option-note" style={{ fontSize: "10px", color: "#ffa726", marginLeft: "6px", transform: "translateY(1px)" }}>(лёгкая)</span></span>, data: "opusmt" },
                                         { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>Google Translate</span><span className="dt-option-note" style={{ fontSize: "10px", color: "#ffa726", marginLeft: "6px", transform: "translateY(1px)" }}>(может не работать из РФ)</span></span>, data: "freegoogle" },
                                         { label: <span>Google Cloud</span>, data: "googlecloud" }
                                     ]}
