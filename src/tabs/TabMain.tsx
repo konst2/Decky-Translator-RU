@@ -431,6 +431,10 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                     </>
                 )}
 
+                <PanelSectionRow>
+                    <VersionBadge />
+                </PanelSectionRow>
+
                 {/* Ko-fi Support Button */}
                 <PanelSectionRow>
                     <div
@@ -447,7 +451,8 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                             label stays short and fits on one line in the 300px panel
                             (a long label wrapped to two lines and made it tall). */}
                         <div style={{ fontSize: '11px', color: '#8b929a', textAlign: 'center' }}>
-                            Этот плагин — форк Decky Translator от cat-in-a-box
+                            Этот плагин — форк Decky Translator от cat-in-a-box.
+                            Нажав кнопку ниже, можете поддержать автора оригинального плагина.
                         </div>
                         <Focusable>
                             <DialogButton
@@ -473,10 +478,6 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                             </DialogButton>
                         </Focusable>
                     </div>
-                </PanelSectionRow>
-
-                <PanelSectionRow>
-                    <VersionBadge />
                 </PanelSectionRow>
             </PanelSection>
             <BottomSpacer />
