@@ -45,6 +45,26 @@ const CompositionRequest: VFC<{ level: UIComposition }> = ({ level }) => {
     return null;
 };
 
+// Corners of the captured frame: each arm paints only two sides
+const frameCornerArms = (inset: number, size: number, thickness: number, color: string) => [
+    { top: inset, left: inset, borderTopWidth: thickness, borderLeftWidth: thickness },
+    { top: inset, right: inset, borderTopWidth: thickness, borderRightWidth: thickness },
+    { bottom: inset, left: inset, borderBottomWidth: thickness, borderLeftWidth: thickness },
+    { bottom: inset, right: inset, borderBottomWidth: thickness, borderRightWidth: thickness },
+].map((arm, i) => (
+    <div key={i} style={{
+        position: "absolute",
+        width: size,
+        height: size,
+        // Without this the two untouched sides fall back to the initial border width
+        // and the corner grows into a box
+        borderWidth: 0,
+        borderStyle: "solid",
+        borderColor: color,
+        ...arm,
+    }} />
+));
+
 // Enhanced ImageState to handle translated text regions
 export class ImageState {
     private visible = false;
@@ -535,7 +555,8 @@ export const TranslatedTextOverlay: VFC<{
                         alt="Скриншот"
                     />
 
-                    {/* Dim the captured frame while processing, so it reads as a frozen snapshot */}
+                    {/* Dim the captured frame while processing, so it reads as a frozen snapshot.
+                        Vignette keeps the centre (where labels are read) at 15 % and deepens the edges */}
                     <div style={{
                         position: "absolute",
                         top: 0,
@@ -543,12 +564,12 @@ export const TranslatedTextOverlay: VFC<{
                         right: 0,
                         bottom: 0,
                         pointerEvents: "none",
-                        backgroundColor: "rgba(0, 0, 0, 0.15)",
+                        background: "radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 42%, rgba(0, 0, 0, 0.32) 100%), rgba(0, 0, 0, 0.15)",
                         opacity: loading ? 1 : 0,
                         transition: "opacity 0.15s ease-out",
                     }} />
 
-                    {/* Frame drawn above the screenshot so it takes no layout space */}
+                    {/* Frame corners mark the captured shot without turning it into a window border */}
                     <div style={{
                         position: "absolute",
                         top: 0,
@@ -556,10 +577,15 @@ export const TranslatedTextOverlay: VFC<{
                         right: 0,
                         bottom: 0,
                         pointerEvents: "none",
-                        boxShadow: translationsVisible
-                            ? "inset 0 0 0 2px rgba(255, 255, 255, 0.55), inset 0 0 0 3px rgba(0, 0, 0, 0.35)"
-                            : "inset 0 0 0 2px rgba(26, 159, 255, 0.9), inset 0 0 0 3px rgba(0, 0, 0, 0.35)",
-                    }} />
+                    }}>
+                        {frameCornerArms(11, 28, 1, "rgba(0, 0, 0, 0.55)")}
+                        {frameCornerArms(
+                            12,
+                            26,
+                            2,
+                            translationsVisible ? "rgba(255, 255, 255, 0.55)" : "rgba(26, 159, 255, 0.9)"
+                        )}
+                    </div>
 
                     {/* Overlay translated text boxes with adaptive font sizing */}
                     {translationsVisible && (() => {
