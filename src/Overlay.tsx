@@ -533,6 +533,19 @@ export const TranslatedTextOverlay: VFC<{
                         alt="Скриншот"
                     />
 
+                    {/* Dim the captured frame while processing, so it reads as a frozen snapshot */}
+                    <div style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        pointerEvents: "none",
+                        backgroundColor: "rgba(0, 0, 0, 0.15)",
+                        opacity: loading ? 1 : 0,
+                        transition: "opacity 0.15s ease-out",
+                    }} />
+
                     {/* Frame drawn above the screenshot so it takes no layout space */}
                     <div style={{
                         position: "absolute",
