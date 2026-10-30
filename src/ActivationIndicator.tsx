@@ -29,11 +29,23 @@ const useUIComposition: (composition: UIComposition) => void = findModuleChild(
     }
 );
 
+const SIZE = 36;
+const CENTER = SIZE / 2;
+const STROKE_WIDTH = 5.5;
+// Outer edge lands exactly on the 36 px box: a larger radius makes the stroke poke past
+// the viewport, and SVG clips it flat at the widest points of the rotating arc
+const ARC_RADIUS = CENTER - STROKE_WIDTH / 2;
+const DOT_RADIUS = 8;
+const ARC_COLOR = "#ffffff";
+// Exactly half of the circle; flat (butt) caps make the ends look like the Steam Deck mark
+const ARC_LENGTH = Math.PI * ARC_RADIUS;
+const ARC_GAP = 2 * Math.PI * ARC_RADIUS;
+
 interface ActivationIndicatorProps {
     visible: boolean;
-    progress: number; // 0.0 to 1.0
     text?: string;
     forDismiss?: boolean; // true when dismissing overlay
+    holdMs?: number; // hold duration; the arc makes one turn in that time
 }
 
 // Mountable component that holds a composition state request.
@@ -43,15 +55,11 @@ const CompositionRequest: VFC<{ level: UIComposition }> = ({ level }) => {
     return null;
 };
 
-export const ActivationIndicator: VFC<ActivationIndicatorProps> = ({ visible, progress, text, forDismiss }) => {
+export const ActivationIndicator: VFC<ActivationIndicatorProps> = ({ visible, text, forDismiss, holdMs }) => {
     const layer = forDismiss ? UIComposition.Overlay : UIComposition.Notification;
 
-    const size = 36;
-    const strokeWidth = 3;
-    const radius = (size - strokeWidth) / 2;
-    const circumference = radius * 2 * Math.PI;
-    const offset = circumference * (1 - progress);
-    const strokeColor = forDismiss ? "#f44336" : "#3498db";
+    const dotColor = forDismiss ? "#ff9a3c" : "#1a9fff";
+    const spinMs = Math.max(holdMs ?? 1000, 200);
 
     return (
         <>
@@ -71,26 +79,34 @@ export const ActivationIndicator: VFC<ActivationIndicatorProps> = ({ visible, pr
             opacity: visible ? 1 : 0,
             pointerEvents: visible ? "auto" : "none",
         }}>
-            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            {/* This component is a separate React root, so Overlay.tsx keyframes are not visible here */}
+            <style>{`
+                @keyframes deckArcSpin {
+                    from { transform: rotate(-90deg); }
+                    to { transform: rotate(270deg); }
+                }
+            `}</style>
+            <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ overflow: "visible" }}>
                 <circle
-                    cx={size/2}
-                    cy={size/2}
-                    r={radius}
-                    fill="none"
-                    stroke="#333333"
-                    strokeWidth={strokeWidth}
+                    cx={CENTER}
+                    cy={CENTER}
+                    r={DOT_RADIUS}
+                    fill={dotColor}
                 />
                 <circle
-                    cx={size/2}
-                    cy={size/2}
-                    r={radius}
+                    cx={CENTER}
+                    cy={CENTER}
+                    r={ARC_RADIUS}
                     fill="none"
-                    stroke={strokeColor}
-                    strokeWidth={strokeWidth}
-                    strokeLinecap="round"
-                    strokeDasharray={circumference}
-                    strokeDashoffset={offset}
-                    transform={`rotate(-90 ${size/2} ${size/2})`}
+                    stroke={ARC_COLOR}
+                    strokeWidth={STROKE_WIDTH}
+                    strokeLinecap="butt"
+                    strokeDasharray={`${ARC_LENGTH} ${ARC_GAP}`}
+                    style={{
+                        transform: "rotate(-90deg)",
+                        transformOrigin: `${CENTER}px ${CENTER}px`,
+                        animation: visible ? `deckArcSpin ${spinMs}ms linear infinite` : "none",
+                    }}
                 />
             </svg>
             {text && (

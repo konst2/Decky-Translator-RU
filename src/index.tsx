@@ -292,9 +292,9 @@ const HoldActivationIndicator: VFC<{ logic: GameTranslatorLogic }> = ({logic}) =
     return (
         <ActivationIndicator
             visible={progressInfo.active}
-            progress={progressInfo.progress}
             text={getActivationText()}
             forDismiss={progressInfo.forDismiss}
+            holdMs={progressInfo.forDismiss ? settings.holdTimeDismiss : settings.holdTimeTranslate}
         />
     );
 };
