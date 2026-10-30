@@ -518,12 +518,23 @@ export const TranslatedTextOverlay: VFC<{
                             maxHeight: "100vh",
                             maxWidth: "100vw",
                             objectFit: "contain",
-                            outline: translationsVisible ? "1px solid #f44336" : "1px solid #ffc107",
-                            outlineOffset: "-1px",
                             imageRendering: "pixelated"
                         }}
                         alt="Скриншот"
                     />
+
+                    {/* Frame drawn above the screenshot so it takes no layout space */}
+                    <div style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        pointerEvents: "none",
+                        boxShadow: translationsVisible
+                            ? "inset 0 0 0 2px rgba(255, 255, 255, 0.55), inset 0 0 0 3px rgba(0, 0, 0, 0.35)"
+                            : "inset 0 0 0 2px rgba(26, 159, 255, 0.9), inset 0 0 0 3px rgba(0, 0, 0, 0.35)",
+                    }} />
 
                     {/* Overlay translated text boxes with adaptive font sizing */}
                     {translationsVisible && (() => {
@@ -695,7 +706,7 @@ export const TranslatedTextOverlay: VFC<{
                                 height="24"
                                 viewBox="0 0 24 24"
                                 fill="none"
-                                stroke="#ffc107"
+                                stroke="#1a9fff"
                                 strokeWidth="2"
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
