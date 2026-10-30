@@ -661,8 +661,8 @@ export const TranslatedTextOverlay: VFC<{
                                         backgroundColor: "rgba(0, 0, 0, 0.8)",
                                         color: "#FFFFFF",
 
-                                        padding: '1px 2px',
-                                        borderRadius: `${Math.round(6 * generalFactor)}px`,
+                                        padding: '0.06em 0.15em',
+                                        borderRadius: '0.22em',
                                         boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12), 0 2px 6px rgba(0,0,0,0.45)",
 
                                         fontSize: `${Math.round(fontSize)}px`,
