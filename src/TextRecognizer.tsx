@@ -68,7 +68,16 @@ export interface TextRegion {
     typographyType?: string;
     alignment?: string;
     translatedText?: string;  // Pre-translated text from combined OCR+translation providers
+    blockId?: number;         // Screen AI layout id of the visual block (Chrome Screen AI only)
 }
+
+// CJK scripts (Chinese, Japanese, Korean) and fullwidth forms.
+const CJK_CHAR = /[\u3000-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/;
+
+// Scripts written without spaces between words: Chinese and Japanese.
+// Same as CJK_CHAR minus Hangul syllables: Korean separates words with
+// spaces, so its wrapped lines must be joined with a space.
+const NO_SPACE_SCRIPT = /[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/;
 
 // Union-Find with path compression and union by rank.
 // Enables transitive merging: if A merges with B and B with C,
@@ -361,10 +370,12 @@ export class TextRecognizer {
     }
 
     // Extract connected components from Union-Find, merge text and bounding boxes.
+    // "paragraph" is "vertical" for lines of one Screen AI block: same
+    // top-to-bottom order, but lines are joined into one phrase, not with "\n".
     private extractMergedRegions(
         groups: number[][],
         regions: TextRegion[],
-        direction: "horizontal" | "vertical"
+        direction: "horizontal" | "vertical" | "paragraph"
     ): TextRegion[] {
         const merged: TextRegion[] = [];
 
@@ -401,9 +412,12 @@ export class TextRecognizer {
 
             for (let i = 1; i < sorted.length; i++) {
                 const region = sorted[i];
-                const separator = direction === "horizontal"
-                    ? this.getHorizontalSpacing(sorted[i - 1], region)
-                    : "\n";
+                let separator = "\n";
+                if (direction === "horizontal") {
+                    separator = this.getHorizontalSpacing(sorted[i - 1], region);
+                } else if (direction === "paragraph") {
+                    separator = this.getLineWrapSpacing(sorted[i - 1], region);
+                }
 
                 combinedText += separator + region.text;
                 if (combinedTranslatedText !== null && region.translatedText) {
@@ -465,11 +479,29 @@ export class TextRecognizer {
             return "";
         }
 
-        const cjkPattern = /[\u3000-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/;
-        if (cjkPattern.test(a.text.slice(-1)) || cjkPattern.test(b.text.charAt(0))) {
+        if (CJK_CHAR.test(a.text.slice(-1)) || CJK_CHAR.test(b.text.charAt(0))) {
             return "";
         }
 
+        return " ";
+    }
+
+    // Spacing between wrapped lines of one Screen AI block. The block is one
+    // phrase, so lines join into a single line: with "\n" translators split
+    // it back and translate each line on its own.
+    // getHorizontalSpacing is not reused: it treats quotes as punctuation and
+    // would glue `"Come here."` + `She left` into `"Come here."She left`.
+    private getLineWrapSpacing(a: TextRegion, b: TextRegion): string {
+        // A trailing hyphen is kept and glued without a space: "self-" + "aware"
+        // becomes "self-aware". A word break ("possi-" + "ble") can't be told
+        // apart without a dictionary; games rarely hyphenate, so keeping the
+        // hyphen is the safer guess.
+        if (a.text.endsWith("-")) {
+            return "";
+        }
+        if (NO_SPACE_SCRIPT.test(a.text.slice(-1)) || NO_SPACE_SCRIPT.test(b.text.charAt(0))) {
+            return "";
+        }
         return " ";
     }
 
@@ -591,21 +623,75 @@ export class TextRecognizer {
         return result.filter((_, i) => !removed.has(i));
     }
 
+    // Screen AI reports which visual block a line belongs to; group by that id
+    // before any geometry so large line spacing cannot split a dialogue block.
+    private groupByBlockId(regions: TextRegion[]): {
+        groups: number[][];
+        ungrouped: TextRegion[];
+    } {
+        const byId = new Map<number, number[]>();
+        const ungrouped: TextRegion[] = [];
+
+        regions.forEach((region, index) => {
+            const blockId = region.blockId;
+            if (blockId === undefined || blockId <= 0) {
+                ungrouped.push(region);
+                return;
+            }
+            const group = byId.get(blockId);
+            if (group) {
+                group.push(index);
+            } else {
+                byId.set(blockId, [index]);
+            }
+        });
+
+        // Only multi-line groups are useful. If Screen AI gives every line its
+        // own block, leave those lines to the geometry pass so the previous
+        // behavior is preserved.
+        const groups: number[][] = [];
+        for (const group of byId.values()) {
+            if (group.length > 1) {
+                groups.push(group);
+            } else {
+                ungrouped.push(regions[group[0]]);
+            }
+        }
+
+        return { groups, ungrouped };
+    }
+
     applyAutoGlue(regions: TextRegion[]): TextRegion[] {
         if (!regions || regions.length <= 1) return regions;
 
         logger.debug('TextRecognizer', `Auto-glue: Processing ${regions.length} regions`);
 
+        // Used for reading order of the final paragraphs.
         const medianH = computeMedianHeight(regions);
-        logger.debug('TextRecognizer', `Auto-glue: Median line height = ${medianH}px, grouping power = ${this.groupingPower}`);
 
-        // Phase 1: assemble word-level boxes into lines
-        const lines = this.assembleLines(regions, medianH);
-        logger.debug('TextRecognizer', `Auto-glue: Phase 1 produced ${lines.length} lines from ${regions.length} boxes`);
+        // Lines with a shared Screen AI block id are merged as is. Everything
+        // else (all regions for providers without block ids) goes through
+        // geometry. Without block ids `ungrouped` is `regions` in the same
+        // order, so other providers behave exactly as before.
+        const { groups: blockGroups, ungrouped } = this.groupByBlockId(regions);
+        const mergedById = this.extractMergedRegions(blockGroups, regions, "paragraph");
 
-        // Phase 2: assemble lines into paragraphs
-        const paragraphs = this.assembleParagraphs(lines, medianH);
-        logger.debug('TextRecognizer', `Auto-glue: Phase 2 produced ${paragraphs.length} paragraphs from ${lines.length} lines`);
+        let geoParagraphs = ungrouped;
+        if (ungrouped.length > 1) {
+            // Median of the lines geometry actually groups: dialogue lines
+            // already merged by block id may use another font size.
+            const geoMedianH = computeMedianHeight(ungrouped);
+            logger.debug('TextRecognizer', `Auto-glue: Median line height = ${geoMedianH}px, grouping power = ${this.groupingPower}`);
+
+            // Phase 1: assemble word-level boxes into lines
+            const lines = this.assembleLines(ungrouped, geoMedianH);
+            logger.debug('TextRecognizer', `Auto-glue: Phase 1 produced ${lines.length} lines from ${ungrouped.length} boxes`);
+
+            // Phase 2: assemble lines into paragraphs
+            geoParagraphs = this.assembleParagraphs(lines, geoMedianH);
+            logger.debug('TextRecognizer', `Auto-glue: Phase 2 produced ${geoParagraphs.length} paragraphs from ${lines.length} lines`);
+        }
+        const paragraphs = [...mergedById, ...geoParagraphs];
 
         // Sort into reading order: top-to-bottom, left-to-right with tolerance
         paragraphs.sort((a, b) => {

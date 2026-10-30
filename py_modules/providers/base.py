@@ -85,6 +85,9 @@ class TextRegion:
     is_dialog: bool = False
     bg_color: Optional[List[int]] = None  # [R, G, B] average background color
     translated_text: Optional[str] = None  # Pre-translated text
+    # Screen AI layout id of the visual block this line belongs to: lines of
+    # one dialogue box share it. None when the provider has no such id.
+    block_id: Optional[int] = None
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization."""
@@ -98,6 +101,8 @@ class TextRegion:
             d["bgColor"] = self.bg_color
         if self.translated_text is not None:
             d["translatedText"] = self.translated_text
+        if self.block_id is not None:
+            d["blockId"] = self.block_id
         return d
 
 

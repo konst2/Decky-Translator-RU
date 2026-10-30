@@ -15,6 +15,11 @@ import sys
 
 _WORKER_MODE = '--worker' in sys.argv
 
+# Debug aid for checking block grouping on a real Deck: appends " [block_id-1]"
+# to every recognized line, so the overlay shows which lines were merged.
+# The tag also goes to the translator. Keep False in releases.
+_DEBUG_SHOW_BLOCK_ID = False
+
 
 # Skia structs PerformOCR reads. Only populated fields matter.
 class _SkColorInfo(ctypes.Structure):
@@ -193,11 +198,23 @@ def _proto_to_regions(proto_bytes, scale_x, scale_y, min_confidence):
         bottom = int(round((y + h) * scale_y))
 
         is_dialog = len(text) > 15 or any(p in text for p in '.?!,:;"')
+        # Screen AI numbers blocks from 0, and the first block gets 0. The
+        # frontend treats ids <= 0 as "no block" (that's how the other
+        # providers look), so the first block was never merged. Shift by one
+        # to keep every real block id positive.
+        block_id = int(line.block_id) + 1
+        # Added after is_dialog so the tag doesn't change dialog detection.
+        # Written as "[shifted-1]" (first block: "[1-1]") as a reminder that
+        # the id is shifted and the model itself sent one less.
+        if _DEBUG_SHOW_BLOCK_ID:
+            text = f"{text} [{block_id}-1]"
         regions.append({
             "text": text,
             "rect": {"left": left, "top": top, "right": right, "bottom": bottom},
             "confidence": confidence,
             "is_dialog": is_dialog,
+            # Layout id from the full (non-light) model, shifted to start at 1.
+            "block_id": block_id,
         })
     return regions
 

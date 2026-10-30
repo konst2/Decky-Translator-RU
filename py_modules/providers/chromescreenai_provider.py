@@ -356,6 +356,7 @@ class ChromeScreenAIProvider(OCRProvider):
                     rect=r["rect"],
                     confidence=r["confidence"],
                     is_dialog=r.get("is_dialog", False),
+                    block_id=r.get("block_id"),
                 ))
             logger.debug(f"Chrome Screen AI (worker): {len(regions)} regions in {elapsed:.2f}s")
             return regions
@@ -424,6 +425,7 @@ class ChromeScreenAIProvider(OCRProvider):
                     rect=r["rect"],
                     confidence=r["confidence"],
                     is_dialog=r.get("is_dialog", False),
+                    block_id=r.get("block_id"),
                 ))
             logger.debug(f"Chrome Screen AI: {len(regions)} regions in {elapsed:.2f}s")
             return regions
