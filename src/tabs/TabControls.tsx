@@ -94,7 +94,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         max={3}
                         min={0.1}
                         step={0.1}
-                        label="Время удержания для перевода, сек"
+                        label="Время открытия"
                         description="Сколько секунд удерживать кнопки для перевода"
                         showValue={true}
                         onChange={(value) => {
@@ -110,7 +110,7 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                         max={3}
                         min={0.1}
                         step={0.1}
-                        label="Время удержания для закрытия, сек"
+                        label="Время закрытия"
                         description="Сколько секунд удерживать кнопки, чтобы закрыть оверлей"
                         showValue={true}
                         onChange={(value) => {
