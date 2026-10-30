@@ -515,11 +515,11 @@ export const TranslatedTextOverlay: VFC<{
                         src={formattedImageData}
                         onLoad={updateImageDimensions}
                         style={{
-                            maxHeight: "calc(100vh - 2px)",
-                            maxWidth: "calc(100vw - 2px)",
+                            maxHeight: "100vh",
+                            maxWidth: "100vw",
                             objectFit: "contain",
-                            backgroundColor: "rgba(0, 0, 0, 0.15)",
-                            border: translationsVisible ? "1px solid #f44336" : "1px solid #ffc107",
+                            outline: translationsVisible ? "1px solid #f44336" : "1px solid #ffc107",
+                            outlineOffset: "-1px",
                             imageRendering: "pixelated"
                         }}
                         alt="Скриншот"
