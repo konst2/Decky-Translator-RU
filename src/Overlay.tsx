@@ -485,6 +485,16 @@ export const TranslatedTextOverlay: VFC<{
 
     return (
         <>
+        <style>{`
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+            @keyframes fadeInTranslation {
+                0% { opacity: 0; }
+                100% { opacity: 1; }
+            }
+        `}</style>
         {visible && <CompositionRequest level={UIComposition.Notification} />}
         <div id='translation-overlay'
              style={{
@@ -673,7 +683,8 @@ export const TranslatedTextOverlay: VFC<{
                                         wordWrap: "break-word",
                                         whiteSpace: "pre-wrap",
 
-                                        animation: "fadeInTranslation 0.2s ease-out forwards"
+                                        animation: "fadeInTranslation 0.18s ease-out both",
+                                        animationDelay: `${Math.min(index * 25, 160)}ms`
                                     }}
                                 >
                                     <div style={{
@@ -762,16 +773,6 @@ export const TranslatedTextOverlay: VFC<{
                             marginRight: "10px",
                         }}></div>
                     )}
-                    <style>{`
-                        @keyframes spin {
-                            0% { transform: rotate(0deg); }
-                            100% { transform: rotate(360deg); }
-                        }
-                        @keyframes fadeInTranslation {
-                            0% { opacity: 0; transform: translateY(10px); }
-                            100% { opacity: 1; transform: translateY(0); }
-                        }
-                    `}</style>
                     <div style={{ fontSize: "14px", whiteSpace: "pre-line", lineHeight: "1.3" }}>
                         {processingIsError ? processingStep : `${processingStep}...`}
                         {!processingIsError && processingDetail && (
