@@ -56,7 +56,9 @@ class RapidOCRProvider(OCRProvider):
     # PP-OCRv5 has per-language-family recognition models
     LANGUAGE_MAP = {
         'auto': 'ch',
-        'en': 'ch',         # ch model handles English well in mixed-script text
+        # Dedicated English model: 85.25 against 66.0 for the base one (Paddle benchmarks).
+        # 'auto' stays on 'ch' so mixed EN+CJK frames keep working
+        'en': 'english',
         'zh-CN': 'ch',
         'zh-TW': 'ch',
         'ja': 'ch',         # v5 ch model handles Japanese natively
