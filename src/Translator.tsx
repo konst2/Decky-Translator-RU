@@ -14,6 +14,23 @@ export interface ScreenshotResponse {
     base64: string;
 }
 
+// Extra wait after the frames below, for gamescope to drop Steam's layer and present a
+// clean game frame. Picked by hand: if the indicator still shows up on screenshots, raise it
+const INDICATOR_HIDE_DELAY_MS = 100;
+
+// The hold indicator lives in Steam's UI layer above the game. Hiding it is not instant:
+// React re-renders it, its composition request is removed, then gamescope recomposes.
+// Two animation frames let React commit and paint; the delay covers the gamescope side,
+// which this JS context cannot observe
+const waitForNextFrame = (): Promise<void> =>
+    new Promise(resolve => requestAnimationFrame(() => resolve()));
+
+const waitForIndicatorToLeaveScreen = async (): Promise<void> => {
+    await waitForNextFrame();
+    await waitForNextFrame();
+    await new Promise<void>(resolve => setTimeout(resolve, INDICATOR_HIDE_DELAY_MS));
+};
+
 // Main app logic
 export class GameTranslatorLogic {
     private isProcessing = false;
@@ -332,6 +349,7 @@ export class GameTranslatorLogic {
             // Take screenshot FIRST while screen is clean (no overlay visible)
             const appName = Router.MainRunningApp?.display_name || "";
             logger.info('Translator', `Taking new screenshot for: ${appName}`);
+            await waitForIndicatorToLeaveScreen();
             const result = await call<[string], ScreenshotResponse>('take_screenshot', appName);
 
             if (isCancelled()) {

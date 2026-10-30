@@ -235,42 +235,13 @@ const HoldActivationIndicator: VFC<{ logic: GameTranslatorLogic }> = ({logic}) =
 
     useEffect(() => {
         logger.debug('HoldActivationIndicator', 'useEffect mounting, registering progress listener');
-        let hideTimeout: ReturnType<typeof setTimeout> | null = null;
-
         const handleProgress = (info: ProgressInfo) => {
-            // Clear any pending hide timeout
-            if (hideTimeout) {
-                clearTimeout(hideTimeout);
-                hideTimeout = null;
-            }
-
-            // Delay hiding when progress reaches 100% to allow overlay to take over UI composition
-            // This prevents Steam UI from flashing between progress bar and overlay
-            if (info.active && info.progress >= 1.0) {
-                // Keep showing at 100% briefly, then hide after overlay has initialized
-                setProgressInfo({
-                    active: true,
-                    progress: 1.0,
-                    forDismiss: info.forDismiss
-                });
-                hideTimeout = setTimeout(() => {
-                    setProgressInfo({
-                        active: false,
-                        progress: 0,
-                        forDismiss: info.forDismiss
-                    });
-                }, 600); // 600ms delay - covers screenshot capture time
-            } else {
-                setProgressInfo(info);
-            }
+            setProgressInfo(info);
         };
 
         logic.onProgress(handleProgress);
         return () => {
             logic.offProgress(handleProgress);
-            if (hideTimeout) {
-                clearTimeout(hideTimeout);
-            }
         };
     }, [logic]);
 

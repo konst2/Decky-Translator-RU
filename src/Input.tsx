@@ -631,8 +631,10 @@ export class Input {
                         this.lastActionTime = Date.now();
                         const actionType = this.overlayVisible ? ActionType.DISMISS : ActionType.TRANSLATE;
                         logger.info('Input', `Action triggered: ${ActionType[actionType]}`);
-                        this.onButtonsPressedListeners.forEach(cb => cb(actionType));
+                        // Hide the hold indicator before running the action: translate takes
+                        // a screenshot, and the indicator must already be leaving the screen
                         this.stopProgressAnimation();
+                        this.onButtonsPressedListeners.forEach(cb => cb(actionType));
                         this.waitingForRelease = true;
                         if (this.clearCooldownTimeoutId) clearTimeout(this.clearCooldownTimeoutId);
                         this.clearCooldownTimeoutId = setTimeout(() => {

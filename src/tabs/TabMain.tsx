@@ -142,11 +142,11 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
         const buttons = option ? option.label : String(settings.inputMode);
         const seconds = settings.holdTimeTranslate / 1000;
         if (seconds <= 0) {
-            return `Перевод в игре без меню: ${buttons}, нажатие`;
+            return `Перевод в игре: ${buttons}, нажатие`;
         }
         // 1 -> "1", 1.5 -> "1,5" (decimal comma in Russian)
         const secondsText = String(Number(seconds.toFixed(1))).replace('.', ',');
-        return `Перевод в игре без меню: ${buttons}, удерживать ${secondsText} с`;
+        return `Перевод в игре: ${buttons}, удерживать ${secondsText} с`;
     };
 
     const renderButtonContent = () => {
