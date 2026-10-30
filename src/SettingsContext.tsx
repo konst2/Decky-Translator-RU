@@ -45,6 +45,40 @@ export interface Settings {
 }
 
 // Define action types
+// Settings masked in debug logs: users send these logs to GitHub issues.
+// Mirrors SENSITIVE_SETTING_KEYS in main.py; a new secret must be added to both.
+// The email is not a secret, but personal data, so the backend masks it too.
+// Yandex folder ID stays readable: it is not a secret (same as on the backend).
+const SENSITIVE_SETTINGS: (keyof Settings)[] = [
+    'googleApiKey',
+    'geminiApiKey',
+    'yandexApiKey',
+    'myMemoryEmail',
+];
+
+// Same shape as _mask_secret in main.py, so both logs look alike: the last 4 characters
+// are enough to tell which key is set without revealing it
+const maskSecret = (value: unknown): unknown => {
+    if (typeof value !== 'string' || value === '') {
+        return value;
+    }
+    if (value.length <= 4) {
+        return '****';
+    }
+    return '*'.repeat(value.length - 4) + value.slice(-4);
+};
+
+// Returns a copy for logging; the settings object itself is left untouched
+const maskSettingsForLog = (settings: Partial<Settings>): Record<string, unknown> => {
+    const masked: Record<string, unknown> = { ...settings };
+    for (const key of SENSITIVE_SETTINGS) {
+        if (key in masked) {
+            masked[key] = maskSecret(masked[key]);
+        }
+    }
+    return masked;
+};
+
 type SettingsAction =
     | { type: 'INITIALIZE_SETTINGS', settings: Partial<Settings> }
     | { type: 'UPDATE_SETTING', key: keyof Settings, value: any }
@@ -201,7 +235,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 logic.setAllowLabelGrowth(serverSettings.allow_label_growth ?? false);
 
                 logger.info('SettingsContext', 'All settings loaded successfully');
-                logger.logObject('SettingsContext', 'Settings', mappedSettings);
+                logger.logObject('SettingsContext', 'Settings', maskSettingsForLog(mappedSettings));
             } else {
                 logger.error('SettingsContext', 'Failed to load settings');
             }
