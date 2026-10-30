@@ -153,12 +153,12 @@ export class ImageState {
     }
 
     // Update the current processing step
-    updateProcessingStep(step: string, isError: boolean = false, detail: string = ""): void {
+    updateProcessingStep(step: string, isError: boolean = false, detail: string = "", isLoading: boolean = true): void {
         this.processingStep = step;
         this.processingDetail = detail;
         this.processingIsError = isError;
         // Update the loading state and keep the current image displayed
-        this.loading = true;
+        this.loading = isLoading;
         // Force immediate update
         this.notifyListeners();
     }
@@ -747,8 +747,8 @@ export const TranslatedTextOverlay: VFC<{
                 </div>
             )}
 
-            {/* Loading Indicator - now shown on top of the image when processing */}
-            {loading && processingStep && (
+            {/* Status pill: spinner only while working, plain text for short messages */}
+            {processingStep && (
                 <div style={{
                     display: "flex",
                     flexDirection: "row",
@@ -774,7 +774,7 @@ export const TranslatedTextOverlay: VFC<{
                         >
                             <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
                         </svg>
-                    ) : (
+                    ) : loading ? (
                         <svg
                             width="20"
                             height="20"
@@ -802,9 +802,9 @@ export const TranslatedTextOverlay: VFC<{
                                 style={{ animation: "spin 0.9s linear infinite", transformOrigin: "10px 10px" }}
                             />
                         </svg>
-                    )}
+                    ) : null}
                     <div style={{ fontSize: "14px", whiteSpace: "pre-line", lineHeight: "1.3" }}>
-                        {processingIsError ? processingStep : `${processingStep}...`}
+                        {processingIsError || !loading ? processingStep : `${processingStep}...`}
                         {!processingIsError && processingDetail && (
                             <div style={{ fontSize: "10px", opacity: 0.7 }}>{processingDetail}</div>
                         )}

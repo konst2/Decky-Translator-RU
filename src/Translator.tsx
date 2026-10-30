@@ -388,7 +388,7 @@ export class GameTranslatorLogic {
                 this.imageState.showTranslatedImage(result.base64, translatedRegions);
             } else {
                 // No text found, show message
-                this.imageState.updateProcessingStep("Текст не найден");
+                this.imageState.updateProcessingStep("Текст не найден", false, "", false);
 
                 // Hide overlay after a short delay
                 setTimeout(() => {
