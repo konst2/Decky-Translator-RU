@@ -274,12 +274,14 @@ const HoldActivationIndicator: VFC<{ logic: GameTranslatorLogic }> = ({logic}) =
         };
     }, [logic]);
 
-    // Generate appropriate text based on action and progress
+    // Generate appropriate text based on action and progress.
+    // Hold times are read from logic: this component lives in its own React root, and its
+    // SettingsProvider only loads settings once, so it never sees changes made in the panel
     const getActivationText = () => {
         if (!progressInfo.active) return "";
 
         const action = progressInfo.forDismiss ? "закрытия" : "перевода";
-        const seconds = (progressInfo.forDismiss ? settings.holdTimeDismiss : settings.holdTimeTranslate) / 1000;
+        const seconds = (progressInfo.forDismiss ? logic.getHoldTimeDismiss() : logic.getHoldTimeTranslate()) / 1000;
         const timeRequired = `${String(seconds).replace(".", ",")} с`;
 
         return `Удерживайте для ${action} (${timeRequired})`;
@@ -295,7 +297,7 @@ const HoldActivationIndicator: VFC<{ logic: GameTranslatorLogic }> = ({logic}) =
             visible={progressInfo.active}
             text={getActivationText()}
             forDismiss={progressInfo.forDismiss}
-            holdMs={progressInfo.forDismiss ? settings.holdTimeDismiss : settings.holdTimeTranslate}
+            holdMs={progressInfo.forDismiss ? logic.getHoldTimeDismiss() : logic.getHoldTimeTranslate()}
         />
     );
 };
