@@ -378,8 +378,9 @@ export const TranslatedTextOverlay: VFC<{
     allowLabelGrowth: boolean,
     translatedTextAlignment: HorizontalTextAlignment,
     translatedTextFontFamily: string,
-    translatedTextFontStyle: FontStyleOption
-}> = ({ visible, imageData, regions, loading, processingStep, processingDetail, processingIsError, translationsVisible, fontScale, allowLabelGrowth, translatedTextAlignment, translatedTextFontFamily, translatedTextFontStyle }) => {
+    translatedTextFontStyle: FontStyleOption,
+    onDismiss: () => void
+}> = ({ visible, imageData, regions, loading, processingStep, processingDetail, processingIsError, translationsVisible, fontScale, allowLabelGrowth, translatedTextAlignment, translatedTextFontFamily, translatedTextFontStyle, onDismiss }) => {
     // Composition layer is handled by CompositionRequest below -- only mounted when visible
 
     // Ref to the screenshot image element
@@ -497,6 +498,7 @@ export const TranslatedTextOverlay: VFC<{
         `}</style>
         {visible && <CompositionRequest level={UIComposition.Notification} />}
         <div id='translation-overlay'
+             onClick={onDismiss}
              style={{
                  height: "100vh",
                  width: "100vw",
@@ -895,6 +897,7 @@ export const ImageOverlay: VFC<{ state: ImageState, onDismiss: () => void }> = (
             translatedTextAlignment={translatedTextAlignment}
             translatedTextFontFamily={translatedTextFontFamily}
             translatedTextFontStyle={translatedTextFontStyle}
+            onDismiss={onDismiss}
         />
     );
 };
