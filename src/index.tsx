@@ -278,10 +278,11 @@ const HoldActivationIndicator: VFC<{ logic: GameTranslatorLogic }> = ({logic}) =
     const getActivationText = () => {
         if (!progressInfo.active) return "";
 
-        const action = progressInfo.forDismiss ? "Dismiss" : "Translate";
-        const timeRequired = `${(progressInfo.forDismiss ? settings.holdTimeDismiss : settings.holdTimeTranslate) / 1000}s`;
+        const action = progressInfo.forDismiss ? "закрытия" : "перевода";
+        const seconds = (progressInfo.forDismiss ? settings.holdTimeDismiss : settings.holdTimeTranslate) / 1000;
+        const timeRequired = `${String(seconds).replace(".", ",")} с`;
 
-        return `Hold to ${action} (${timeRequired})`;
+        return `Удерживайте для ${action} (${timeRequired})`;
     };
 
     // Only show the indicator if the plugin is enabled

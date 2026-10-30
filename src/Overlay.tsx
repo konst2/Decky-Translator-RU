@@ -487,9 +487,9 @@ export const TranslatedTextOverlay: VFC<{
     return (
         <>
         <style>{`
-            @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
+            @keyframes statusSweep {
+                0% { transform: translateX(-100%); }
+                100% { transform: translateX(333%); }
             }
             @keyframes fadeInTranslation {
                 0% { opacity: 0; }
@@ -749,7 +749,7 @@ export const TranslatedTextOverlay: VFC<{
                 </div>
             )}
 
-            {/* Status pill: spinner only while working, plain text for short messages */}
+            {/* Status pill: sweeping line while working, plain text for short messages */}
             {processingStep && (
                 <div style={{
                     display: "flex",
@@ -758,6 +758,7 @@ export const TranslatedTextOverlay: VFC<{
                     position: "absolute",
                     bottom: "20px",
                     left: "20px",
+                    overflow: "hidden",
                     color: "#ffffff",
                     background: "rgba(0, 0, 0, 0.7)",
                     padding: '8px 12px',
@@ -766,7 +767,7 @@ export const TranslatedTextOverlay: VFC<{
                     boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
                     zIndex: 7003, // Higher than the image
                 }}>
-                    {processingIsError ? (
+                    {processingIsError && (
                         <svg
                             width="18"
                             height="18"
@@ -776,41 +777,35 @@ export const TranslatedTextOverlay: VFC<{
                         >
                             <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
                         </svg>
-                    ) : loading ? (
-                        <svg
-                            width="20"
-                            height="20"
-                            viewBox="0 0 20 20"
-                            aria-hidden="true"
-                            style={{ flexShrink: 0, marginRight: "10px" }}
-                        >
-                            <circle
-                                cx="10"
-                                cy="10"
-                                r="8"
-                                fill="none"
-                                stroke="rgba(255, 255, 255, 0.18)"
-                                strokeWidth="2.5"
-                            />
-                            <circle
-                                cx="10"
-                                cy="10"
-                                r="8"
-                                fill="none"
-                                stroke="#1a9fff"
-                                strokeWidth="2.5"
-                                strokeLinecap="round"
-                                strokeDasharray="37.7 12.57"
-                                style={{ animation: "spin 0.9s linear infinite", transformOrigin: "10px 10px" }}
-                            />
-                        </svg>
-                    ) : null}
+                    )}
                     <div style={{ fontSize: "14px", whiteSpace: "pre-line", lineHeight: "1.3" }}>
                         {processingIsError || !loading ? processingStep : `${processingStep}...`}
                         {!processingIsError && processingDetail && (
                             <div style={{ fontSize: "10px", opacity: 0.7 }}>{processingDetail}</div>
                         )}
                     </div>
+                    {loading && !processingIsError && (
+                        <>
+                            <div style={{
+                                position: "absolute",
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                height: "2px",
+                                background: "rgba(255, 255, 255, 0.10)",
+                            }} />
+                            <div style={{
+                                position: "absolute",
+                                bottom: 0,
+                                left: 0,
+                                width: "30%",
+                                height: "2px",
+                                borderRadius: "2px",
+                                background: "#1a9fff",
+                                animation: "statusSweep 1.3s ease-in-out infinite",
+                            }} />
+                        </>
+                    )}
                 </div>
             )}
         </div>
