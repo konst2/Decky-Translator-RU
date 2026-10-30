@@ -698,8 +698,8 @@ export const TranslatedTextOverlay: VFC<{
                                         wordWrap: "break-word",
                                         whiteSpace: "pre-wrap",
 
-                                        animation: "fadeInTranslation 0.18s ease-out both",
-                                        animationDelay: `${Math.min(index * 25, 160)}ms`
+                                        animation: "fadeInTranslation 0.35s ease-out both",
+                                        animationDelay: `${Math.min(index * 55, 330)}ms`
                                     }}
                                 >
                                     <div style={{
