@@ -762,16 +762,33 @@ export const TranslatedTextOverlay: VFC<{
                             <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
                         </svg>
                     ) : (
-                        <div className="loader" style={{
-                            border: "3px solid #f3f3f3",
-                            borderTop: "3px solid #3498db",
-                            borderRadius: "50%",
-                            width: "16px",
-                            height: "16px",
-                            flexShrink: 0,
-                            animation: "spin 1.5s linear infinite",
-                            marginRight: "10px",
-                        }}></div>
+                        <svg
+                            width="20"
+                            height="20"
+                            viewBox="0 0 20 20"
+                            aria-hidden="true"
+                            style={{ flexShrink: 0, marginRight: "10px" }}
+                        >
+                            <circle
+                                cx="10"
+                                cy="10"
+                                r="8"
+                                fill="none"
+                                stroke="rgba(255, 255, 255, 0.18)"
+                                strokeWidth="2.5"
+                            />
+                            <circle
+                                cx="10"
+                                cy="10"
+                                r="8"
+                                fill="none"
+                                stroke="#1a9fff"
+                                strokeWidth="2.5"
+                                strokeLinecap="round"
+                                strokeDasharray="37.7 12.57"
+                                style={{ animation: "spin 0.9s linear infinite", transformOrigin: "10px 10px" }}
+                            />
+                        </svg>
                     )}
                     <div style={{ fontSize: "14px", whiteSpace: "pre-line", lineHeight: "1.3" }}>
                         {processingIsError ? processingStep : `${processingStep}...`}
