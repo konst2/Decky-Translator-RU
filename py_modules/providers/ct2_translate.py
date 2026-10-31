@@ -167,6 +167,32 @@ def _normalize_caps(src: str):
     return src, False
 
 
+# --- Ведущая «декоративная» пунктуация реплики ---------------------------
+# Лечит: реплика, начинающаяся с троеточия, пули или повторных знаков
+# («...Okay.», «•Well.», «,,Yes.»), оставалась непереведённой у локальных
+# моделей. Opus-MT рисует такой префикс тире («- Хорошо.»), защита от
+# галлюцинаций в воркере (_is_dash_hallucination) принимает тире за
+# выдуманный маркер и на коротком входе откатывает всю строку на
+# оригинал. Поэтому префикс срезаем перед моделью и возвращаем дословно
+# после перевода: модель видит чистую реплику, а на экране остаётся
+# исходный знак, а не чужое тире.
+
+_LEAD_DECORATION_RE = re.compile(r"^(?:(?:\.{2,}|[,;:*!?]{2,}|[…•∙·▪●‣◦]+)\s*)+")
+
+
+def _split_lead_decoration(text: str):
+    """Отделяет ведущую декоративную пунктуацию от реплики.
+
+    Возвращает (префикс, тело). Кавычки и скобки сюда не входят: «(»
+    открывает ремарку («(laughs) Okay.»), и её срез сломал бы перевод.
+    Если после префикса ничего не осталось, префикс не отделяем.
+    """
+    match = _LEAD_DECORATION_RE.match(text)
+    if not match or match.end() >= len(text):
+        return "", text
+    return match.group(0), text[match.end():]
+
+
 def _sentence_case(s: str) -> str:
     for i, c in enumerate(s):
         if c.isalpha():
@@ -336,6 +362,7 @@ def _build_frags(body: str, was_caps: bool,
         # model starts every chunk with a capital ("...у окна, И если..."),
         # so its first letter is lowered back, unless the source chunk itself
         # starts with a capital (a name: ", Captain Reynolds said").
+        lead, f = _split_lead_decoration(f)
         continues_clause = bool(prev_clause_end) and _first_letter_is_lower(f)
         if was_caps:
             f = _sentence_case(f)
@@ -349,7 +376,8 @@ def _build_frags(body: str, was_caps: bool,
         f, punct_added = _append_terminal_punct(f)
         frags.append({"text": f, "caps": was_caps,
                       "punct": punct_added, "clause_end": clause_end,
-                      "continues_clause": continues_clause, "idx": None})
+                      "lead": lead, "continues_clause": continues_clause,
+                      "idx": None})
     return frags
 
 
@@ -876,7 +904,7 @@ class CT2TranslateProvider(TranslationProvider):
                         out = _lowercase_first_letter(out)
                     if fe["caps"]:
                         out = out.upper()
-                    pieces.append(out)
+                    pieces.append(fe["lead"] + out)
                 # keep the whole line when rejected
                 if failed:
                     parts.append(lm["sep"] + lm["orig"])
