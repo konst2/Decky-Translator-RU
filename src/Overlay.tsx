@@ -296,104 +296,162 @@ export class ImageState {
     }
 }
 
-// Redistribute text evenly across maxLines via binary search for minimum line width.
-// CJK (no spaces): splits by character count.
-function redistributeText(flat: string, maxLines: number): string {
-    if (maxLines <= 1 || flat.length === 0) return flat;
+// Overlay text metrics. The vertical step is shared by the fitter and by the
+// CSS below — change it here only, otherwise the two disagree.
+const OVERLAY_LINE_HEIGHT = 1.15;
+const OVERLAY_PAD_Y_EM = 0.06;   // padding: 0.06em 0.15em
+const OVERLAY_PAD_X_EM = 0.15;
+const MIN_OVERLAY_FONT_SIZE = 7;
+const MAX_OVERLAY_FONT_SIZE = 48;
 
-    const hasSpaces = flat.includes(' ');
+let overlayMeasureCtx: CanvasRenderingContext2D | null | undefined;
 
-    if (hasSpaces) {
-        const words = flat.split(/\s+/);
-        if (words.length <= maxLines) return words.join('\n');
-
-        // Binary search: find minimum max-line-width that fits in maxLines
-        const longestWord = Math.max(...words.map(w => w.length));
-        let lo = longestWord;
-        let hi = flat.length;
-
-        const canFit = (maxWidth: number): boolean => {
-            let lines = 1;
-            let lineLen = 0;
-            for (const word of words) {
-                if (lineLen === 0) {
-                    lineLen = word.length;
-                } else if (lineLen + 1 + word.length <= maxWidth) {
-                    lineLen += 1 + word.length;
-                } else {
-                    lines++;
-                    lineLen = word.length;
-                    if (lines > maxLines) return false;
-                }
-            }
-            return lines <= maxLines;
-        };
-
-        while (lo < hi) {
-            const mid = Math.floor((lo + hi) / 2);
-            if (canFit(mid)) {
-                hi = mid;
-            } else {
-                lo = mid + 1;
-            }
+function getOverlayMeasureContext(): CanvasRenderingContext2D | null {
+    if (overlayMeasureCtx === undefined) {
+        try {
+            overlayMeasureCtx = document.createElement('canvas').getContext('2d');
+        } catch {
+            overlayMeasureCtx = null;
         }
-
-        const optimalWidth = lo;
-        const lines: string[] = [];
-        let currentLine = '';
-        for (const word of words) {
-            if (currentLine.length === 0) {
-                currentLine = word;
-            } else if (currentLine.length + 1 + word.length <= optimalWidth) {
-                currentLine += ' ' + word;
-            } else {
-                lines.push(currentLine);
-                currentLine = word;
-            }
-        }
-        if (currentLine) lines.push(currentLine);
-
-        return lines.join('\n');
-    } else {
-        const charsPerLine = Math.ceil(flat.length / maxLines);
-        const lines: string[] = [];
-        for (let i = 0; i < flat.length; i += charsPerLine) {
-            lines.push(flat.slice(i, i + charsPerLine));
-        }
-        return lines.join('\n');
     }
+    return overlayMeasureCtx;
 }
 
-// Area-based font sizing: picks a font size so the text fills the region
-function calculateFontSize(region: TranslatedRegion, scalingFactor: number, fontScale: number): number {
-    const regionWidth = (region.rect.right - region.rect.left) * scalingFactor;
-    const regionHeight = (region.rect.bottom - region.rect.top) * scalingFactor;
-    const text = region.translatedText || region.text;
-    const charCount = text.length;
+function overlayFontCss(fontSize: number, fontFamily: string, fontStyle: FontStyleOption): string {
+    const { fontWeight, fontStyle: cssFontStyle } = resolveFontStyleCSS(fontStyle);
+    return `${cssFontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
+}
 
-    if (charCount === 0) return 12;
+// Width of `text` as the browser will lay it out. Average-glyph fallback keeps
+// the overlay usable if canvas is unavailable.
+function measureOverlayText(text: string, fontSize: number, fontFamily: string, fontStyle: FontStyleOption): number {
+    const ctx = getOverlayMeasureContext();
+    if (!ctx) return text.length * fontSize * 0.55;
+    ctx.font = overlayFontCss(fontSize, fontFamily, fontStyle);
+    return ctx.measureText(text).width;
+}
 
-    const fillFactor = 0.7;
-    const charArea = (regionWidth * regionHeight) / charCount * fillFactor;
-    let fontSize = Math.sqrt(charArea);
+// Greedy wrap: fill each line up to `maxWidth`. Tokens wider than a line are
+// broken per character so a long word cannot escape the block.
+function wrapOverlayText(
+    text: string,
+    maxWidth: number,
+    fontSize: number,
+    fontFamily: string,
+    fontStyle: FontStyleOption,
+): string[] {
+    const words = text.split(/\s+/).filter(w => w.length > 0);
+    if (words.length === 0) return [];
 
-    const availableWidth = regionWidth - 4;
-    const availableHeight = regionHeight - 2;
+    const spaceWidth = measureOverlayText(' ', fontSize, fontFamily, fontStyle);
+    const lines: string[] = [];
+    let line = '';
+    let lineWidth = 0;
 
-    if (availableWidth <= 0 || availableHeight <= 0) return 7;
+    for (const word of words) {
+        const wordWidth = measureOverlayText(word, fontSize, fontFamily, fontStyle);
 
-    const charsPerLine = Math.max(1, Math.floor(availableWidth / (fontSize * 0.6)));
-    const explicitLines = text.split('\n');
-    const lines = explicitLines.reduce((total, line) =>
-        total + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
-    const neededHeight = lines * fontSize * 1.15;
+        if (wordWidth > maxWidth) {
+            if (line) {
+                lines.push(line);
+                line = '';
+                lineWidth = 0;
+            }
+            let chunk = '';
+            let chunkWidth = 0;
+            for (const ch of word) {
+                const chWidth = measureOverlayText(ch, fontSize, fontFamily, fontStyle);
+                if (chunk && chunkWidth + chWidth > maxWidth) {
+                    lines.push(chunk);
+                    chunk = '';
+                    chunkWidth = 0;
+                }
+                chunk += ch;
+                chunkWidth += chWidth;
+            }
+            line = chunk;
+            lineWidth = chunkWidth;
+            continue;
+        }
 
-    if (neededHeight > availableHeight) {
-        fontSize *= availableHeight / neededHeight;
+        if (lineWidth === 0) {
+            line = word;
+            lineWidth = wordWidth;
+        } else if (lineWidth + spaceWidth + wordWidth <= maxWidth) {
+            line += ' ' + word;
+            lineWidth += spaceWidth + wordWidth;
+        } else {
+            lines.push(line);
+            line = word;
+            lineWidth = wordWidth;
+        }
     }
 
-    fontSize *= fontScale;
-    return Math.max(7, Math.min(fontSize, 48));
+    if (line) lines.push(line);
+    return lines;
+}
+
+function clampOverlayFontSize(fontSize: number): number {
+    return Math.max(MIN_OVERLAY_FONT_SIZE, Math.min(MAX_OVERLAY_FONT_SIZE, fontSize));
+}
+
+// Lay the text out at a fixed font size; explicit line breaks are kept.
+function layoutOverlayText(
+    text: string,
+    width: number,
+    fontSize: number,
+    fontFamily: string,
+    fontStyle: FontStyleOption,
+): string[] {
+    const contentWidth = width - 2 * OVERLAY_PAD_X_EM * fontSize;
+    if (contentWidth <= 0) return [text.replace(/\s+/g, ' ').trim()];
+
+    const paragraphs = text.split(/\n+/).map(p => p.trim()).filter(p => p.length > 0);
+    return paragraphs.flatMap(p => wrapOverlayText(p, contentWidth, fontSize, fontFamily, fontStyle));
+}
+
+// Largest integer font size at which the text wraps into `width` x `height`.
+// The old area heuristic guessed a size and then corrected it downwards; here
+// the size comes from the layout itself, so wide blocks stop wasting the
+// horizontal room on short lines.
+function fitOverlayText(
+    text: string,
+    width: number,
+    height: number,
+    fontFamily: string,
+    fontStyle: FontStyleOption,
+): { fontSize: number; lines: string[] } {
+    const raw = text.trim();
+    if (!raw || width <= 0 || height <= 0) {
+        return { fontSize: MIN_OVERLAY_FONT_SIZE, lines: raw ? [raw] : [] };
+    }
+
+    const fits = (fontSize: number): boolean => {
+        const contentWidth = width - 2 * OVERLAY_PAD_X_EM * fontSize;
+        const contentHeight = height - 2 * OVERLAY_PAD_Y_EM * fontSize;
+        if (contentWidth <= 0 || contentHeight <= 0) return false;
+
+        const lines = layoutOverlayText(raw, width, fontSize, fontFamily, fontStyle);
+        return lines.length * fontSize * OVERLAY_LINE_HEIGHT <= contentHeight;
+    };
+
+    let lo = MIN_OVERLAY_FONT_SIZE;
+    let hi = MAX_OVERLAY_FONT_SIZE;
+    let best = MIN_OVERLAY_FONT_SIZE - 1;
+
+    while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (fits(mid)) {
+            best = mid;
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
+    }
+
+    const fontSize = best >= MIN_OVERLAY_FONT_SIZE ? best : MIN_OVERLAY_FONT_SIZE;
+    const lines = layoutOverlayText(raw, width, fontSize, fontFamily, fontStyle);
+    return { fontSize, lines: lines.length > 0 ? lines : [raw] };
 }
 
 // Overlay component to display translated text
@@ -602,7 +660,7 @@ export const TranslatedTextOverlay: VFC<{
 
                     {/* Overlay translated text boxes with adaptive font sizing */}
                     {translationsVisible && (() => {
-                        const { widthFactor, heightFactor, generalFactor } = getScalingFactor();
+                        const { widthFactor, heightFactor } = getScalingFactor();
                         const pad = 4;
                         const gap = 2;
                         const imgWidth = imageDimensions.width || window.innerWidth;
@@ -645,25 +703,6 @@ export const TranslatedTextOverlay: VFC<{
                         });
 
                         return regions.map((region, index) => {
-                            const fontSize = calculateFontSize(region, generalFactor, fontScale);
-                            let displayText = region.translatedText || region.text;
-
-                            // Redistribute text to fill original block height, minimising width
-                            if (allowLabelGrowth) {
-                                const lineHeight = fontSize * 1.15;
-                                const availableHeight = scaled[index].height - 4;
-                                const maxLines = Math.max(1, Math.floor(availableHeight / lineHeight));
-
-                                const flatText = displayText.replace(/\n/g, ' ').trim();
-                                if (maxLines > 1 && flatText.length > 0) {
-                                    displayText = redistributeText(flatText, maxLines);
-                                    logger.debug('Overlay',
-                                        `[Redistribute] blockH=${scaled[index].height}px fontSize=${Math.round(fontSize)}px ` +
-                                        `maxLines=${maxLines} → ${displayText.split('\n').length} lines: "${displayText}"`
-                                    );
-                                }
-                            }
-
                             const alignmentStyles =
                                 translatedTextAlignment === 'right'
                                     ? { textAlign: 'right' as const, justifyContent: 'flex-end' as const }
@@ -705,6 +744,49 @@ export const TranslatedTextOverlay: VFC<{
                                 }
                             }
 
+                            // Fit the translation into the plate: the largest size at which
+                            // the wrapped text still fits, instead of an area guess that had to
+                            // be corrected downwards afterwards.
+                            const blockText = region.translatedText || region.text;
+                            let layoutWidth = scaled[index].width;
+                            let fit = fitOverlayText(
+                                blockText,
+                                layoutWidth,
+                                scaled[index].height,
+                                translatedOverlayFontFamily,
+                                translatedTextFontStyle,
+                            );
+
+                            // Growth is now only a fallback for text that cannot fit the block
+                            // at the minimum size — let it use the free width instead.
+                            if (allowLabelGrowth
+                                && fit.fontSize <= MIN_OVERLAY_FONT_SIZE
+                                && labelMaxWidth > scaled[index].width) {
+                                layoutWidth = labelMaxWidth;
+                                fit = fitOverlayText(
+                                    blockText,
+                                    layoutWidth,
+                                    scaled[index].height,
+                                    translatedOverlayFontFamily,
+                                    translatedTextFontStyle,
+                                );
+                            }
+
+                            const fontSize = clampOverlayFontSize(Math.round(fit.fontSize * fontScale));
+                            let displayText = fit.lines.join('\n');
+                            if (fontSize !== fit.fontSize) {
+                                // fontScale changed the rendered size — lay out again so the
+                                // line breaks match what the browser will actually draw.
+                                const relaid = layoutOverlayText(
+                                    blockText,
+                                    layoutWidth,
+                                    fontSize,
+                                    translatedOverlayFontFamily,
+                                    translatedTextFontStyle,
+                                );
+                                displayText = (relaid.length > 0 ? relaid : [blockText]).join('\n');
+                            }
+
                             return (
                                 <div
                                     key={index}
@@ -725,12 +807,12 @@ export const TranslatedTextOverlay: VFC<{
                                         backgroundColor: "rgba(0, 0, 0, 0.8)",
                                         color: "#FFFFFF",
 
-                                        padding: '0.06em 0.15em',
+                                        padding: `${OVERLAY_PAD_Y_EM}em ${OVERLAY_PAD_X_EM}em`,
                                         borderRadius: '0.22em',
                                         boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12), 0 2px 6px rgba(0,0,0,0.45)",
 
-                                        fontSize: `${Math.round(fontSize)}px`,
-                                        lineHeight: '1.15',
+                                        fontSize: `${fontSize}px`,
+                                        lineHeight: String(OVERLAY_LINE_HEIGHT),
                                         ...resolveFontStyleCSS(translatedTextFontStyle),
                                         fontFamily: translatedOverlayFontFamily,
 
