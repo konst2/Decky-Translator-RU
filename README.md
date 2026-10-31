@@ -2,282 +2,166 @@
   <img src="assets/readme-logo.png" alt="Decky Translator RU" />
 </p>
 
-![GitHub Release](https://img.shields.io/github/v/release/konst2/Decky-Translator-RU)
-![License](https://img.shields.io/github/license/konst2/Decky-Translator-RU?color=green)
-![Build Status](https://img.shields.io/github/actions/workflow/status/konst2/Decky-Translator-RU/build.yml)
-
-[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/alexanderdev)
-
-A [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin that lets you translate any text on your Steam Deck screen.
-
-It captures your screen, recognizes text using OCR, translates it and then shows the result with screen overlay.
-
-Might be helpful for learning a new language by playing games or some other purposes (you tell me!).
-
-![Screenshot](assets/screenshot_1.jpg)
-
-![Translation Demo](assets/translation.gif)
-
-## Requirements
-
-- Steam Deck (LCD or OLED)
-- Experimental support for non-steamOS handhelds and distros
-- [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) installed
-- Internet connection required for web-based providers and for initial download of offline models
-
-## Installation
-
-### From Decky Plugin Store
-1. Install [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader/tree/main?tab=readme-ov-file#-installation) on your Steam Deck
-2. Press <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/qam.svg"><img height="16" alt="QAM" src="assets/icons/dark/qam.svg"></picture> to open the side bar and go to the Decky tab <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/plug.svg"><img height="16" alt="Decky" src="assets/icons/dark/plug.svg"></picture>
-3. In the upper right corner press <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/store.svg"><img height="16" alt="Store" src="assets/icons/dark/store.svg"></picture> to view all the available plugins
-4. Search for "Decky Translator RU" and install it
-
-### Manual Installation
-1. Install [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader/tree/main?tab=readme-ov-file#-installation) on your Steam Deck
-2. [Download](https://github.com/konst2/Decky-Translator-RU/releases/latest/download/DeckyTranslatorRu.zip) the latest release from the [Releases](https://github.com/konst2/Decky-Translator-RU/releases) page
-3. Upload *DeckyTranslatorRu.zip* archive to any directory on your Steam Deck
-4. Press <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/qam.svg"><img height="16" alt="QAM" src="assets/icons/dark/qam.svg"></picture>, go to the Decky tab <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/plug.svg"><img height="16" alt="Decky" src="assets/icons/dark/plug.svg"></picture> and click <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/gear.svg"><img height="16" alt="Settings" src="assets/icons/dark/gear.svg"></picture>
-5. Enable "Developer Mode" in General tab
-6. Open the Developer tab
-7. Install Plugin from ZIP file -> "Browse" and then select *DeckyTranslatorRu.zip*
-
-## How to use it?
-
-1. Press "Translate" button in the main tab of the plugin
-2. Press <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/qam.svg"><img height="16" alt="QAM" src="assets/icons/dark/qam.svg"></picture> to open the menu again and press "Close Overlay"
-
-## How to quickly use it?
-
-1. Hold L4 button for a Quick Translation
-2. Hold L4 button again to disable the translation overlay
-
-Button or Combinations can be configured in the Controls tab
-
-## How does it do that? 
-
-Decky Translator RU allows you to choose different Text Recognition and Translation methods - feel free to experiment.
-
-### Text Recognition (OCR)
-
-| Provider                                                                                               | Type      | Description                                                                                            | Requirements              |
-|--------------------------------------------------------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------|---------------------------|
-| [**Chrome Screen AI**](https://source.chromium.org/chromium/chromium/src/+/main:services/screen_ai/)   | On-device | OCR using Chromium's screen-ai library. The best recognition quality available                         | One-time 120 MB download  |
-| [**RapidOCR**](https://github.com/RapidAI/RapidOCR)                                                    | On-device | OCR using PP-OCRv5 ONNX models. Alternative solution for on-device recognition                         | One-time 75 MB download   |
-| [**Gemini Vision**](https://ai.google.dev/gemini-api)                                                  | Web       | Recognition and translation in a single API call. Best for stylized/in-game text, but is not very fast | Internet + API key        |
-| [**OCR.space**](https://ocr.space/)                                                                    | Web       | Free EU-based Cloud OCR API with some usage limitations. Good choice if you don't translate very often | Internet                  |
-| [**Google Cloud Vision**](https://cloud.google.com/vision)                                             | Web       | High accuracy and speed. Great for complex text. Has a great free tier, but requires some setup        | Internet + API key        |
-
-### Translation
-
-| Provider                                                                                     | Type      | Description                                                                                                                          | Requirements                |
-|----------------------------------------------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------------------|-----------------------------|
-| [**NLLB-200**](https://huggingface.co/facebook/nllb-200-distilled-1.3B)                      | On-device | Meta's NLLB-200 1.3B distilled model running locally via CTranslate2. Fully offline after download                                   | One-time 1.4 GB download    |
-| [**Gemini Vision**](https://ai.google.dev/gemini-api)                                        | Web       | When Gemini is selected as the OCR provider, it returns the translation in the same call — no separate translation provider needed   | Internet + API key          |
-| [**Google Translate**](https://translate.google.com/)                                        | Web       | It's Google. And it translates                                                                                                       | Internet                    |
-| [**Google Cloud Translation**](https://cloud.google.com/translate)                           | Web       | High quality translations                                                                                                            | Internet + API key          |
+<p align="center">
+  <img src="https://img.shields.io/github/v/release/konst2/Decky-Translator-RU" alt="Version" />
+  <img src="https://img.shields.io/github/license/konst2/Decky-Translator-RU?color=green" alt="License" />
+  <img src="https://img.shields.io/github/actions/workflow/status/konst2/Decky-Translator-RU/build.yml" alt="Build Status" />
+</p>
 
 
-**Note:** Google Cloud and Gemini require an API key but offer a generous free tier for personal use.
+Плагин для **Decky Loader**, который позволяет переводить любой текст на экране вашего Steam Deck. Он делает снимок экрана, распознаёт текст с помощью OCR, переводит его и показывает результат через экранный оверлей. 
+
+Идеально подходит для игр, которые не поддерживают русский язык, или для изучения иностранных языков.
+
+Является форком проекта [Decky Translator](https://github.com/cat-in-a-box/Decky-Translator), его адаптированной и улучшенной версией. Кроме того, добавлены специфические для России методы перевода.
+
+---
+
+### Почему эта версия лучше для пользователей из России (и не только)?
+
+Основные отличия и преимущества:
+
+1. **Полная русификация интерфейса:** Все меню, настройки и уведомления переведены на русский язык для максимального удобства.
+2. **Добавлены доступные провайдеры перевода:** Интегрирован **Yandex Translate** и **MyMemory**, что обеспечивает стабильную и быструю работу без необходимости настройки обхода для методов, которые могут быть недоступны из РФ.
+3. **Улучшенный UX/UI для SteamOS:** 
+   - Исправлен ряд проблем, которые были в оригинальном плагине.
+   - Сам UI переработан.
+4. **Прозрачность и приватность (Data Flow Badges):** В настройках добавлены наглядные индикаторы, показывающие, куда уходят ваши данные: данные обрабатываются локально на устройстве, в сеть отправляется только текст или весь скриншот.
+5. **Оптимизация офлайн-моделей:** Улучшено качество локального распознавания и перевода (RapidOCR, NLLB-200), добавлена лёгкая офлайн-модель перевода Opus-MT (en→ru) на ~82 МБ.
+6. **Улучшена работа локальных моделей:** при локальном OCR текст точнее разбивается на группы, а перед локальным переводом — аккуратнее нарезается на фразы. В итоге перевод получается качественнее.
+
+---
+
+### Требования
+
+- Steam Deck (LCD или OLED) или другое портативное устройство на базе Linux (экспериментально).
+- Установленный [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader).
+- Подключение к интернету (требуется только для веб-провайдеров и первоначальной загрузки офлайн-моделей).
+
+---
+
+### Установка
+
+#### Через магазин Decky
+Пока плагина нет в магазине Decky. Если он туда попадёт, здесь появится инструкция.
+
+#### Ручная установка
+1. [Скачайте](https://github.com/konst2/Decky-Translator-RU/releases/latest/download/DeckyTranslatorRu.zip) последний релиз со страницы [Releases](https://github.com/konst2/Decky-Translator-RU/releases).
+2. Загрузите архив `DeckyTranslatorRu.zip` в любую папку на вашем Steam Deck.
+3. Откройте меню Decky, перейдите в **Настройки** <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/gear.svg"><img height="16" alt="Settings" src="assets/icons/dark/gear.svg"></picture> → вкладка **General** → включите **"Developer Mode"**.
+4. Перейдите на вкладку **Developer** → **Install Plugin from ZIP file** → выберите скачанный архив.
+
+---
+
+### Как пользоваться?
+
+- **Обычный режим:** Откройте плагин, перейдите на главную вкладку и нажмите кнопку "Перевести". Чтобы закрыть оверлей, снова откройте меню Decky и нажмите "Закрыть оверлей".
+- **Быстрый режим:** Зажмите кнопку **L4** (определена по умолчанию) для мгновенного перевода. Повторное удержание L4 отключит оверлей. Кнопки и комбинации можно изменить на вкладке "Управление".
+
+---
+
+### ⚙️ Как это работает?
+
+Плагин позволяет комбинировать различные методы распознавания текста (OCR) и перевода.
+
+Колонка «Работа в России»: ✅ — работает без дополнительных настроек, ⚠️ — может быть недоступен без обхода блокировок.
+
+#### Распознавание текста (OCR)
+| Провайдер | Работа в России | Тип | Описание | Требования |
+|---|---|---|---|---|
+| **Chrome Screen AI** ★ | ✅ | На устройстве | Использует библиотеку screen-ai из Chromium. Лучшее качество распознавания «из коробки». Рекомендуемый вариант. | Однократная загрузка ~120 МБ |
+| **RapidOCR** | ✅ | На устройстве | Альтернативное офлайн-решение на базе моделей PP-OCRv5 (ONNX). Модель настроена на латиницу: лучший выбор для игр на английском, с другими языками справляется хуже. | Однократная загрузка ~75 МБ |
+| **Gemini Vision** | ⚠️ | Веб | Распознавание и перевод за один вызов API. Идеально для стилизованного текста в играх. Можно выбрать модель: 2.5 Flash, 2.5 Flash Lite, 3 Flash, 3.1 Flash Lite. | Интернет + API-ключ |
+| **Google Cloud Vision** | ⚠️ | Веб | Высокая точность и скорость. Отлично подходит для сложного текста. | Интернет + API-ключ |
+| **OCR.space** | ⚠️ | Веб | Бесплатный облачный API. Хороший выбор для редких переводов. | Интернет |
+
+#### Перевод
+| Провайдер | Работа в России | Тип | Описание | Требования |
+|---|---|---|---|---|
+| **NLLB-200** | ✅ | На устройстве | Дистиллированная модель Meta (1.3B) через CTranslate2. Переводит между любыми поддерживаемыми языками. Полностью офлайн после загрузки. | Однократная загрузка ~1,4 ГБ |
+| **Opus-MT (en→ru)** | ✅ | На устройстве | Лёгкая модель Helsinki-NLP через CTranslate2. Переводит только с английского на русский, зато весит в 17 раз меньше NLLB-200. | Однократная загрузка ~82 МБ |
+| **Yandex Translate** | ✅ | Веб | Быстрый и качественный перевод, оптимизированный для русского языка. Большой бесплатный лимит. | Интернет + API-ключ и folder_id |
+| **MyMemory** | ✅ | Веб | Бесплатный агрегатор переводов, регистрация не нужна. Лимит — 5 000 символов в день; если указать email в настройках, лимит вырастет до 50 000. | Интернет |
+| **Google Translate** | ⚠️ | Веб | Классический веб-переводчик. | Интернет |
+| **Google Cloud Translation** | ⚠️ | Веб | Профессиональное качество перевода. Имеет щедрый бесплатный лимит. | Интернет + API-ключ |
+| **Gemini Vision** | ⚠️ | Веб | Если Gemini Vision выбран для распознавания, он сразу возвращает и перевод — отдельный переводчик не нужен, его выбор блокируется. | Интернет + API-ключ |
 
 <details>
-<summary><h2>How to get Google Cloud API key?</h2></summary>
+<summary><h3> Как получить API-ключ Yandex?</h3></summary>
 
+Плагину нужны два значения: **API-ключ** сервисного аккаунта и **folder_id** — идентификатор каталога в Яндекс Облаке.
 
-### Step 1: Create a Google Cloud Project
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Click "Select a project" at the top, then "New Project"
-3. Give your project a name (any name would work) and click "Create"
-
-### Step 2: Enable Required APIs
-1. Go to [APIs & Services > Library](https://console.cloud.google.com/apis/library)
-2. Search for and enable:
-   - **Cloud Vision API**
-   - **Cloud Translation API**
-
-### Step 3: Create an API Key
-1. Go to [APIs & Services > Credentials](https://console.cloud.google.com/apis/credentials)
-2. Click "Create Credentials" > "API Key"
-   - *Authenticate API calls through a service account*: keep unchecked
-   - Application Restrictions: None
-3. Copy your new API key
-4. If you need to find this API key later - press "Show key" button
-
-![API-Key-page](assets/google-cloud-key-1.jpg)
-![API-Key-modal](assets/google-cloud-key-2.jpg)
-
-
-### Step 4: (Optional) Restrict Your API Key
-For security, you can restrict the API key to only the Vision and Translation APIs:
-1. Click on your API key in the Credentials page
-2. Under "API restrictions", select "Restrict key"
-3. Select "Cloud Vision API" and "Cloud Translation API"
-4. Click "Save"
-
-![API-Key-Restriction](assets/google-cloud-key-4.jpg)
-
-### Step 5: Add API Key to Plugin
-1. Open the Decky Translator RU plugin on your Steam Deck
-2. Go to the Translation tab
-3. Select Google Cloud Vision and/or Google Cloud Translation as your providers
-4. Click "Set Key"
-5. Enter your Google Cloud API key
-6. Click "Save"
-
-### API Key usually looks like this (but you should have your own):
-![API-Key-SteamOS](assets/google-cloud-key-3.jpg)
-
-### IMPORTANT: NEVER SHARE THIS API KEY WITH ANYONE!
-
-### Pricing Note
-Google Cloud offers a free tier that should be sufficient for personal use:
-- **Vision API**: First 1,000 units/month free
-- **Translation API**: First 500,000 characters/month free
-
-**From my own experience**, even everyday usage of Decky Translator RU with Google Cloud for both recognition and translation rarely goes beyond their free tier. 
-Only once I had to pay around 1€/month - and that was during VERY active development and testing phase. 
-
-**But if you want to stay on the safe side anyway** - you could set up a budget limit and notification in [Billing > Budgets & Alerts](https://console.cloud.google.com/billing/budgets)
-
-![API-Key-Budget](assets/google-cloud-key-5.jpg)
-
-
+1. Войдите в [консоль Яндекс Облака](https://console.yandex.cloud/). Если платёжного аккаунта ещё нет, создайте его: без него сервис перевода не работает.
+2. Откройте каталог (по умолчанию он называется `default`) и скопируйте его **идентификатор** — это и есть `folder_id`.
+3. В этом каталоге перейдите в **Сервисные аккаунты** → **Создать сервисный аккаунт**. Дайте ему роль `ai.translate.user`.
+4. Откройте созданный аккаунт → **Создать новый ключ** → **Создать API-ключ**. Скопируйте секретную часть ключа: после закрытия окна её больше не покажут.
+5. В плагине на вкладке **Перевод** выберите метод перевода «Яндекс», нажмите кнопку с ключом и введите API-ключ и `folder_id`.
 </details>
 
 <details>
-<summary><h2>How to get Gemini API key?</h2></summary>
+<summary><h3> Как получить API-ключ Gemini?</h3></summary>
 
-Gemini Vision uses a separate key from Google Cloud — it comes from Google AI Studio, not the Cloud Console.
+Ключ Gemini отдельный от ключа Google Cloud: он выдаётся в Google AI Studio, а не в Cloud Console.
 
-1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Sign in with your Google account
-3. Click "Create API key" and pick a project (or let it create one for you)
-4. Copy the key
-5. In the plugin, open the Translation tab, select **Gemini Vision** as the OCR provider, click "Set Key", paste it, and Save
-
+1. Перейдите в [Google AI Studio](https://aistudio.google.com/app/apikey).
+2. Войдите в аккаунт Google и нажмите "Create API key".
+3. Скопируйте ключ и вставьте его в настройках плагина, выбрав Gemini Vision в качестве провайдера OCR.
 </details>
 
-## Troubleshooting
+<details>
+<summary><h3> Как получить API-ключ Google Cloud?</h3></summary>
 
-### Black screen on capture
-Try triggering translation again. If persistent, reboot your Steam Deck
+Один ключ подходит и для Google Cloud Vision, и для Google Cloud Translation.
 
-### Translated text is too small
-Try increasing the "Font Scaling" option in plugin settings
+1. В [Google Cloud Console](https://console.cloud.google.com/) создайте проект: **Select a project** → **New Project**, имя любое.
+2. В [APIs & Services → Library](https://console.cloud.google.com/apis/library) найдите и включите **Cloud Vision API** и **Cloud Translation API**.
+3. В [APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials) нажмите **Create Credentials** → **API Key** и скопируйте ключ.
 
-### Plugin says I'm using a wrong API key
-Double-check that you entered it correctly. If the issue persists, please raise an issue - let's investigate it together
+   ![Страница с API-ключом](assets/google-cloud-key-1.jpg)
 
-### I see nothing / Recognition is bad / It does not translate anything
-Try other combination of text recognition and translation methods. If it doesnt solve the problem - please report it here [New Issue](https://github.com/konst2/Decky-Translator-RU/issues/new). It will also help if you attach your .log file there
+4. *(Необязательно, но лучше сделать.)* Откройте ключ, в **API restrictions** выберите **Restrict key** и оставьте только Cloud Vision API и Cloud Translation API. Тогда украденный ключ нельзя будет использовать для других сервисов.
 
-## To-Do
-### Functional
-- [x] Add offline OCR functionality
-- [x] Fix interface scaling issues on non-default SteamOS values (experimental)
-- [x] Rework temporary files solution
-- [x] Gamepad support
-- [x] Overlay font scaling for large monitors
-- [x] Fully offline Translation functionality
-- [x] Support for non-SteamOS distros
-- [ ] Disable in-game buttons while overlay is active
-- [ ] Desktop mode support
-- [ ] Nicer look for translation overlay
-- [ ] TTS for translated text (press the translated label to listen)
+   ![Ограничение ключа](assets/google-cloud-key-4.jpg)
 
-## Third-Party Dependencies
+5. В плагине на вкладке **Перевод** выберите Google Cloud для распознавания и/или перевода, нажмите кнопку с ключом и вставьте ключ.
 
-This plugin uses the following third-party components. None of the heavy models are bundled in the plugin zip — they're downloaded on demand by a user.
+**Никому не передавайте этот ключ.**
 
-### Chrome Screen AI library
+**Про оплату.** Бесплатного лимита (Vision — 1 000 запросов в месяц, Translation — 500 000 символов в месяц) обычно хватает для личного использования. Чтобы не получить неожиданный счёт, настройте лимит бюджета и уведомление в [Billing → Budgets & Alerts](https://console.cloud.google.com/billing/budgets).
+</details>
 
-The default on-device OCR engine that provides very impressive results. 
-The shared library libchromescreenai.so and its TFLite models are pulled from Google's CIPD server on demand.
+---
 
-| Component | Source | License |
-|-----------|--------|---------|
-| libchromescreenai.so + TFLite models | [chromium/third_party/screen-ai](https://source.chromium.org/chromium/chromium/src/+/main:services/screen_ai/) via CIPD | BSD-3-Clause (Chromium) |
+### Устранение неполадок
 
-### RapidOCR Models (PP-OCRv5)
+- **Чёрный экран при захвате:** Попробуйте вызвать перевод ещё раз. Если проблема сохраняется, перезагрузите Steam Deck.
+- **Переведенный текст слишком мелкий:** Увеличьте параметр "Масштаб шрифта" в настройках плагина.
+- **Ошибка "Неверный API-ключ":** Проверьте правильность ввода ключа (без лишних пробелов).
+- **Плохое распознавание / Нет перевода:** Попробуйте другую комбинацию провайдеров OCR и Перевода. Если проблема не исчезла, создайте [New Issue](https://github.com/konst2/Decky-Translator-RU/issues/new) и приложите файл `.log`.
 
-On-device OCR alternative. Based on [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) models (Apache 2.0), exported to ONNX format.
+---
 
-- Text Detection + Chinese Recognition: [MeKo-Christian/paddleocr-onnx](https://github.com/MeKo-Christian/paddleocr-onnx)
-- Chinese Dictionary + per-language Recognition models: [monkt/paddleocr-onnx](https://huggingface.co/monkt/paddleocr-onnx) (Apache 2.0)
-- Text Classifier: [SWHL/RapidOCR](https://huggingface.co/SWHL/RapidOCR) (Apache 2.0)
+### Сторонние зависимости
 
-| File | Purpose |
-|------|---------|
-| ch_PP-OCRv5_mobile_det.onnx | Text detection model (shared across all languages) |
-| ch_rec.onnx + ch_dict.txt | Chinese/Japanese/English recognition |
-| english_rec.onnx + english_dict.txt | English recognition |
-| latin_rec.onnx + latin_dict.txt | Latin script (French, German, Spanish, etc.) |
-| eslav_rec.onnx + eslav_dict.txt | East Slavic (Russian, Ukrainian) |
-| korean_rec.onnx + korean_dict.txt | Korean recognition |
-| greek_rec.onnx + greek_dict.txt | Greek recognition |
-| thai_rec.onnx + thai_dict.txt | Thai recognition |
-| ch_ppocr_mobile_v2.0_cls_infer.onnx | Text direction classifier |
+Тяжёлые модели не включены в архив плагина, а загружаются по требованию пользователя.
 
-### NLLB-200 Translation Model
+- **Chrome Screen AI:** [chromium/third_party/screen-ai](https://source.chromium.org/chromium/chromium/src/+/main:services/screen_ai/) (BSD-3-Clause)
+- **RapidOCR (PP-OCRv5):** Модели экспортированы в ONNX. [RapidOCR](https://github.com/RapidAI/RapidOCR), [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) (Apache 2.0)
+- **NLLB-200:** [JustFrederik/nllb-200-distilled-1.3B-ct2-int8](https://huggingface.co/JustFrederik/nllb-200-distilled-1.3B-ct2-int8) (CC-BY-NC 4.0, Meta — только некоммерческое использование)
+- **Opus-MT en→ru:** конвертация в CTranslate2 [manancode/opus-mt-en-ru-ctranslate2-android](https://huggingface.co/manancode/opus-mt-en-ru-ctranslate2-android) исходной модели [Helsinki-NLP/opus-mt-en-ru](https://huggingface.co/Helsinki-NLP/opus-mt-en-ru) (CC BY 4.0). Версия закреплена, каждый файл проверяется по SHA-256.
+- **Python-пакеты (PyPI):** Pillow (MIT-CMU), requests (Apache 2.0), urllib3 (MIT), rapidocr (Apache 2.0), onnxruntime (MIT), ctranslate2 (MIT), sentencepiece (Apache 2.0), protobuf (BSD-3-Clause), py3langid. Подробнее о лицензиях — в [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
+- **Python Runtime:** Портативный Python 3.13 из [astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone) (PSF-2.0)
+- **Веб-шрифты:** Загружаются с CDN (Google Fonts, OpenDyslexic) по лицензии SIL Open Font License (OFL).
 
-Used for offline translation. Downloaded on demand from Hugging Face.
+---
 
-| Component | Source | License |
-|-----------|--------|---------|
-| NLLB-200 1.3B distilled (CT2 int8 conversion) | [JustFrederik/nllb-200-distilled-1.3B-ct2-int8](https://huggingface.co/JustFrederik/nllb-200-distilled-1.3B-ct2-int8) | CC-BY-NC 4.0 (Meta NLLB-200, **non-commercial use only**) |
+### Поддержка и благодарности
 
-The NLLB-200 weights are licensed by Meta for non-commercial use. The plugin does not redistribute them — the user downloads them directly from Hugging Face on demand.
+Этот плагин является форком и развитием отличной работы оригинального автора. Если вам нравится этот проект, пожалуйста, поддержите оригинального разработчика:
 
-### Python Packages (from PyPI)
+<a href="https://ko-fi.com/cat-in-a-box" target="_blank">
+  <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support Original Author on Ko-fi" />
+</a>
 
-| Package | License | Purpose |
-|---------|---------|---------|
-| Pillow==11.2.1 | MIT-CMU | Image processing for screenshot handling |
-| requests==2.32.3 | Apache 2.0 | HTTP library for API calls |
-| urllib3==2.4.0 | MIT | HTTP client (dependency of requests) |
-| rapidocr>=3.6.0 | Apache 2.0 | OCR engine that runs the PP-OCRv5 ONNX models |
-| onnxruntime>=1.7.0 | MIT | ONNX model inference runtime |
-| ctranslate2>=4.5.0 | MIT | Inference engine for the NLLB-200 model |
-| sentencepiece>=0.2.0 | Apache 2.0 | Tokenizer used by NLLB-200 |
-| protobuf>=6.33.1 | BSD-3-Clause | Used by Chrome Screen AI for the inference protocol |
-
-### Bundled Python Runtime
-
-A portable Python 3.13 interpreter is bundled so the plugin works on distros where the system Python doesn't match (Bazzite, etc.). 
-Pulled from [astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone), SHA256-verified in CI.
-
-| Component                              | License                                                                     |
-|----------------------------------------|-----------------------------------------------------------------------------|
-| CPython 3.13 (python-build-standalone) | PSF-2.0, plus various component licenses (see python-build-standalone repo) |
-
-### Web Fonts
-
-Loaded from CDN on demand for the translated text overlay. Not bundled in the plugin.
-
-| Source                                                                                                                                         | License                     |
-|------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------|
-| [Google Fonts](https://fonts.google.com/) (Open Sans, Montserrat, Noto Sans, Lexend, Atkinson Hyperlegible Next, Andika, etc.)                 | SIL Open Font License (OFL) |
-| [OpenDyslexic](https://opendyslexic.org/) (via [@fontsource/opendyslexic](https://www.npmjs.com/package/@fontsource/opendyslexic) on jsDelivr) | SIL Open Font License (OFL) |
-
-
-## Support
-
-If you find this plugin useful - feel free to buy me a cup of coffee ❤️
-
-[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/alexanderdev)
-
-## Thanks to
-
-- [Valve](https://www.valvesoftware.com/) for creating the Steam Deck - a beautiful device that makes projects like this possible
-- [UGT (Universal Game Translator)](https://github.com/SethRobinson/UGT) by Seth Robinson for inspiration and the idea of using game translation as a language learning tool
-- [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) team for the plugin framework
-- [Steam Deck Homebrew](https://github.com/SteamDeckHomebrew) community for their amazing plugins, which served as a great reference while building this one
-- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), [RapidOCR](https://github.com/RapidAI/RapidOCR) and [MeKo-Christian](https://github.com/MeKo-Christian/paddleocr-onnx) for OCR engine, OCR models and ONNX model exports that make offline text recognition possible
-- [Chromium project](https://www.chromium.org/) for the screen-ai library
-- [Meta AI](https://ai.meta.com/) for the NLLB-200 translation model
-- [OpenNMT/CTranslate2](https://github.com/OpenNMT/CTranslate2) for the inference engine and [JustFrederik](https://huggingface.co/JustFrederik) for int8 conversion
-- [OCR.space](https://ocr.space/) for the free OCR API
-- [Google](https://google.com/) for Vision, Translation and Gemini API
-- [astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone) for the portable Python runtime
-- [steam3d](https://github.com/steam3d) for the SteamOS UI icons
-- And You. Yes, You
+**Особая благодарность:**
+- **[cat-in-a-box](https://github.com/cat-in-a-box)** — создателю оригинального плагина *Decky Translator*, который послужил основой для этой версии.
