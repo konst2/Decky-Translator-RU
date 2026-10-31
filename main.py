@@ -1605,7 +1605,7 @@ class Plugin:
                 "translated_text_font_family": self._settings.get_setting("translated_text_font_family", ""),
                 "translated_text_font_style": self._settings.get_setting("translated_text_font_style", "normal"),
                 "hide_identical_translations": self._settings.get_setting("hide_identical_translations", False),
-                "allow_label_growth": self._settings.get_setting("allow_label_growth", False),
+                "allow_label_growth": self._settings.get_setting("allow_label_growth", True),
                 "custom_recognition_settings": self._settings.get_setting("custom_recognition_settings", False),
                 "translation_cache_enabled": self._translation_cache_enabled,
             }

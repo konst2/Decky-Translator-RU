@@ -118,7 +118,7 @@ const initialSettings: Settings = {
     translatedTextFontFamily: '',
     translatedTextFontStyle: 'normal',
     hideIdenticalTranslations: false,
-    allowLabelGrowth: false,
+    allowLabelGrowth: true,
     customRecognitionSettings: false,
     translationCacheEnabled: true,
 };
@@ -198,7 +198,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     translatedTextFontFamily: serverSettings.translated_text_font_family ?? '',
                     translatedTextFontStyle: serverSettings.translated_text_font_style ?? 'normal',
                     hideIdenticalTranslations: serverSettings.hide_identical_translations ?? false,
-                    allowLabelGrowth: serverSettings.allow_label_growth ?? false,
+                    allowLabelGrowth: serverSettings.allow_label_growth ?? true,
                     customRecognitionSettings: serverSettings.custom_recognition_settings ?? false,
                     translationCacheEnabled: serverSettings.translation_cache_enabled ?? true,
                 };
@@ -232,7 +232,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 logic.setTranslatedTextFontFamily(serverSettings.translated_text_font_family ?? '');
                 logic.setTranslatedTextFontStyle(serverSettings.translated_text_font_style ?? 'normal');
                 logic.setHideIdenticalTranslations(serverSettings.hide_identical_translations ?? false);
-                logic.setAllowLabelGrowth(serverSettings.allow_label_growth ?? false);
+                logic.setAllowLabelGrowth(serverSettings.allow_label_growth ?? true);
 
                 logger.info('SettingsContext', 'All settings loaded successfully');
                 logger.logObject('SettingsContext', 'Settings', maskSettingsForLog(mappedSettings));

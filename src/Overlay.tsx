@@ -84,7 +84,7 @@ export class ImageState {
     private loadingIndicatorTimer: ReturnType<typeof setTimeout> | null = null; // Timer for delayed indicator
     private translationsVisible = true; // New property to track translation visibility
     private fontScale = 1.0;
-    private allowLabelGrowth = false;
+    private allowLabelGrowth = true;
     private translatedTextAlignment: HorizontalTextAlignment = 'center';
     private translatedTextFontFamily = "";
     private translatedTextFontStyle: FontStyleOption = 'normal';
@@ -308,9 +308,10 @@ const MAX_OVERLAY_FONT_SIZE = 48;
 // pixel (kerning, rounding). Wrapping a bit narrower than the real box keeps
 // the browser from breaking a line we considered full a second time.
 const OVERLAY_WRAP_SAFETY_PX = 1;
-// allowLabelGrowth widens a plate past its block only if that makes the font
-// at least this much larger.
-const MIN_GROWTH_FONT_GAIN = 2;
+// allowLabelGrowth: the translation "does not fit" its block when its font
+// comes out at least this much smaller than the original text's would. A 1px
+// difference is invisible and not worth a plate spilling over the picture.
+const MIN_GROWTH_FONT_SHORTFALL = 2;
 
 // Width of `text` at `fontSize` in the overlay's font.
 type OverlayMeasure = (text: string, fontSize: number) => number;
@@ -530,6 +531,42 @@ function fitOverlayText(
     const fontSize = textFits ? best : MIN_OVERLAY_FONT_SIZE;
     const { lines } = layoutOverlayText(raw, width, fontSize, measure);
     return { fontSize, lines: lines.length > 0 ? lines : [raw], fits: textFits };
+}
+
+// Narrowest plate width in (blockWidth, maxWidth] at which the text reaches
+// `targetSize`, laid out at exactly that size. Label growth uses it so a plate
+// grows only as much as the translation needs to match the original text,
+// instead of taking all the free room and a font larger than the original.
+// Font size grows with width, so a binary search over widths finds it.
+function growOverlayText(
+    text: string,
+    blockWidth: number,
+    maxWidth: number,
+    height: number,
+    targetSize: number,
+    measure: OverlayMeasure,
+): { width: number; fit: OverlayFit } {
+    const reachesTarget = (fit: OverlayFit): boolean => fit.fits && fit.fontSize >= targetSize;
+
+    // Even all the free room is not enough: take all of it, it is the best we can do.
+    const widest = fitOverlayText(text, maxWidth, height, measure);
+    if (!reachesTarget(widest)) return { width: maxWidth, fit: widest };
+
+    let lo = blockWidth + 1;
+    let hi = maxWidth;
+    while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (reachesTarget(fitOverlayText(text, mid, height, measure))) {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+
+    // The narrowest width may allow a bit more than the target; stay at the
+    // original's size, so a grown plate does not shout over its neighbours.
+    const { lines } = layoutOverlayText(text, lo, targetSize, measure);
+    return { width: lo, fit: { fontSize: targetSize, lines: lines.length > 0 ? lines : [text], fits: true } };
 }
 
 // Apply the user's fontScale to a fitted size. Scaling up may make a word wider
@@ -866,25 +903,45 @@ export const TranslatedTextOverlay: VFC<{
                             // Fit the translation into the plate: the largest size at which
                             // the wrapped text still fits, instead of an area guess that had to
                             // be corrected downwards afterwards.
-                            const regionText = region.translatedText || region.text;
-                            // With growth on, the plate is re-wrapped freely anyway, so the
-                            // original OCR line breaks would only force extra short lines.
-                            const blockText = allowLabelGrowth ? joinOcrLines(regionText) : regionText;
+                            // OCR line breaks are kept unless the plate grows (see below): a block
+                            // may be a menu or a list, and its lines must stay separate.
+                            let blockText = region.translatedText || region.text;
                             let layoutWidth = scaled[index].width;
                             let fit = fitOverlayText(blockText, layoutWidth, scaled[index].height, measure);
 
+                            // The setting promises growth only when the translation does not fit
+                            // the block. "Fits" is judged against the original text: fitted into
+                            // the same block, it shows the size the game used there. A translation
+                            // that comes out noticeably smaller, or overflows even at the minimum
+                            // size, grows — up to the original's size, not to all the free room.
                             if (allowLabelGrowth && labelMaxWidth > scaled[index].width) {
-                                const wideFit = fitOverlayText(blockText, labelMaxWidth, scaled[index].height, measure);
-                                // Widen only for a visible gain: a plate spilling over the
-                                // picture for +1px is not worth it.
-                                const isNoticeablyLarger = wideFit.fontSize >= fit.fontSize + MIN_GROWTH_FONT_GAIN;
-                                // The text overflows the block even at the minimum size; the wide
-                                // plate at least overflows by fewer lines.
-                                const overflowsLess = !fit.fits
-                                    && wideFit.lines.length < fit.lines.length;
-                                if (isNoticeablyLarger || overflowsLess) {
-                                    layoutWidth = labelMaxWidth;
-                                    fit = wideFit;
+                                // Both are fitted with their OCR lines kept, so they are compared
+                                // like for like.
+                                const originalFit = fitOverlayText(region.text, scaled[index].width, scaled[index].height, measure);
+                                const isNoticeablySmaller = fit.fontSize + MIN_GROWTH_FONT_SHORTFALL <= originalFit.fontSize;
+                                if (isNoticeablySmaller || !fit.fits) {
+                                    // A growing plate is re-wrapped freely, so the OCR line breaks
+                                    // would only force extra short lines: join them into one paragraph.
+                                    const joinedText = joinOcrLines(blockText);
+                                    const grown = growOverlayText(
+                                        joinedText,
+                                        scaled[index].width,
+                                        labelMaxWidth,
+                                        scaled[index].height,
+                                        originalFit.fontSize,
+                                        measure,
+                                    );
+                                    // Keep the wider plate only if it actually helps: a larger font,
+                                    // or, for text overflowing at the minimum size, a plate that fits
+                                    // or at least overflows by fewer lines.
+                                    const isLarger = grown.fit.fontSize > fit.fontSize;
+                                    const overflowsLess = !fit.fits
+                                        && (grown.fit.fits || grown.fit.lines.length < fit.lines.length);
+                                    if (isLarger || overflowsLess) {
+                                        blockText = joinedText;
+                                        layoutWidth = grown.width;
+                                        fit = grown.fit;
+                                    }
                                 }
                             }
 
@@ -1063,7 +1120,7 @@ export const ImageOverlay: VFC<{ state: ImageState, onDismiss: () => void }> = (
     const [processingIsError, setProcessingIsError] = useState<boolean>(false);
     const [translationsVisible, setTranslationsVisible] = useState<boolean>(true);
     const [fontScale, setFontScale] = useState<number>(1.0);
-    const [allowLabelGrowth, setAllowLabelGrowth] = useState<boolean>(false);
+    const [allowLabelGrowth, setAllowLabelGrowth] = useState<boolean>(true);
     const [translatedTextAlignment, setTranslatedTextAlignment] = useState<HorizontalTextAlignment>('center');
     const [translatedTextFontFamily, setTranslatedTextFontFamily] = useState<string>("");
     const [translatedTextFontStyle, setTranslatedTextFontStyle] = useState<FontStyleOption>('normal');
