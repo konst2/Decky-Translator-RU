@@ -36,6 +36,7 @@ IDLE_TIMEOUT = 600  # 10 minutes
 PERSISTENT = os.environ.get("CT2_PERSISTENT") == "1"
 
 _DASH_PREFIXES = ("-", "–", "—", "‐", "−", "‑")
+_DASH_CHARS = "".join(_DASH_PREFIXES)
 
 _LID_MIN_PROB = 0.9
 
@@ -89,7 +90,14 @@ def _norm_for_copy(s):
     return " ".join(s.split()).casefold()
 
 
-def _is_dash_hallucination(src, out):
+def _has_unexpected_leading_dash(src, out):
+    """Вывод начинается с тире, которого не было в исходнике.
+
+    Само по себе это не галлюцинация: в русской речи ведущее тире — обычная
+    пунктуация реплики, а Marian/NLLB им же рисуют кавычки, троеточие и
+    пули. Поэтому вызывающий код срезает тире и оставляет перевод, а на
+    оригинал откатывается, только если после среза не осталось текста.
+    """
     return out.lstrip().startswith(_DASH_PREFIXES) and not src.lstrip().startswith(_DASH_PREFIXES)
 
 
@@ -272,9 +280,11 @@ def main():
                 text = tgt_tokenizer.decode(tokens)
 
                 fallback = False
+                if _has_unexpected_leading_dash(src_text, text):
+                    # Модель нарисовала реплику/кавычки тире — срезаем его и
+                    # оставляем перевод, а не выбрасываем всю строку.
+                    text = text.lstrip().lstrip(_DASH_CHARS).lstrip()
                 if not text.strip():
-                    fallback = True
-                elif _is_dash_hallucination(src_text, text):
                     fallback = True
                 elif _is_source_copy_with_tail(src_text, text):
                     fallback = True
@@ -386,12 +396,11 @@ def main():
 
                 # Hallucination guard
                 fallback = False
-                if _is_dash_hallucination(src_text, text):
-                    if input_token_count > 8:
-                        text = text.lstrip().lstrip("".join(_DASH_PREFIXES)).lstrip()
-                        if not text:
-                            fallback = True
-                    else:
+                if _has_unexpected_leading_dash(src_text, text):
+                    # То же, что у Marian: тире — пунктуация, а не мусор.
+                    # Срезаем и сохраняем перевод при любом числе токенов.
+                    text = text.lstrip().lstrip(_DASH_CHARS).lstrip()
+                    if not text:
                         fallback = True
                 if not fallback and _is_source_copy_with_tail(src_text, text):
                     fallback = True
