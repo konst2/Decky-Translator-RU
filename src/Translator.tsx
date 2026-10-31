@@ -6,6 +6,8 @@ import { TextRecognizer, NetworkError, ApiKeyError, RateLimitError, ModelNotAvai
 import { TextTranslator } from "./TextTranslator";
 import { Input, InputMode, ActionType, ProgressInfo } from "./Input";
 import { ImageState } from "./Overlay";
+import { OCR_DATA_FLOW, TRANSLATION_DATA_FLOW, mostExposed } from "./tabs/DataFlowBadge";
+import type { DataFlow } from "./tabs/DataFlowBadge";
 import { logger } from "./Logger";
 
 // Screenshot response interface
@@ -342,6 +344,12 @@ export class GameTranslatorLogic {
 
         const runId = ++this.currentRunId;
         const isCancelled = (): boolean => runId !== this.currentRunId;
+        // The most sensitive data flow among the stages this run has started.
+        // Final statuses ("Текст не найден", errors) show it as one icon: the user's
+        // question there is "did anything of mine leave the device?", and the last
+        // stage alone can answer wrong (cloud OCR sent a screenshot, then local
+        // translation failed). `let`: it accumulates per stage and is read in catch.
+        let runDataFlow: DataFlow | null = null;
 
         try {
             this.isProcessing = true;
@@ -370,7 +378,9 @@ export class GameTranslatorLogic {
             const recognizingStep = this.ocrProvider === 'gemini_vision'
                 ? "Распознавание и перевод"
                 : "Распознавание";
-            this.imageState.updateProcessingStep(recognizingStep, false, this.ocrMethodHint());
+            const ocrFlow = this.ocrDataFlow();
+            runDataFlow = mostExposed(runDataFlow, ocrFlow);
+            this.imageState.updateProcessingStep(recognizingStep, false, this.ocrMethodHint(), true, ocrFlow);
 
             const textRegions = await this.textRecognizer.recognizeTextFile(result.path);
             if (isCancelled()) {
@@ -382,7 +392,9 @@ export class GameTranslatorLogic {
             if (textRegions.length > 0) {
                 const alreadyTranslated = textRegions.every(r => r.translatedText);
                 if (!alreadyTranslated) {
-                    this.imageState.updateProcessingStep("Перевод текста", false, this.translationMethodHint());
+                    const translationFlow = this.translationDataFlow();
+                    runDataFlow = mostExposed(runDataFlow, translationFlow);
+                    this.imageState.updateProcessingStep("Перевод текста", false, this.translationMethodHint(), true, translationFlow);
                 }
 
                 // Translate text (skips backend call if already translated by OCR provider)
@@ -406,7 +418,7 @@ export class GameTranslatorLogic {
                 this.imageState.showTranslatedImage(result.base64, translatedRegions);
             } else {
                 // No text found, show message
-                this.imageState.updateProcessingStep("Текст не найден", false, "", false);
+                this.imageState.updateProcessingStep("Текст не найден", false, "", false, runDataFlow);
 
                 // Hide overlay after a short delay
                 setTimeout(() => {
@@ -424,30 +436,30 @@ export class GameTranslatorLogic {
             // Check if this is a network error
             if (error instanceof NetworkError) {
                 const msg = error.message || "Нет подключения к интернету";
-                this.imageState.updateProcessingStep(msg, true);
+                this.imageState.updateProcessingStep(msg, true, "", true, runDataFlow);
                 // Hide overlay after showing the error message
                 setTimeout(() => {
                     this.imageState.hideImage();
                 }, 2500); // 2.5 seconds delay for network error
             } else if (error instanceof ApiKeyError) {
-                this.imageState.updateProcessingStep(error.message || "Неверный API-ключ", true);
+                this.imageState.updateProcessingStep(error.message || "Неверный API-ключ", true, "", true, runDataFlow);
                 // Hide overlay after showing the error message
                 setTimeout(() => {
                     this.imageState.hideImage();
                 }, 2500); // 2.5 seconds delay for API key error
             } else if (error instanceof ModelNotAvailableError) {
-                this.imageState.updateProcessingStep(error.message, true);
+                this.imageState.updateProcessingStep(error.message, true, "", true, runDataFlow);
                 setTimeout(() => {
                     this.imageState.hideImage();
                 }, 3000);
             } else if (error instanceof RateLimitError) {
-                this.imageState.updateProcessingStep(error.message, true);
+                this.imageState.updateProcessingStep(error.message, true, "", true, runDataFlow);
                 // Hide overlay after showing the error message
                 setTimeout(() => {
                     this.imageState.hideImage();
                 }, 3000); // 3 seconds delay for rate limit error
             } else if (error instanceof TranslationError) {
-                this.imageState.updateProcessingStep(error.message, true);
+                this.imageState.updateProcessingStep(error.message, true, "", true, runDataFlow);
                 setTimeout(() => {
                     this.imageState.hideImage();
                 }, 3000); // longer: the message may name the exception to report
@@ -576,6 +588,19 @@ export class GameTranslatorLogic {
             gemini_vision: "Gemini Vision",
         };
         return labels[this.ocrProvider] || this.ocrProvider;
+    }
+
+    // ocrProvider / translationProvider are plain strings here, not the Settings
+    // unions, so the lookup can miss (e.g. a stale value from an old settings
+    // file). A miss means "no icon" rather than a wrong one.
+    private ocrDataFlow(): DataFlow | null {
+        const flows: Record<string, DataFlow> = OCR_DATA_FLOW;
+        return flows[this.ocrProvider] ?? null;
+    }
+
+    private translationDataFlow(): DataFlow | null {
+        const flows: Record<string, DataFlow> = TRANSLATION_DATA_FLOW;
+        return flows[this.translationProvider] ?? null;
     }
 
     setHasGoogleApiKey = (hasKey: boolean): void => {

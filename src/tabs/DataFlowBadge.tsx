@@ -32,6 +32,24 @@ export const TRANSLATION_DATA_FLOW: Record<Settings["translationProvider"], Data
     mymemory: "text",
 };
 
+// How much each flow exposes: a screenshot carries everything the text does and more.
+const DATA_FLOW_EXPOSURE: Record<DataFlow, number> = {
+    local: 0,
+    text: 1,
+    screenshot: 2,
+};
+
+// The more sensitive of two flows; null means "no stage yet" and loses to anything.
+export function mostExposed(a: DataFlow | null, b: DataFlow | null): DataFlow | null {
+    if (a === null) {
+        return b;
+    }
+    if (b === null) {
+        return a;
+    }
+    return DATA_FLOW_EXPOSURE[b] > DATA_FLOW_EXPOSURE[a] ? b : a;
+}
+
 const DATA_FLOW_LABELS: Record<DataFlow, string> = {
     local: "Всё на устройстве",
     text: "В облако уходит текст",
@@ -40,14 +58,20 @@ const DATA_FLOW_LABELS: Record<DataFlow, string> = {
 
 // Not a lock icon for "local": HiLockClosed already means "unavailable"
 // (Gemini Vision in the translation list), a lock meaning "private" would confuse.
+// Colors form a scale grey → blue → orange: nothing / some / a lot leaves the device.
+// "text" is blue (the Steam accent), not grey: without a label (status rows, the
+// overlay pill) a grey cloud-arrow is easy to mistake for the local one. Not green
+// for "local": green already means "status OK" in this plugin.
 const DATA_FLOW_COLORS: Record<DataFlow, string> = {
     local: "#8b929a",
-    text: "#8b929a",
+    text: "#1a9fff",
     screenshot: "#ffa726",
 };
 
-const DataFlowIconGlyph: VFC<{ flow: DataFlow }> = ({ flow }) => {
-    const style = { fontSize: "13px", color: DATA_FLOW_COLORS[flow], flexShrink: 0 };
+// Bare icon. Exported for the status pill on the overlay, which needs it larger
+// than the 13px used in the settings tabs (the pill's text is 14px).
+export const DataFlowIconGlyph: VFC<{ flow: DataFlow, size?: number }> = ({ flow, size = 13 }) => {
+    const style = { fontSize: `${size}px`, color: DATA_FLOW_COLORS[flow], flexShrink: 0 };
     if (flow === "local") {
         return <BsCloudSlash style={style} />;
     }

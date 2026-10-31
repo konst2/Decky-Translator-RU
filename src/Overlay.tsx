@@ -8,6 +8,8 @@ import { TranslatedRegion } from "./TextTranslator";
 import { logger } from "./Logger";
 import { buildTranslatedFontFamily, ensureFontLoaded, resolveFontStyleCSS } from "./fonts";
 import type { FontStyleOption } from "./fonts";
+import { DataFlowIconGlyph } from "./tabs/DataFlowBadge";
+import type { DataFlow } from "./tabs/DataFlowBadge";
 
 export type HorizontalTextAlignment = 'left' | 'right' | 'center' | 'justify';
 
@@ -74,6 +76,10 @@ export class ImageState {
     private processingStep = ""; // Added to track current processing step
     private processingDetail = "";
     private processingIsError = false;
+    // Where data goes (cloud icon on the status pill): the current stage while
+    // working, the whole run on final statuses ("Текст не найден", errors).
+    // null = no icon, e.g. the "Обработка" stage before any provider is involved.
+    private processingDataFlow: DataFlow | null = null;
     private loadingIndicatorTimer: ReturnType<typeof setTimeout> | null = null; // Timer for delayed indicator
     private translationsVisible = true; // New property to track translation visibility
     private fontScale = 1.0;
@@ -81,13 +87,13 @@ export class ImageState {
     private translatedTextAlignment: HorizontalTextAlignment = 'center';
     private translatedTextFontFamily = "";
     private translatedTextFontStyle: FontStyleOption = 'normal';
-    private onStateChangedListeners: Array<(visible: boolean, imageData: string, regions: TranslatedRegion[], loading: boolean, processingStep: string, processingDetail: string, processingIsError: boolean, translationsVisible: boolean, fontScale: number, allowLabelGrowth: boolean, translatedTextAlignment: HorizontalTextAlignment, translatedTextFontFamily: string, translatedTextFontStyle: FontStyleOption) => void> = [];
+    private onStateChangedListeners: Array<(visible: boolean, imageData: string, regions: TranslatedRegion[], loading: boolean, processingStep: string, processingDetail: string, processingIsError: boolean, translationsVisible: boolean, fontScale: number, allowLabelGrowth: boolean, translatedTextAlignment: HorizontalTextAlignment, translatedTextFontFamily: string, translatedTextFontStyle: FontStyleOption, processingDataFlow: DataFlow | null) => void> = [];
 
-    onStateChanged(callback: (visible: boolean, imageData: string, regions: TranslatedRegion[], loading: boolean, processingStep: string, processingDetail: string, processingIsError: boolean, translationsVisible: boolean, fontScale: number, allowLabelGrowth: boolean, translatedTextAlignment: HorizontalTextAlignment, translatedTextFontFamily: string, translatedTextFontStyle: FontStyleOption) => void): void {
+    onStateChanged(callback: (visible: boolean, imageData: string, regions: TranslatedRegion[], loading: boolean, processingStep: string, processingDetail: string, processingIsError: boolean, translationsVisible: boolean, fontScale: number, allowLabelGrowth: boolean, translatedTextAlignment: HorizontalTextAlignment, translatedTextFontFamily: string, translatedTextFontStyle: FontStyleOption, processingDataFlow: DataFlow | null) => void): void {
         this.onStateChangedListeners.push(callback);
     }
 
-    offStateChanged(callback: (visible: boolean, imageData: string, regions: TranslatedRegion[], loading: boolean, processingStep: string, processingDetail: string, processingIsError: boolean, translationsVisible: boolean, fontScale: number, allowLabelGrowth: boolean, translatedTextAlignment: HorizontalTextAlignment, translatedTextFontFamily: string, translatedTextFontStyle: FontStyleOption) => void): void {
+    offStateChanged(callback: (visible: boolean, imageData: string, regions: TranslatedRegion[], loading: boolean, processingStep: string, processingDetail: string, processingIsError: boolean, translationsVisible: boolean, fontScale: number, allowLabelGrowth: boolean, translatedTextAlignment: HorizontalTextAlignment, translatedTextFontFamily: string, translatedTextFontStyle: FontStyleOption, processingDataFlow: DataFlow | null) => void): void {
         const index = this.onStateChangedListeners.indexOf(callback);
         if (index !== -1) {
             this.onStateChangedListeners.splice(index, 1);
@@ -102,6 +108,7 @@ export class ImageState {
         this.processingStep = step;
         this.processingDetail = "";
         this.processingIsError = false;
+        this.processingDataFlow = null;
         this.translationsVisible = true; // Reset to visible when starting new translation
 
         // Clear any existing timer
@@ -173,10 +180,13 @@ export class ImageState {
     }
 
     // Update the current processing step
-    updateProcessingStep(step: string, isError: boolean = false, detail: string = "", isLoading: boolean = true): void {
+    // dataFlow is passed explicitly on each call, not kept from the previous
+    // stage: recognition and translation may use providers with different flows.
+    updateProcessingStep(step: string, isError: boolean = false, detail: string = "", isLoading: boolean = true, dataFlow: DataFlow | null = null): void {
         this.processingStep = step;
         this.processingDetail = detail;
         this.processingIsError = isError;
+        this.processingDataFlow = dataFlow;
         // Update the loading state and keep the current image displayed
         this.loading = isLoading;
         // Force immediate update
@@ -235,6 +245,7 @@ export class ImageState {
         this.processingStep = "";
         this.processingDetail = "";
         this.processingIsError = false;
+        this.processingDataFlow = null;
 
         logger.info('ImageState', `Showing translated image with ${regions.length} text regions`);
 
@@ -254,6 +265,7 @@ export class ImageState {
         this.processingStep = "";
         this.processingDetail = "";
         this.processingIsError = false;
+        this.processingDataFlow = null;
         this.translationsVisible = true; // Reset to default when hiding
 
         // Important: Clear the image data and regions to prevent reuse
@@ -267,7 +279,7 @@ export class ImageState {
 
     private notifyListeners(): void {
         for (const callback of this.onStateChangedListeners) {
-            callback(this.visible, this.imageData, this.translatedRegions, this.loading, this.processingStep, this.processingDetail, this.processingIsError, this.translationsVisible, this.fontScale, this.allowLabelGrowth, this.translatedTextAlignment, this.translatedTextFontFamily, this.translatedTextFontStyle);
+            callback(this.visible, this.imageData, this.translatedRegions, this.loading, this.processingStep, this.processingDetail, this.processingIsError, this.translationsVisible, this.fontScale, this.allowLabelGrowth, this.translatedTextAlignment, this.translatedTextFontFamily, this.translatedTextFontStyle, this.processingDataFlow);
         }
     }
 
@@ -399,8 +411,9 @@ export const TranslatedTextOverlay: VFC<{
     translatedTextAlignment: HorizontalTextAlignment,
     translatedTextFontFamily: string,
     translatedTextFontStyle: FontStyleOption,
+    processingDataFlow: DataFlow | null,
     onDismiss: () => void
-}> = ({ visible, imageData, regions, loading, processingStep, processingDetail, processingIsError, translationsVisible, fontScale, allowLabelGrowth, translatedTextAlignment, translatedTextFontFamily, translatedTextFontStyle, onDismiss }) => {
+}> = ({ visible, imageData, regions, loading, processingStep, processingDetail, processingIsError, translationsVisible, fontScale, allowLabelGrowth, translatedTextAlignment, translatedTextFontFamily, translatedTextFontStyle, processingDataFlow, onDismiss }) => {
     // Composition layer is handled by CompositionRequest below -- only mounted when visible
 
     // Ref to the screenshot image element
@@ -804,6 +817,15 @@ export const TranslatedTextOverlay: VFC<{
                             <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
                         </svg>
                     )}
+                    {/* Where data goes: the current stage while working, the whole run on
+                        final statuses and errors (after the error icon: the error matters more).
+                        Shape and color only, no label: a local stage can be over in a fraction
+                        of a second. */}
+                    {processingDataFlow && (
+                        <span style={{ display: "inline-flex", flexShrink: 0, marginRight: "10px" }}>
+                            <DataFlowIconGlyph flow={processingDataFlow} size={16} />
+                        </span>
+                    )}
                     <div style={{ fontSize: "14px", whiteSpace: "pre-line", lineHeight: "1.3" }}>
                         {processingIsError || !loading ? processingStep : `${processingStep}...`}
                         {!processingIsError && processingDetail && (
@@ -856,6 +878,7 @@ export const ImageOverlay: VFC<{ state: ImageState, onDismiss: () => void }> = (
     const [translatedTextAlignment, setTranslatedTextAlignment] = useState<HorizontalTextAlignment>('center');
     const [translatedTextFontFamily, setTranslatedTextFontFamily] = useState<string>("");
     const [translatedTextFontStyle, setTranslatedTextFontStyle] = useState<FontStyleOption>('normal');
+    const [processingDataFlow, setProcessingDataFlow] = useState<DataFlow | null>(null);
 
     useEffect(() => {
         logger.debug('ImageOverlay', 'useEffect mounting, registering state listener');
@@ -873,7 +896,8 @@ export const ImageOverlay: VFC<{ state: ImageState, onDismiss: () => void }> = (
             currentAllowLabelGrowth: boolean,
             currentTranslatedTextAlignment: HorizontalTextAlignment,
             currentTranslatedTextFontFamily: string,
-            currentTranslatedTextFontStyle: FontStyleOption
+            currentTranslatedTextFontStyle: FontStyleOption,
+            currProcessingDataFlow: DataFlow | null
         ) => {
             logger.debug('ImageOverlay', `State changed - visible=${isVisible}, imgData.length=${imgData?.length || 0}, regions=${textRegions?.length || 0}`);
             setVisible(isVisible);
@@ -889,6 +913,7 @@ export const ImageOverlay: VFC<{ state: ImageState, onDismiss: () => void }> = (
             setTranslatedTextAlignment(currentTranslatedTextAlignment);
             setTranslatedTextFontFamily(currentTranslatedTextFontFamily);
             setTranslatedTextFontStyle(currentTranslatedTextFontStyle);
+            setProcessingDataFlow(currProcessingDataFlow);
         };
 
         state.onStateChanged(handleStateChanged);
@@ -918,6 +943,7 @@ export const ImageOverlay: VFC<{ state: ImageState, onDismiss: () => void }> = (
             translatedTextAlignment={translatedTextAlignment}
             translatedTextFontFamily={translatedTextFontFamily}
             translatedTextFontStyle={translatedTextFontStyle}
+            processingDataFlow={processingDataFlow}
             onDismiss={onDismiss}
         />
     );
