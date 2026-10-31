@@ -5,7 +5,7 @@
   "flags": [],
   "publish": {
     "tags": ["Translation"],
-    "description": "Translate anything on your screen to your language",
+    "description": "Переводит любой текст на экране на ваш язык",
     "image": "https://raw.githubusercontent.com/konst2/Decky-Translator-RU/main/assets/store-image.png"
   }
 }

@@ -311,7 +311,9 @@ export default definePlugin(() => {
 
     return {
         name: "Decky Translator RU",
-        title: <div className={staticClasses.Title}>Decky Translator RU</div>,
+        // Короткий заголовок: полное "Decky Translator RU" не влезает в одну строку шапки меню.
+        // Имя в списке плагинов и магазине берётся из name и plugin.json, они не меняются.
+        title: <div className={staticClasses.Title}>Translator RU</div>,
         content: <TranslatorApp logic={logic}/>,
         icon: <BsTranslate/>,
         onDismount() {
