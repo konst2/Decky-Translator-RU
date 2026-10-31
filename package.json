@@ -1,6 +1,6 @@
 {
   "name": "decky-translator-ru",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "type": "module",
   "description": "Translate anything on screen to your language. Works with any game or application - a great tool for language learning or enjoying untranslated games",
   "scripts": {
@@ -54,8 +54,8 @@
   "remote_binary": [
     {
       "name": "plugin-dependencies.tar.gz",
-      "url": "https://github.com/konst2/Decky-Translator-RU/releases/download/0.16.0/plugin-dependencies.tar.gz",
-      "sha256hash": "1b3b7d3bb9405f534e5d63db0d8fb740e4f4f35328c997216dae3c5176c2164b"
+      "url": "https://github.com/konst2/Decky-Translator-RU/releases/download/0.17.0/plugin-dependencies.tar.gz",
+      "sha256hash": "c513abfcf9ec1aebacfd5c01f7995ec72cc06820fac7a9ed5bbd6a30db10766f"
     }
   ]
 }
