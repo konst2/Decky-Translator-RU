@@ -77,7 +77,27 @@ const CJK_CHAR = /[\u3000-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/;
 // Scripts written without spaces between words: Chinese and Japanese.
 // Same as CJK_CHAR minus Hangul syllables: Korean separates words with
 // spaces, so its wrapped lines must be joined with a space.
-const NO_SPACE_SCRIPT = /[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/;
+export const NO_SPACE_SCRIPT = /[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/;
+
+// Spacing between wrapped lines of one text block. The block is one phrase,
+// so lines join into a single line: with "\n" translators split it back and
+// translate each line on its own. Also used by the overlay to re-join OCR
+// lines, so both join them the same way.
+// getHorizontalSpacing is not reused: it treats quotes as punctuation and
+// would glue `"Come here."` + `She left` into `"Come here."She left`.
+export function lineWrapSeparator(prevLine: string, nextLine: string): string {
+    // A trailing hyphen is kept and glued without a space: "self-" + "aware"
+    // becomes "self-aware". A word break ("possi-" + "ble") can't be told
+    // apart without a dictionary; games rarely hyphenate, so keeping the
+    // hyphen is the safer guess.
+    if (prevLine.endsWith("-")) {
+        return "";
+    }
+    if (NO_SPACE_SCRIPT.test(prevLine.slice(-1)) || NO_SPACE_SCRIPT.test(nextLine.charAt(0))) {
+        return "";
+    }
+    return " ";
+}
 
 // Union-Find with path compression and union by rank.
 // Enables transitive merging: if A merges with B and B with C,
@@ -416,7 +436,7 @@ export class TextRecognizer {
                 if (direction === "horizontal") {
                     separator = this.getHorizontalSpacing(sorted[i - 1], region);
                 } else if (direction === "paragraph") {
-                    separator = this.getLineWrapSpacing(sorted[i - 1], region);
+                    separator = lineWrapSeparator(sorted[i - 1].text, region.text);
                 }
 
                 combinedText += separator + region.text;
@@ -483,25 +503,6 @@ export class TextRecognizer {
             return "";
         }
 
-        return " ";
-    }
-
-    // Spacing between wrapped lines of one Screen AI block. The block is one
-    // phrase, so lines join into a single line: with "\n" translators split
-    // it back and translate each line on its own.
-    // getHorizontalSpacing is not reused: it treats quotes as punctuation and
-    // would glue `"Come here."` + `She left` into `"Come here."She left`.
-    private getLineWrapSpacing(a: TextRegion, b: TextRegion): string {
-        // A trailing hyphen is kept and glued without a space: "self-" + "aware"
-        // becomes "self-aware". A word break ("possi-" + "ble") can't be told
-        // apart without a dictionary; games rarely hyphenate, so keeping the
-        // hyphen is the safer guess.
-        if (a.text.endsWith("-")) {
-            return "";
-        }
-        if (NO_SPACE_SCRIPT.test(a.text.slice(-1)) || NO_SPACE_SCRIPT.test(b.text.charAt(0))) {
-            return "";
-        }
         return " ";
     }
 

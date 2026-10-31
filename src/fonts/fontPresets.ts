@@ -4,7 +4,7 @@ import { HiLockClosed } from "react-icons/hi2";
 import { isDyslexiaFont, getDyslexiaFontsForLanguage, getAllDyslexiaFontNames, getDyslexiaFontAvailableFor, loadDyslexiaFont, preloadDyslexiaFonts } from "./dyslexiaFonts";
 import { getWebFontsForLanguage, isWebFont, loadGoogleFont, preloadWebFontList } from "./webFonts";
 
-export const DEFAULT_TRANSLATED_FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+export const DEFAULT_TRANSLATED_FONT_FAMILY = "'Noto Sans', 'DejaVu Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
 export type FontStyleOption = 'normal' | 'bold' | 'italic' | 'bolditalic';
 

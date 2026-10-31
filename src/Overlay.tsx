@@ -5,6 +5,7 @@ import { findModuleChild } from "@decky/ui";
 
 import { VFC, useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { TranslatedRegion } from "./TextTranslator";
+import { NO_SPACE_SCRIPT, lineWrapSeparator } from "./TextRecognizer";
 import { logger } from "./Logger";
 import { buildTranslatedFontFamily, ensureFontLoaded, resolveFontStyleCSS } from "./fonts";
 import type { FontStyleOption } from "./fonts";
@@ -303,8 +304,22 @@ const OVERLAY_PAD_Y_EM = 0.06;   // padding: 0.06em 0.15em
 const OVERLAY_PAD_X_EM = 0.15;
 const MIN_OVERLAY_FONT_SIZE = 7;
 const MAX_OVERLAY_FONT_SIZE = 48;
+// Canvas widths and the browser's own line layout differ by fractions of a
+// pixel (kerning, rounding). Wrapping a bit narrower than the real box keeps
+// the browser from breaking a line we considered full a second time.
+const OVERLAY_WRAP_SAFETY_PX = 1;
+// allowLabelGrowth widens a plate past its block only if that makes the font
+// at least this much larger.
+const MIN_GROWTH_FONT_GAIN = 2;
+
+// Width of `text` at `fontSize` in the overlay's font.
+type OverlayMeasure = (text: string, fontSize: number) => number;
 
 let overlayMeasureCtx: CanvasRenderingContext2D | null | undefined;
+// Font last assigned to the shared context. Kept here instead of reading
+// ctx.font back: the browser normalises that string, so comparing with it
+// would reassign the font on every call.
+let overlayMeasureFont = '';
 
 function getOverlayMeasureContext(): CanvasRenderingContext2D | null {
     if (overlayMeasureCtx === undefined) {
@@ -322,34 +337,53 @@ function overlayFontCss(fontSize: number, fontFamily: string, fontStyle: FontSty
     return `${cssFontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
 }
 
-// Width of `text` as the browser will lay it out. Average-glyph fallback keeps
-// the overlay usable if canvas is unavailable.
-function measureOverlayText(text: string, fontSize: number, fontFamily: string, fontStyle: FontStyleOption): number {
+// Measures text as the browser will lay it out. The size search re-wraps the
+// same words at several sizes, and assigning ctx.font is the costly part, so
+// widths are cached and the font is only reassigned when it changes. Create
+// one per render: the cache does not notice a web font finishing loading.
+// Average-glyph fallback keeps the overlay usable if canvas is unavailable.
+function createOverlayMeasure(fontFamily: string, fontStyle: FontStyleOption): OverlayMeasure {
     const ctx = getOverlayMeasureContext();
-    if (!ctx) return text.length * fontSize * 0.55;
-    ctx.font = overlayFontCss(fontSize, fontFamily, fontStyle);
-    return ctx.measureText(text).width;
+    const widths = new Map<string, number>();
+
+    return (text, fontSize) => {
+        if (!ctx) return text.length * fontSize * 0.55;
+
+        const key = `${fontSize}|${text}`;
+        const cached = widths.get(key);
+        if (cached !== undefined) return cached;
+
+        const font = overlayFontCss(fontSize, fontFamily, fontStyle);
+        if (font !== overlayMeasureFont) {
+            ctx.font = font;
+            overlayMeasureFont = font;
+        }
+        const width = ctx.measureText(text).width;
+        widths.set(key, width);
+        return width;
+    };
+}
+
+interface WrappedText {
+    lines: string[];
+    // A word of a space-separated script had to be cut mid-word.
+    brokeWord: boolean;
 }
 
 // Greedy wrap: fill each line up to `maxWidth`. Tokens wider than a line are
 // broken per character so a long word cannot escape the block.
-function wrapOverlayText(
-    text: string,
-    maxWidth: number,
-    fontSize: number,
-    fontFamily: string,
-    fontStyle: FontStyleOption,
-): string[] {
+function wrapOverlayText(text: string, maxWidth: number, fontSize: number, measure: OverlayMeasure): WrappedText {
     const words = text.split(/\s+/).filter(w => w.length > 0);
-    if (words.length === 0) return [];
+    if (words.length === 0) return { lines: [], brokeWord: false };
 
-    const spaceWidth = measureOverlayText(' ', fontSize, fontFamily, fontStyle);
+    const spaceWidth = measure(' ', fontSize);
     const lines: string[] = [];
+    let brokeWord = false;
     let line = '';
     let lineWidth = 0;
 
     for (const word of words) {
-        const wordWidth = measureOverlayText(word, fontSize, fontFamily, fontStyle);
+        const wordWidth = measure(word, fontSize);
 
         if (wordWidth > maxWidth) {
             if (line) {
@@ -359,15 +393,23 @@ function wrapOverlayText(
             }
             let chunk = '';
             let chunkWidth = 0;
+            let prevCh = '';
             for (const ch of word) {
-                const chWidth = measureOverlayText(ch, fontSize, fontFamily, fontStyle);
+                const chWidth = measure(ch, fontSize);
                 if (chunk && chunkWidth + chWidth > maxWidth) {
+                    // Chinese/Japanese have no spaces, so a whole sentence is one
+                    // "word" here and a cut between two of their characters is
+                    // normal. Any other cut splits a real word. The check is per
+                    // cut, not per word: one 「 or ？ next to a Russian word must
+                    // not make the whole word fair game.
+                    if (!(NO_SPACE_SCRIPT.test(prevCh) && NO_SPACE_SCRIPT.test(ch))) brokeWord = true;
                     lines.push(chunk);
                     chunk = '';
                     chunkWidth = 0;
                 }
                 chunk += ch;
                 chunkWidth += chWidth;
+                prevCh = ch;
             }
             line = chunk;
             lineWidth = chunkWidth;
@@ -388,7 +430,31 @@ function wrapOverlayText(
     }
 
     if (line) lines.push(line);
-    return lines;
+    return { lines, brokeWord };
+}
+
+// Join OCR lines of one block into a single paragraph, by the same rule
+// TextRecognizer uses when it merges lines (no space for Chinese/Japanese or
+// after a trailing hyphen).
+function joinOcrLines(text: string): string {
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    let joined = '';
+    for (const line of lines) {
+        if (!joined) {
+            joined = line;
+            continue;
+        }
+        joined += lineWrapSeparator(joined, line) + line;
+    }
+    return joined;
+}
+
+// Width available to the text inside a plate of `width`. The fitter and the
+// layout must use the same formula: when they disagreed, a ~9px plate passed
+// the fitter's check while the layout gave up and returned one unwrapped line,
+// so the plate got a 29px font.
+function overlayContentWidth(width: number, fontSize: number): number {
+    return width - 2 * OVERLAY_PAD_X_EM * fontSize - OVERLAY_WRAP_SAFETY_PX;
 }
 
 function clampOverlayFontSize(fontSize: number): number {
@@ -396,18 +462,26 @@ function clampOverlayFontSize(fontSize: number): number {
 }
 
 // Lay the text out at a fixed font size; explicit line breaks are kept.
-function layoutOverlayText(
-    text: string,
-    width: number,
-    fontSize: number,
-    fontFamily: string,
-    fontStyle: FontStyleOption,
-): string[] {
-    const contentWidth = width - 2 * OVERLAY_PAD_X_EM * fontSize;
-    if (contentWidth <= 0) return [text.replace(/\s+/g, ' ').trim()];
+function layoutOverlayText(text: string, width: number, fontSize: number, measure: OverlayMeasure): WrappedText {
+    const contentWidth = overlayContentWidth(width, fontSize);
+    if (contentWidth <= 0) return { lines: [text.replace(/\s+/g, ' ').trim()], brokeWord: false };
 
     const paragraphs = text.split(/\n+/).map(p => p.trim()).filter(p => p.length > 0);
-    return paragraphs.flatMap(p => wrapOverlayText(p, contentWidth, fontSize, fontFamily, fontStyle));
+    const lines: string[] = [];
+    let brokeWord = false;
+    for (const paragraph of paragraphs) {
+        const wrapped = wrapOverlayText(paragraph, contentWidth, fontSize, measure);
+        lines.push(...wrapped.lines);
+        if (wrapped.brokeWord) brokeWord = true;
+    }
+    return { lines, brokeWord };
+}
+
+interface OverlayFit {
+    fontSize: number;
+    lines: string[];
+    // False when the text overflows the plate even at the minimum size.
+    fits: boolean;
 }
 
 // Largest integer font size at which the text wraps into `width` x `height`.
@@ -418,21 +492,24 @@ function fitOverlayText(
     text: string,
     width: number,
     height: number,
-    fontFamily: string,
-    fontStyle: FontStyleOption,
-): { fontSize: number; lines: string[] } {
+    measure: OverlayMeasure,
+): OverlayFit {
     const raw = text.trim();
     if (!raw || width <= 0 || height <= 0) {
-        return { fontSize: MIN_OVERLAY_FONT_SIZE, lines: raw ? [raw] : [] };
+        return { fontSize: MIN_OVERLAY_FONT_SIZE, lines: raw ? [raw] : [], fits: false };
     }
 
     const fits = (fontSize: number): boolean => {
-        const contentWidth = width - 2 * OVERLAY_PAD_X_EM * fontSize;
+        const contentWidth = overlayContentWidth(width, fontSize);
         const contentHeight = height - 2 * OVERLAY_PAD_Y_EM * fontSize;
         if (contentWidth <= 0 || contentHeight <= 0) return false;
 
-        const lines = layoutOverlayText(raw, width, fontSize, fontFamily, fontStyle);
-        return lines.length * fontSize * OVERLAY_LINE_HEIGHT <= contentHeight;
+        const layout = layoutOverlayText(raw, width, fontSize, measure);
+        // A smaller font with whole words reads better than a bigger one with
+        // "Сохра-/нение". Cutting words is left to the minimum size, where
+        // there is no smaller option.
+        if (layout.brokeWord) return false;
+        return layout.lines.length * fontSize * OVERLAY_LINE_HEIGHT <= contentHeight;
     };
 
     let lo = MIN_OVERLAY_FONT_SIZE;
@@ -449,9 +526,33 @@ function fitOverlayText(
         }
     }
 
-    const fontSize = best >= MIN_OVERLAY_FONT_SIZE ? best : MIN_OVERLAY_FONT_SIZE;
-    const lines = layoutOverlayText(raw, width, fontSize, fontFamily, fontStyle);
-    return { fontSize, lines: lines.length > 0 ? lines : [raw] };
+    const textFits = best >= MIN_OVERLAY_FONT_SIZE;
+    const fontSize = textFits ? best : MIN_OVERLAY_FONT_SIZE;
+    const { lines } = layoutOverlayText(raw, width, fontSize, measure);
+    return { fontSize, lines: lines.length > 0 ? lines : [raw], fits: textFits };
+}
+
+// Apply the user's fontScale to a fitted size. Scaling up may make a word wider
+// than the plate; step back down until words are whole again, but not below
+// the fitted size, where they were already whole (or cut at the minimum size,
+// which is allowed). The plate may still grow taller — that is what a larger
+// scale asks for.
+function scaleOverlayText(
+    text: string,
+    width: number,
+    fit: OverlayFit,
+    fontScale: number,
+    measure: OverlayMeasure,
+): { fontSize: number; lines: string[] } {
+    let fontSize = clampOverlayFontSize(Math.round(fit.fontSize * fontScale));
+    if (fontSize === fit.fontSize) return { fontSize, lines: fit.lines };
+
+    let layout = layoutOverlayText(text, width, fontSize, measure);
+    while (layout.brokeWord && fontSize > fit.fontSize) {
+        fontSize--;
+        layout = layoutOverlayText(text, width, fontSize, measure);
+    }
+    return { fontSize, lines: layout.lines.length > 0 ? layout.lines : [text] };
 }
 
 // Overlay component to display translated text
@@ -487,6 +588,22 @@ export const TranslatedTextOverlay: VFC<{
     useEffect(() => {
         ensureFontLoaded(translatedTextFontFamily);
     }, [translatedTextFontFamily]);
+
+    // Plate font sizes and line breaks are measured on a canvas. A font that is
+    // still loading (web fonts, and local @font-face ones, which load lazily on
+    // first use) is measured with a fallback font, so the breaks would not match
+    // what the browser draws once the real font arrives. Re-render when any font
+    // finishes loading so the plates are measured again. Listening to the event
+    // rather than to ensureFontLoaded's promise covers every font source.
+    const [, setFontLoadCount] = useState(0);
+    useEffect(() => {
+        const fontSet = document.fonts;
+        if (!fontSet) return;
+
+        const handleFontsLoaded = () => setFontLoadCount(count => count + 1);
+        fontSet.addEventListener('loadingdone', handleFontsLoaded);
+        return () => fontSet.removeEventListener('loadingdone', handleFontsLoaded);
+    }, []);
 
     // Pure computation — no side-effects
     const translatedOverlayFontFamily = useMemo(
@@ -664,6 +781,8 @@ export const TranslatedTextOverlay: VFC<{
                         const pad = 4;
                         const gap = 2;
                         const imgWidth = imageDimensions.width || window.innerWidth;
+                        // One per render: all plates share the font, so they share the width cache.
+                        const measure = createOverlayMeasure(translatedOverlayFontFamily, translatedTextFontStyle);
 
                         // Pre-compute scaled rects for collision detection
                         const scaled = regions.map(region => ({
@@ -747,45 +866,33 @@ export const TranslatedTextOverlay: VFC<{
                             // Fit the translation into the plate: the largest size at which
                             // the wrapped text still fits, instead of an area guess that had to
                             // be corrected downwards afterwards.
-                            const blockText = region.translatedText || region.text;
+                            const regionText = region.translatedText || region.text;
+                            // With growth on, the plate is re-wrapped freely anyway, so the
+                            // original OCR line breaks would only force extra short lines.
+                            const blockText = allowLabelGrowth ? joinOcrLines(regionText) : regionText;
                             let layoutWidth = scaled[index].width;
-                            let fit = fitOverlayText(
-                                blockText,
-                                layoutWidth,
-                                scaled[index].height,
-                                translatedOverlayFontFamily,
-                                translatedTextFontStyle,
-                            );
+                            let fit = fitOverlayText(blockText, layoutWidth, scaled[index].height, measure);
 
-                            // Growth is now only a fallback for text that cannot fit the block
-                            // at the minimum size — let it use the free width instead.
-                            if (allowLabelGrowth
-                                && fit.fontSize <= MIN_OVERLAY_FONT_SIZE
-                                && labelMaxWidth > scaled[index].width) {
-                                layoutWidth = labelMaxWidth;
-                                fit = fitOverlayText(
-                                    blockText,
-                                    layoutWidth,
-                                    scaled[index].height,
-                                    translatedOverlayFontFamily,
-                                    translatedTextFontStyle,
-                                );
+                            if (allowLabelGrowth && labelMaxWidth > scaled[index].width) {
+                                const wideFit = fitOverlayText(blockText, labelMaxWidth, scaled[index].height, measure);
+                                // Widen only for a visible gain: a plate spilling over the
+                                // picture for +1px is not worth it.
+                                const isNoticeablyLarger = wideFit.fontSize >= fit.fontSize + MIN_GROWTH_FONT_GAIN;
+                                // The text overflows the block even at the minimum size; the wide
+                                // plate at least overflows by fewer lines.
+                                const overflowsLess = !fit.fits
+                                    && wideFit.lines.length < fit.lines.length;
+                                if (isNoticeablyLarger || overflowsLess) {
+                                    layoutWidth = labelMaxWidth;
+                                    fit = wideFit;
+                                }
                             }
 
-                            const fontSize = clampOverlayFontSize(Math.round(fit.fontSize * fontScale));
-                            let displayText = fit.lines.join('\n');
-                            if (fontSize !== fit.fontSize) {
-                                // fontScale changed the rendered size — lay out again so the
-                                // line breaks match what the browser will actually draw.
-                                const relaid = layoutOverlayText(
-                                    blockText,
-                                    layoutWidth,
-                                    fontSize,
-                                    translatedOverlayFontFamily,
-                                    translatedTextFontStyle,
-                                );
-                                displayText = (relaid.length > 0 ? relaid : [blockText]).join('\n');
-                            }
+                            // fontScale changes the rendered size, so the lines are laid out
+                            // again to match what the browser will actually draw.
+                            const scaledText = scaleOverlayText(blockText, layoutWidth, fit, fontScale, measure);
+                            const fontSize = scaledText.fontSize;
+                            const displayText = scaledText.lines.join('\n');
 
                             return (
                                 <div
