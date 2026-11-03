@@ -3,7 +3,7 @@
 import { findModuleChild } from "@decky/ui";
 
 
-import { VFC, useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { CSSProperties, VFC, useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { TranslatedRegion } from "./TextTranslator";
 import { NO_SPACE_SCRIPT, lineWrapSeparator } from "./TextRecognizer";
 import { logger } from "./Logger";
@@ -67,6 +67,75 @@ const frameCornerArms = (inset: number, size: number, thickness: number, color: 
         ...arm,
     }} />
 ));
+
+// Where and how big the snapshot is drawn. Sizes and offsets are in CSS pixels
+// (what styles take), but they are worked out in physical screen pixels first.
+type ImageFit = {
+    width: number;
+    height: number;
+    left: number;
+    top: number;
+    // Shot pixels → screen pixels. Exactly 1 means a pixel-for-pixel copy of the screen
+    scale: number;
+    // Screen size in physical pixels, the same units as the shot's natural size
+    screenWidthPx: number;
+    screenHeightPx: number;
+};
+
+const EMPTY_FIT: ImageFit = { width: 0, height: 0, left: 0, top: 0, scale: 1, screenWidthPx: 0, screenHeightPx: 0 };
+
+// The shot comes in physical screen pixels, while CSS works in CSS pixels, which
+// are devicePixelRatio times larger. Rounding to whole CSS pixels only lines up
+// with the screen when the ratio is 1, so size and offsets are rounded to whole
+// physical pixels and only then converted to CSS. The dim layer, the frame corners
+// and the label coordinates all hang off this box. The shot is never upscaled, only fitted.
+const fitImageToScreen = (
+    natural: { width: number; height: number },
+    viewport: { width: number; height: number; dpr: number },
+): ImageFit => {
+    if (natural.width <= 0 || natural.height <= 0 || viewport.width <= 0 || viewport.height <= 0) {
+        return EMPTY_FIT;
+    }
+    const dpr = viewport.dpr > 0 ? viewport.dpr : 1;
+    const screenWidthPx = Math.round(viewport.width * dpr);
+    const screenHeightPx = Math.round(viewport.height * dpr);
+
+    const scale = Math.min(1, screenWidthPx / natural.width, screenHeightPx / natural.height);
+    const drawnWidthPx = Math.floor(natural.width * scale);
+    const drawnHeightPx = Math.floor(natural.height * scale);
+    const leftPx = Math.floor((screenWidthPx - drawnWidthPx) / 2);
+    const topPx = Math.floor((screenHeightPx - drawnHeightPx) / 2);
+
+    return {
+        width: drawnWidthPx / dpr,
+        height: drawnHeightPx / dpr,
+        left: leftPx / dpr,
+        top: topPx / dpr,
+        scale,
+        screenWidthPx,
+        screenHeightPx,
+    };
+};
+
+// Takes the window explicitly: the plugin's global `window` is Steam's hidden 1×1
+// context, not the fullscreen window the overlay is drawn in (see overlayWindow).
+// The size comes from the overlay root (fixed, 100vw × 100vh, so its box is the
+// viewport), not from innerWidth/innerHeight: those are rounded to whole CSS pixels.
+// At dpr 1.5 a 1280×800 screen is 853.33×533.33 CSS px; innerWidth gives 854, i.e.
+// 1281 screen px, and the shot no longer matches the screen. The box keeps the fraction.
+// documentElement is not used: its height follows the page content, not the viewport.
+const readViewport = (view: Window, overlayRoot: HTMLElement) => {
+    const rect = overlayRoot.getBoundingClientRect();
+    return {
+        width: rect.width,
+        height: rect.height,
+        dpr: view.devicePixelRatio || 1,
+    };
+};
+
+// Until the overlay window is known: zero size keeps the fitted layout off
+// and the plain max-width/max-height fallback on
+const UNKNOWN_VIEWPORT = { width: 0, height: 0, dpr: 1 };
 
 // Enhanced ImageState to handle translated text regions
 export class ImageState {
@@ -615,11 +684,51 @@ export const TranslatedTextOverlay: VFC<{
     // Ref to the screenshot image element
     const imgRef = useRef<HTMLImageElement>(null);
 
+    // Ref to the fullscreen overlay root. The plugin code runs in Steam's hidden 1×1
+    // window, while the overlay is drawn in another, fullscreen one — the one that owns
+    // this element's document. Screen size and pixel ratio must come from that window.
+    const overlayRef = useRef<HTMLDivElement>(null);
+    const overlayWindow = (): Window | null => overlayRef.current?.ownerDocument.defaultView ?? null;
+
     // State to track actual rendered image dimensions
     const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
 
     // State to track the natural (original) image dimensions from the screenshot
-    const [naturalDimensions, setNaturalDimensions] = useState({ width: 1280, height: 800 });
+    const [naturalDimensions, setNaturalDimensions] = useState({ width: 0, height: 0 });
+
+    // Viewport size and pixel ratio: the snapshot is fitted into it, in whole physical pixels
+    const [viewportSize, setViewportSize] = useState(UNKNOWN_VIEWPORT);
+
+    const displaySize = fitImageToScreen(naturalDimensions, viewportSize);
+    // Before the shot is decoded its natural size is unknown: fall back to the plain
+    // max-width/max-height fit until the load event supplies it
+    const sized = displaySize.width > 0 && displaySize.height > 0;
+
+    // Box of the picture: the container, the dim layer and the corners share it exactly.
+    // Centred on whole physical pixels — a half-pixel offset lets the browser snap the
+    // picture away from the box the corners are drawn against.
+    const imageBoxStyle: CSSProperties = sized
+        ? {
+            position: "absolute",
+            left: displaySize.left,
+            top: displaySize.top,
+            width: displaySize.width,
+            height: displaySize.height,
+        }
+        : { position: "relative", maxHeight: "100vh", maxWidth: "100vw" };
+
+    const imageStyle: CSSProperties = {
+        // Block, not inline: the line-box baseline gap would make the container
+        // a few pixels taller than the picture
+        display: "block",
+        ...(sized
+            ? { width: displaySize.width, height: displaySize.height }
+            : { maxHeight: "100vh", maxWidth: "100vw", objectFit: "contain" }),
+        // Nearest-neighbour is only harmless at exactly 1:1. When the shot is scaled
+        // down it drops whole rows and columns unevenly, and details seem to jump by
+        // a pixel against the original, so a scaled shot is smoothed instead.
+        imageRendering: sized && displaySize.scale === 1 ? "pixelated" : "auto",
+    };
 
     // Load font as a side-effect (network request / DOM injection)
     useEffect(() => {
@@ -658,6 +767,15 @@ export const TranslatedTextOverlay: VFC<{
 
     // Update image dimensions when the image loads or window resizes
     const updateImageDimensions = useCallback(() => {
+        const view = overlayWindow();
+        const overlayRoot = overlayRef.current;
+        if (view && overlayRoot) {
+            setViewportSize(prev => {
+                const next = readViewport(view, overlayRoot);
+                if (prev.width === next.width && prev.height === next.height && prev.dpr === next.dpr) return prev;
+                return next;
+            });
+        }
         if (imgRef.current) {
             const rect = imgRef.current.getBoundingClientRect();
             setImageDimensions(prev => {
@@ -678,11 +796,16 @@ export const TranslatedTextOverlay: VFC<{
         }
     }, []);
 
-    // Listen for window resize to update image dimensions
+    // Listen for resize of the overlay's own window (not the plugin's hidden one).
+    // The overlay root is always rendered, so the ref is set by the time effects run;
+    // the initial call reads the screen size right away instead of waiting for onLoad.
     useEffect(() => {
-        window.addEventListener('resize', updateImageDimensions);
+        const view = overlayWindow();
+        if (!view) return;
+        updateImageDimensions();
+        view.addEventListener('resize', updateImageDimensions);
         return () => {
-            window.removeEventListener('resize', updateImageDimensions);
+            view.removeEventListener('resize', updateImageDimensions);
         };
     }, [updateImageDimensions]);
 
@@ -693,9 +816,16 @@ export const TranslatedTextOverlay: VFC<{
         const baseWidth = naturalDimensions.width;
         const baseHeight = naturalDimensions.height;
 
-        // Use actual rendered image dimensions if available
-        let renderedWidth = imageDimensions.width;
-        let renderedHeight = imageDimensions.height;
+        // Nothing to scale against until the shot is decoded
+        if (baseWidth === 0 || baseHeight === 0) {
+            return { widthFactor: 1, heightFactor: 1, generalFactor: 1 };
+        }
+
+        // Once the shot is fitted, its drawn size is exactly displaySize. The measured
+        // imageDimensions can't be trusted here: it's taken in onLoad, before the fitted
+        // style applies, and isn't re-measured until a resize — so it's off by a fraction.
+        let renderedWidth = sized ? displaySize.width : imageDimensions.width;
+        let renderedHeight = sized ? displaySize.height : imageDimensions.height;
 
         // Fallback: try to get dimensions from the img element directly
         if ((renderedWidth === 0 || renderedHeight === 0) && imgRef.current) {
@@ -706,9 +836,15 @@ export const TranslatedTextOverlay: VFC<{
 
         // Final fallback: use viewport dimensions if image not yet loaded
         if (renderedWidth === 0 || renderedHeight === 0) {
-            // Calculate based on viewport while maintaining aspect ratio
-            const viewportWidth = window.innerWidth;
-            const viewportHeight = window.innerHeight;
+            // Calculate based on viewport while maintaining aspect ratio.
+            // viewportSize, not window.inner*: the plugin's global window is Steam's
+            // hidden 1×1 context and would shrink every label to a dot (see readViewport).
+            const viewportWidth = viewportSize.width;
+            const viewportHeight = viewportSize.height;
+            // Overlay window not read yet: no size to fit into, keep labels unscaled
+            if (viewportWidth === 0 || viewportHeight === 0) {
+                return { widthFactor: 1, heightFactor: 1, generalFactor: 1 };
+            }
             const aspectRatio = baseWidth / baseHeight;
 
             if (viewportWidth / viewportHeight > aspectRatio) {
@@ -743,6 +879,7 @@ export const TranslatedTextOverlay: VFC<{
         `}</style>
         {visible && <CompositionRequest level={UIComposition.Notification} />}
         <div id='translation-overlay'
+             ref={overlayRef}
              onClick={onDismiss}
              style={{
                  height: "100vh",
@@ -761,24 +898,24 @@ export const TranslatedTextOverlay: VFC<{
 
             {/* Screenshot with Translations */}
             {imageData && (
-                <div style={{
-                    position: "relative",
-                    maxHeight: "100vh",
-                    maxWidth: "100vw",
-                }}>
-                    {/* Base screenshot image */}
-                    <img
-                        ref={imgRef}
-                        src={formattedImageData}
-                        onLoad={updateImageDimensions}
-                        style={{
-                            maxHeight: "100vh",
-                            maxWidth: "100vw",
-                            objectFit: "contain",
-                            imageRendering: "pixelated"
-                        }}
-                        alt="Скриншот"
-                    />
+                <div style={imageBoxStyle}>
+                    {/* Clipping box: scaling the shot resamples it up to a pixel past its
+                        own box, which showed as a sliver sticking out of the frame corners */}
+                    <div style={{
+                        ...(sized
+                            ? { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }
+                            : { position: "relative" }),
+                        overflow: "hidden",
+                    }}>
+                        {/* Base screenshot image */}
+                        <img
+                            ref={imgRef}
+                            src={formattedImageData}
+                            onLoad={updateImageDimensions}
+                            style={imageStyle}
+                            alt="Скриншот"
+                        />
+                    </div>
 
                     {/* Dim the captured frame while processing, so it reads as a frozen snapshot.
                         Vignette keeps the centre (where labels are read) at 15 % and deepens the edges */}
@@ -817,7 +954,10 @@ export const TranslatedTextOverlay: VFC<{
                         const { widthFactor, heightFactor } = getScalingFactor();
                         const pad = 4;
                         const gap = 2;
-                        const imgWidth = imageDimensions.width || window.innerWidth;
+                        // Same source as getScalingFactor, so labels and their growth limit agree.
+                        // Last resort is the overlay window's width, not window.innerWidth:
+                        // the plugin's global window is Steam's hidden 1×1 context.
+                        const imgWidth = (sized ? displaySize.width : imageDimensions.width) || viewportSize.width;
                         // One per render: all plates share the font, so they share the width cache.
                         const measure = createOverlayMeasure(translatedOverlayFontFamily, translatedTextFontStyle);
 
