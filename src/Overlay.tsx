@@ -699,6 +699,11 @@ export const TranslatedTextOverlay: VFC<{
     // Viewport size and pixel ratio: the snapshot is fitted into it, in whole physical pixels
     const [viewportSize, setViewportSize] = useState(UNKNOWN_VIEWPORT);
 
+    // Bumped once per decoded shot so the frame corners can flash. The counter keys the
+    // glint layer: a resize or a re-render would otherwise restart its animation.
+    const [shotGlint, setShotGlint] = useState(0);
+    const lastGlintSrc = useRef("");
+
     const displaySize = fitImageToScreen(naturalDimensions, viewportSize);
     // Before the shot is decoded its natural size is unknown: fall back to the plain
     // max-width/max-height fit until the load event supplies it
@@ -793,6 +798,14 @@ export const TranslatedTextOverlay: VFC<{
                     return { width: natWidth, height: natHeight };
                 });
             }
+
+            // A different source means a different shot: flash the corners now, while the
+            // picture is being painted, not on the resize calls that also land here
+            const src = imgRef.current.currentSrc || imgRef.current.src;
+            if (src && src !== lastGlintSrc.current) {
+                lastGlintSrc.current = src;
+                setShotGlint(key => key + 1);
+            }
         }
     }, []);
 
@@ -876,6 +889,11 @@ export const TranslatedTextOverlay: VFC<{
                 0% { opacity: 0; }
                 100% { opacity: 1; }
             }
+            @keyframes frameGlint {
+                0% { opacity: 0.95; }
+                35% { opacity: 0.6; }
+                100% { opacity: 0; }
+            }
         `}</style>
         {visible && <CompositionRequest level={UIComposition.Notification} />}
         <div id='translation-overlay'
@@ -946,6 +964,22 @@ export const TranslatedTextOverlay: VFC<{
                             26,
                             2,
                             translationsVisible ? "rgba(255, 255, 255, 0.55)" : "rgba(26, 159, 255, 0.9)"
+                        )}
+                        {/* The shot has just appeared: one short glint along the corners says
+                            "this frame is captured", the way a shutter does. Blue rather than
+                            white, which disappears on a bright scene */}
+                        {shotGlint > 0 && (
+                            <div key={shotGlint} style={{
+                                position: "absolute",
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                pointerEvents: "none",
+                                animation: "frameGlint 180ms ease-out forwards",
+                            }}>
+                                {frameCornerArms(12, 26, 2, "rgba(26, 159, 255, 0.95)")}
+                            </div>
                         )}
                     </div>
 
