@@ -11,6 +11,9 @@ import { buildTranslatedFontFamily, ensureFontLoaded, resolveFontStyleCSS } from
 import type { FontStyleOption } from "./fonts";
 import { DataFlowIconGlyph } from "./tabs/DataFlowBadge";
 import type { DataFlow } from "./tabs/DataFlowBadge";
+import { InputMode } from "./Input";
+import { hotkeyShortLabel } from "./hotkeyLabels";
+import { SnapshotBadge, pickBadgeCorner } from "./SnapshotBadge";
 
 export type HorizontalTextAlignment = 'left' | 'right' | 'center' | 'justify';
 
@@ -67,6 +70,45 @@ const frameCornerArms = (inset: number, size: number, thickness: number, color: 
         ...arm,
     }} />
 ));
+
+// Dimming of the captured frame while it is being recognised and translated.
+// The centre, where labels are read, keeps the flat base; the frame edges go darker.
+//
+// `closest-side` is the point: the ellipse touches the frame edges, so the
+// gradient reaches full strength at the middle of each edge, and past the
+// ellipse (the corners) the last colour simply holds. The default size,
+// `farthest-corner`, put full strength only in the corners — the edges got
+// ~28 % instead of the intended ~40 %, and on the Deck the vignette was not
+// seen at all (T7, 04.11.2026).
+//
+// Resulting darkness: centre 15 %, ¾ of the way out ~28 %, edges and corners ~45 %
+// (1 − (1 − base) × (1 − edge)).
+const frameVignette = (clearCentre: string, edgeAlpha: number, baseAlpha: number) =>
+    `radial-gradient(ellipse closest-side at center, ` +
+    `rgba(0, 0, 0, 0) ${clearCentre}, rgba(0, 0, 0, ${edgeAlpha}) 100%), ` +
+    `rgba(0, 0, 0, ${baseAlpha})`;
+
+const PROCESSING_DIM_BASE = 0.15;           // flat darkening over the whole frame
+const PROCESSING_DIM_EDGE = 0.35;           // gradient strength at the frame edges, on top of the base
+const PROCESSING_DIM_CLEAR_CENTRE = "55%";  // the gradient starts this far out from the centre
+const PROCESSING_DIM_BACKGROUND = frameVignette(
+    PROCESSING_DIM_CLEAR_CENTRE, PROCESSING_DIM_EDGE, PROCESSING_DIM_BASE);
+
+// Light edge shade over the frame once the translation is shown. Without it the
+// shot looks exactly like the live game behind it, while the game keeps running and
+// takes the buttons (no pause by default) — a press meant for the game then goes
+// past a frame that no longer matches. The shade cannot be covered by labels, so it
+// stays a cue even when every corner is taken.
+//
+// Kept weak on purpose: the user reads here for a long time, and a strong shade
+// would look like a dirty filter over the game and hide HUD text at the edges.
+// No flat base: the centre stays exactly as captured. Edges and corners ~10 %.
+const TRANSLATED_SHADE_EDGE = 0.10;
+const TRANSLATED_SHADE_BACKGROUND = frameVignette(PROCESSING_DIM_CLEAR_CENTRE, TRANSLATED_SHADE_EDGE, 0);
+
+// Both layers swap through opacity: CSS cannot animate between two gradients,
+// but it can fade one layer out while the other fades in
+const FRAME_SHADE_TRANSITION = "opacity 0.15s ease-out";
 
 // Where and how big the snapshot is drawn. Sizes and offsets are in CSS pixels
 // (what styles take), but they are worked out in physical screen pixels first.
@@ -677,8 +719,9 @@ export const TranslatedTextOverlay: VFC<{
     translatedTextFontFamily: string,
     translatedTextFontStyle: FontStyleOption,
     processingDataFlow: DataFlow | null,
+    hotkeyLabel: string,
     onDismiss: () => void
-}> = ({ visible, imageData, regions, loading, processingStep, processingDetail, processingIsError, translationsVisible, fontScale, allowLabelGrowth, translatedTextAlignment, translatedTextFontFamily, translatedTextFontStyle, processingDataFlow, onDismiss }) => {
+}> = ({ visible, imageData, regions, loading, processingStep, processingDetail, processingIsError, translationsVisible, fontScale, allowLabelGrowth, translatedTextAlignment, translatedTextFontFamily, translatedTextFontStyle, processingDataFlow, hotkeyLabel, onDismiss }) => {
     // Composition layer is handled by CompositionRequest below -- only mounted when visible
 
     // Ref to the screenshot image element
@@ -936,7 +979,8 @@ export const TranslatedTextOverlay: VFC<{
                     </div>
 
                     {/* Dim the captured frame while processing, so it reads as a frozen snapshot.
-                        Vignette keeps the centre (where labels are read) at 15 % and deepens the edges */}
+                        Vignette keeps the centre (where labels are read) light and deepens the edges,
+                        see PROCESSING_DIM_BACKGROUND */}
                     <div style={{
                         position: "absolute",
                         top: 0,
@@ -944,9 +988,25 @@ export const TranslatedTextOverlay: VFC<{
                         right: 0,
                         bottom: 0,
                         pointerEvents: "none",
-                        background: "radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 42%, rgba(0, 0, 0, 0.32) 100%), rgba(0, 0, 0, 0.15)",
+                        background: PROCESSING_DIM_BACKGROUND,
                         opacity: loading ? 1 : 0,
-                        transition: "opacity 0.15s ease-out",
+                        transition: FRAME_SHADE_TRANSITION,
+                    }} />
+
+                    {/* Once processing is over, a light edge shade stays, so the shot is still
+                        told apart from the live game. Does not depend on translationsVisible:
+                        with the labels hidden the shot looks most like the game.
+                        See TRANSLATED_SHADE_BACKGROUND */}
+                    <div style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        pointerEvents: "none",
+                        background: TRANSLATED_SHADE_BACKGROUND,
+                        opacity: loading ? 0 : 1,
+                        transition: FRAME_SHADE_TRANSITION,
                     }} />
 
                     {/* Frame corners mark the captured shot without turning it into a window border */}
@@ -982,6 +1042,22 @@ export const TranslatedTextOverlay: VFC<{
                             </div>
                         )}
                     </div>
+
+                    {/* "This is a shot, this button closes it" — once the translation is shown.
+                        Placed before the plates so a plate covers it, not the other way round */}
+                    {!loading && !processingIsError && (() => {
+                        const { widthFactor, heightFactor } = getScalingFactor();
+                        const frameWidth = sized ? displaySize.width : imageDimensions.width;
+                        const frameHeight = sized ? displaySize.height : imageDimensions.height;
+                        const plateRects = regions.map(region => ({
+                            left: region.rect.left * widthFactor,
+                            top: region.rect.top * heightFactor,
+                            width: (region.rect.right - region.rect.left) * widthFactor,
+                            height: (region.rect.bottom - region.rect.top) * heightFactor,
+                        }));
+                        const corner = pickBadgeCorner(plateRects, frameWidth, frameHeight);
+                        return <SnapshotBadge corner={corner} hotkeyLabel={hotkeyLabel} />;
+                    })()}
 
                     {/* Overlay translated text boxes with adaptive font sizing */}
                     {translationsVisible && (() => {
@@ -1284,7 +1360,14 @@ export const TranslatedTextOverlay: VFC<{
 
 
 // Main image overlay component
-export const ImageOverlay: VFC<{ state: ImageState, onDismiss: () => void }> = ({ state, onDismiss }) => {
+// getInputMode is read on every render rather than kept in state: the overlay
+// re-renders on every state change of a shot, so a hotkey changed in the settings
+// shows on the badge from the next shot on.
+export const ImageOverlay: VFC<{
+    state: ImageState,
+    onDismiss: () => void,
+    getInputMode: () => InputMode,
+}> = ({ state, onDismiss, getInputMode }) => {
     const [visible, setVisible] = useState<boolean>(false);
     const [imageData, setImageData] = useState<string>("");
     const [regions, setRegions] = useState<TranslatedRegion[]>([]);
@@ -1364,6 +1447,7 @@ export const ImageOverlay: VFC<{ state: ImageState, onDismiss: () => void }> = (
             translatedTextFontFamily={translatedTextFontFamily}
             translatedTextFontStyle={translatedTextFontStyle}
             processingDataFlow={processingDataFlow}
+            hotkeyLabel={hotkeyShortLabel(getInputMode())}
             onDismiss={onDismiss}
         />
     );

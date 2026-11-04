@@ -301,7 +301,7 @@ export default definePlugin(() => {
 
     // Add image overlay as a global component
     routerHook.addGlobalComponent("DeckyTranslatorRUImageOverlay", () => (
-        <ImageOverlay state={imageState} onDismiss={logic.dismiss}/>
+        <ImageOverlay state={imageState} onDismiss={logic.dismiss} getInputMode={logic.getInputMode}/>
     ));
 
     // Add activation indicator as a global component
