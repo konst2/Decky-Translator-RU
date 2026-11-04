@@ -18,7 +18,7 @@ import {
     Focusable
 } from "@decky/ui";
 
-import { VFC, useState, useEffect, useRef, useCallback, RefObject } from "react";
+import { VFC, ReactNode, useState, useEffect, useRef, useCallback, RefObject } from "react";
 import { call } from "@decky/api";
 import { useSettings } from "../SettingsContext";
 import { BottomSpacer } from "./BottomSpacer";
@@ -694,6 +694,62 @@ const ProviderRating: VFC<{ quality: number; speed: number }> = ({ quality, spee
     </div>
 );
 
+// Same orange as the other warnings in provider descriptions: in this tab
+// orange always means "something may not work", never "a plus".
+const WARNING_COLOR = "#ffa726";
+const HINT_COLOR = "#9aa0a6";
+
+// Notes are hidden on the closed dropdown button (the long text does not fit
+// there) by a <style> inside the dropdown wrapper. The opened list is rendered
+// outside the wrapper, so the notes stay visible in it. The provider
+// description below the dropdown repeats any warning.
+const OPTION_NOTE_CLASS = "dt-option-note";
+
+/**
+ * Label of an item in the OCR and translation provider lists. One layout for
+ * both lists so the labels look the same everywhere:
+ *   [lock] Name [icon] (variant)                      note
+ * - variant: which engine is behind the item ("Chrome", "en→ru"), small and grey;
+ * - note: right-aligned; its colour carries the meaning: grey hint or
+ *   orange warning.
+ */
+const ProviderOptionLabel: VFC<{
+    name: string;
+    variant?: string;
+    icon?: ReactNode;
+    locked?: boolean;
+    note?: string;
+    noteKind?: "hint" | "warning";
+}> = ({ name, variant, icon, locked = false, note, noteKind = "hint" }) => (
+    // Baseline alignment keeps the small grey text on the same line as the
+    // name without per-item translateY tweaks; icons are centred separately.
+    <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}>
+        <span style={{ display: "flex", alignItems: "baseline", gap: "4px" }}>
+            {locked && <HiLockClosed style={{ fontSize: "12px", color: "#888", alignSelf: "center" }} />}
+            <span>{name}</span>
+            {icon && <span style={{ display: "flex", alignSelf: "center", fontSize: "12px" }}>{icon}</span>}
+            {variant && <span style={{ fontSize: "10px", opacity: 0.7 }}>({variant})</span>}
+        </span>
+        {note && (
+            <span
+                className={OPTION_NOTE_CLASS}
+                style={{ fontSize: "10px", fontStyle: "italic", whiteSpace: "nowrap", color: noteKind === "warning" ? WARNING_COLOR : HINT_COLOR }}
+            >
+                {note}
+            </span>
+        )}
+    </span>
+);
+
+// Shared wording for the list note and the description warning, so that both
+// say the same thing about every provider that may be blocked from Russia.
+const RUSSIA_NOTE = "может не работать из РФ";
+
+/** Orange warning line in a provider description (same look for all providers). */
+const ProviderWarning: VFC<{ children: ReactNode }> = ({ children }) => (
+    <div style={{ color: WARNING_COLOR, marginTop: "6px" }}>{children}</div>
+);
+
 interface TabTranslationProps {
     scrollTarget?: string | null;
     onScrolled?: () => void;
@@ -810,14 +866,15 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                     >
                         <Focusable style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                             <div className="dt-ocr-dropdown-wrapper" style={{ flex: 1 }}>
-                                <style>{`.dt-ocr-dropdown-wrapper .dt-recommended-tag, .dt-ocr-dropdown-wrapper .dt-option-note { display: none !important; }`}</style>
+                                {/* See OPTION_NOTE_CLASS: notes are hidden on the closed button only. */}
+                                <style>{`.dt-ocr-dropdown-wrapper .${OPTION_NOTE_CLASS} { display: none !important; }`}</style>
                             <Dropdown
                                 rgOptions={[
-                                    { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>Локально</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(RapidOCR)</span><span className="dt-option-note" style={{ fontSize: "10px", color: "#ffa726", marginLeft: "6px", transform: "translateY(1px)" }}>(лучшая для EN игр)</span></span>, data: "rapidocr" },
-                                    { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span style={{ display: "flex", alignItems: "center" }}><span>Локально</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Chrome)</span></span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ рекомендуемый</span></span>, data: "chromescreenai" },
-                                    { label: <span>OCR.space</span>, data: "ocrspace" },
-                                    { label: <span>Google Cloud</span>, data: "googlecloud" },
-                                    { label: <span style={{ display: "flex", alignItems: "center", gap: "6px", height: "20px", lineHeight: "20px" }}>Gemini Vision <BsStars style={{ fontSize: "12px" }} /></span>, data: "gemini_vision" }
+                                    { label: <ProviderOptionLabel name="Локально" variant="RapidOCR" note="лучшая для EN игр" />, data: "rapidocr" },
+                                    { label: <ProviderOptionLabel name="Локально" variant="Chrome" note="★ рекомендуемый" />, data: "chromescreenai" },
+                                    { label: <ProviderOptionLabel name="OCR.space" />, data: "ocrspace" },
+                                    { label: <ProviderOptionLabel name="Google Cloud" note={RUSSIA_NOTE} noteKind="warning" />, data: "googlecloud" },
+                                    { label: <ProviderOptionLabel name="Gemini Vision" icon={<BsStars />} note={RUSSIA_NOTE} noteKind="warning" />, data: "gemini_vision" }
                                 ]}
                                 selectedOption={settings.ocrProvider}
                                 onChange={(option) => {
@@ -975,6 +1032,9 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     {!settings.googleApiKey && (
                                         <div style={{ color: "#ff6b6b", marginTop: "4px" }}>Необходимо добавить API-ключ</div>
                                     )}
+                                    <ProviderWarning>
+                                        Может не работать из РФ: Google ограничивает облачные сервисы для России, а российской картой их не оплатить. Если распознавание не работает, выберите локальное.
+                                    </ProviderWarning>
                                 </>
                             )}
                             {settings.ocrProvider === 'gemini_vision' && (
@@ -991,6 +1051,9 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     {!settings.geminiApiKey && (
                                         <div style={{ color: "#ff6b6b", marginTop: "4px" }}>Необходимо добавить API-ключ Gemini</div>
                                     )}
+                                    <ProviderWarning>
+                                        Может не работать из РФ: Google ограничивает доступ к Gemini по региону. Нужен VPN или прокси, иначе выберите локальное распознавание.
+                                    </ProviderWarning>
                                 </>
                             )}
                         </div>
@@ -1120,7 +1183,10 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         {settings.ocrProvider === 'gemini_vision' ? (
                             <Dropdown
                                 rgOptions={[
-                                    { label: <span style={{ display: "flex", alignItems: "center", gap: "6px", height: "20px", lineHeight: "20px" }}><HiLockClosed style={{ fontSize: "12px", color: "#888" }} /> Gemini Vision <BsStars style={{ fontSize: "12px" }} /></span>, data: "gemini_vision" }
+                                    // No note here: this disabled dropdown never opens, so the
+                                    // note would only crowd the button. The warning is already
+                                    // shown in the OCR list and description.
+                                    { label: <ProviderOptionLabel name="Gemini Vision" icon={<BsStars />} locked />, data: "gemini_vision" }
                                 ]}
                                 selectedOption="gemini_vision"
                                 disabled={true}
@@ -1129,22 +1195,19 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         ) : (
                         <Focusable style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                             <div className="dt-trans-dropdown-wrapper" style={{ flex: 1 }}>
-                                {/* Same trick as the OCR list: the note is shown in the opened
-                                    list (rendered outside this wrapper) but hidden on the closed
-                                    dropdown button, where the long text would not fit. The
-                                    provider description below repeats the warning. */}
-                                <style>{`.dt-trans-dropdown-wrapper .dt-option-note { display: none !important; }`}</style>
+                                {/* See OPTION_NOTE_CLASS: notes are hidden on the closed button only. */}
+                                <style>{`.dt-trans-dropdown-wrapper .${OPTION_NOTE_CLASS} { display: none !important; }`}</style>
                                 <Dropdown
                                     rgOptions={[
                                         // What works from Russia goes first: users tend to pick
                                         // from the top of the list. Only the order changed; the
                                         // saved setting is the "data" value, not the position.
-                                        { label: <span>Яндекс</span>, data: "yandex" },
-                                        { label: <span>MyMemory</span>, data: "mymemory" },
-                                        { label: <span>Локально</span>, data: "ct2" },
-                                        { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>Локально (en→ru)</span><span className="dt-option-note" style={{ fontSize: "10px", color: "#ffa726", marginLeft: "6px", transform: "translateY(1px)" }}>(лёгкая)</span></span>, data: "opusmt" },
-                                        { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>Google Translate</span><span className="dt-option-note" style={{ fontSize: "10px", color: "#ffa726", marginLeft: "6px", transform: "translateY(1px)" }}>(может не работать из РФ)</span></span>, data: "freegoogle" },
-                                        { label: <span>Google Cloud</span>, data: "googlecloud" }
+                                        { label: <ProviderOptionLabel name="Яндекс" />, data: "yandex" },
+                                        { label: <ProviderOptionLabel name="MyMemory" />, data: "mymemory" },
+                                        { label: <ProviderOptionLabel name="Локально" />, data: "ct2" },
+                                        { label: <ProviderOptionLabel name="Локально" variant="en→ru" note="лёгкая" />, data: "opusmt" },
+                                        { label: <ProviderOptionLabel name="Google Translate" note={RUSSIA_NOTE} noteKind="warning" />, data: "freegoogle" },
+                                        { label: <ProviderOptionLabel name="Google Cloud" note={RUSSIA_NOTE} noteKind="warning" />, data: "googlecloud" }
                                     ]}
                                     selectedOption={settings.translationProvider}
                                     onChange={(option) => updateSetting('translationProvider', option.data, 'Метод перевода')}
@@ -1282,9 +1345,9 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     <DataFlowBadge flow={TRANSLATION_DATA_FLOW.freegoogle} />
                                     <div>- Бесплатно, API-ключ не нужен</div>
                                     <div>- Хорошее качество для большинства языков</div>
-                                    <div style={{ color: "#ffa726", marginTop: "6px" }}>
+                                    <ProviderWarning>
                                         Может не работать из РФ: Google блокирует часть российских адресов. Если перевод не появляется, выберите Яндекс или MyMemory.
-                                    </div>
+                                    </ProviderWarning>
                                 </>
                             )}
                             {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'mymemory' && (
@@ -1326,6 +1389,9 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     {!settings.googleApiKey && (
                                         <div style={{ color: "#ff6b6b", marginTop: "4px" }}>Необходимо добавить API-ключ</div>
                                     )}
+                                    <ProviderWarning>
+                                        Может не работать из РФ: Google ограничивает облачные сервисы для России, а российской картой их не оплатить. Если перевод не появляется, выберите Яндекс или MyMemory.
+                                    </ProviderWarning>
                                 </>
                             )}
                             {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'yandex' && (
