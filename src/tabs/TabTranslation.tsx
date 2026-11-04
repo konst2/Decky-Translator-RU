@@ -872,7 +872,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 rgOptions={[
                                     { label: <ProviderOptionLabel name="Локально" variant="RapidOCR" note="лучшая для EN игр" />, data: "rapidocr" },
                                     { label: <ProviderOptionLabel name="Локально" variant="Chrome" note="★ рекомендуемый" />, data: "chromescreenai" },
-                                    { label: <ProviderOptionLabel name="OCR.space" />, data: "ocrspace" },
+                                    { label: <ProviderOptionLabel name="OCR.space" note={RUSSIA_NOTE} noteKind="warning" />, data: "ocrspace" },
                                     { label: <ProviderOptionLabel name="Google Cloud" note={RUSSIA_NOTE} noteKind="warning" />, data: "googlecloud" },
                                     { label: <ProviderOptionLabel name="Gemini Vision" icon={<BsStars />} note={RUSSIA_NOTE} noteKind="warning" />, data: "gemini_vision" }
                                 ]}
@@ -1016,6 +1016,9 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     <DataFlowBadge flow={OCR_DATA_FLOW.ocrspace} />
                                     <div>- Бесплатный облачный OCR API (серверы в ЕС)</div>
                                     <div>- Лимиты: 500/день и 10/10 мин</div>
+                                    <ProviderWarning>
+                                        Может не работать из РФ: сервис бывает недоступен с российских адресов. Нужен VPN или прокси, иначе выберите локальное распознавание.
+                                    </ProviderWarning>
                                 </>
                             )}
                             {settings.ocrProvider === 'googlecloud' && (
