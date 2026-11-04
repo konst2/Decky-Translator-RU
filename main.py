@@ -1180,7 +1180,7 @@ class Plugin:
     _settings = None
     _input_language: str = "en"  # Default to English
     _target_language: str = "ru"
-    _input_mode: int = 0  # 0 = both touchpads, 1 = left touchpad, 2 = right touchpad
+    _input_mode: int = 0  # InputMode from src/Input.tsx: 0 = L4 (default), 2 = L5, ... Keep in sync with initialSettings in SettingsContext.tsx
     _hold_time_translate: int = 1000  # Default to 1 second
     _hold_time_dismiss: int = 500  # Default to 0.5 seconds for dismissal
     _confidence_threshold: float = 0.6  # Default confidence threshold

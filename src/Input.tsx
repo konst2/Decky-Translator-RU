@@ -114,7 +114,7 @@ export class Input {
     private clearCooldownTimeoutId: ReturnType<typeof setTimeout> | null = null;
     private cooldownDuration = 150; // 0.15s cooldown
 
-    private inputMode: InputMode = InputMode.L5_BUTTON;
+    private inputMode: InputMode = InputMode.L4_BUTTON;  // must match _input_mode in main.py
 
     private translateHoldTime = 1000;
     private dismissHoldTime = 500;

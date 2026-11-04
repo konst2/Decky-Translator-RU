@@ -88,7 +88,7 @@ type SettingsAction =
 const initialSettings: Settings = {
     inputLanguage: "en",
     targetLanguage: "ru",
-    inputMode: InputMode.L5_BUTTON,  // Default to L5 back button
+    inputMode: InputMode.L4_BUTTON,  // Default to L4 back button; must match _input_mode in main.py
     enabled: true,
     initialized: false,
     holdTimeTranslate: 1000, // Default to 1 second (1000ms)
