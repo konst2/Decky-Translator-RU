@@ -1044,8 +1044,10 @@ export const TranslatedTextOverlay: VFC<{
                     </div>
 
                     {/* "This is a shot, this button closes it" — once the translation is shown.
-                        Placed before the plates so a plate covers it, not the other way round */}
-                    {!loading && !processingIsError && (() => {
+                        Placed before the plates so a plate covers it, not the other way round.
+                        Not on "Текст не найден" (no plates): that screen closes by itself
+                        in a couple of seconds, there is nothing to stay and read */}
+                    {!loading && !processingIsError && regions.length > 0 && (() => {
                         const { widthFactor, heightFactor } = getScalingFactor();
                         const frameWidth = sized ? displaySize.width : imageDimensions.width;
                         const frameHeight = sized ? displaySize.height : imageDimensions.height;
