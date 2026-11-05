@@ -210,7 +210,7 @@ class YandexTranslateProvider(TranslationProvider):
             batch_texts = [flat[i] for i in batch]
             logger.debug(f"Translating {len(batch_texts)} texts: {source} -> {target}")
             # Any failure raises: returning the original text here would look
-            # like a successful translation to the user (bug B3).
+            # like a successful translation to the user.
             results = await self._translate_request(batch_texts, source, target)
             for index, result in zip(batch, results):
                 translated[index] = result

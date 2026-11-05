@@ -737,7 +737,7 @@ function keyNeeds(hasKey: boolean): ProviderNeeds | undefined {
  * both lists so the labels look the same everywhere:
  *   [lock] Name [icon] (variant) [needs]              note
  * - variant: which engine is behind the item ("Chrome", "en→ru"), small and grey;
- * - needs: что методу не хватает для работы (пункт 4 плана) — см. ProviderNeeds;
+ * - needs: что методу не хватает для работы — см. ProviderNeeds;
  * - note: right-aligned; its colour carries the meaning: grey hint or
  *   orange warning.
  */
@@ -817,7 +817,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
         if (!scrollTarget) return;
         // Цель приходит с бэкенда (readiness.py) как «<id метода>-action».
         // Record по ModelActionTarget: забытая кнопка — ошибка TypeScript, а не
-        // молчаливое «не прокрутилось» (так было с Opus-MT, B28). Неизвестная
+        // молчаливое «не прокрутилось» (так было с Opus-MT). Неизвестная
         // цель (метод без кнопки здесь) — просто открытая вкладка без прокрутки.
         const actionRefs: Record<ModelActionTarget, RefObject<HTMLDivElement>> = {
             'chromescreenai-action': chromescreenaiActionRef,

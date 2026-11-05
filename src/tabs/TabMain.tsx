@@ -97,7 +97,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
     const { settings, updateSetting } = useSettings();
 
     // Что не готово — решает бэкенд (check_readiness): свои условия здесь
-    // уже расходились с ним (B28).
+    // уже расходились с ним (при Opus-MT вели к кнопке загрузки NLLB).
     const needsDownload = readiness?.reason === 'model_missing';
 
     const handleButtonClick = async () => {

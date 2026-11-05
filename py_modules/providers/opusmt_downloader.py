@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # Ready-made CTranslate2 int8 conversion of Helsinki-NLP opus-mt-en-ru (Marian).
 # A narrow en→ru model: ~82 MB instead of the 1.4 GB NLLB all-pairs model.
 # Third-party conversion, so the revision is pinned and every file is checked
-# against a known sha256 (docs/PLAN.md, "model pack" keeps the same idea).
+# against a known sha256 (the same idea is planned for the other models).
 HF_REPO = "manancode/opus-mt-en-ru-ctranslate2-android"
 HF_REVISION = "8693481face72247976d2a7da8610ed4c75d9e83"
 HF_BASE_URL = f"https://huggingface.co/{HF_REPO}/resolve/{HF_REVISION}/{{filename}}"

@@ -78,3 +78,6 @@ cli/
 # Local files
 /docs
 /nul
+
+# Backend test environment (run-tests.sh)
+.venv-tests/

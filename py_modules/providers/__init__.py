@@ -579,7 +579,7 @@ class ProviderManager:
             return await provider.translate_batch(texts, source_lang, target_lang)
 
         # Returning the original texts here looked like a successful
-        # translation to the user (bug B13), so this is an error now.
+        # translation to the user, so this is an error now.
         logger.warning("No translation provider available")
         raise TranslationUnavailableError(
             "Выбранный метод перевода не настроен или не поддерживает эту пару языков. "

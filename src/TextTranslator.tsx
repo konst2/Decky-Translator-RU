@@ -90,8 +90,8 @@ export class TextTranslator {
                 || error instanceof ModelNotAvailableError || error instanceof TranslationError) {
                 throw error;
             }
-            // E.g. the backend call itself failed. Before B13 the original text
-            // was returned here, which looked like a successful translation.
+            // E.g. the backend call itself failed. The original text used to be
+            // returned here, which looked like a successful translation.
             logger.error('TextTranslator', 'Text translation error', error);
             throw new TranslationError("Ошибка перевода: нет ответа от плагина");
         }

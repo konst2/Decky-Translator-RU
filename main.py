@@ -1643,7 +1643,7 @@ class Plugin:
 
     async def check_readiness(self, input_language=None, target_language=None):
         """
-        Предпроверка перед хоткеем и кнопкой «Перевести» (пункт 4 плана).
+        Предпроверка перед хоткеем и кнопкой «Перевести».
 
         Фронтенд зовёт её до паузы игры и скриншота: если модель не скачана,
         незачем снимать экран и гонять распознавание, чтобы потом показать
@@ -2453,8 +2453,8 @@ class Plugin:
             return {"error": "translation_error", "message": str(e)}
         except Exception as e:
             # Any other failure used to return None, and the frontend then
-            # silently showed the original text as if it were translated
-            # (bug B13). The exception type tells the user (and a bug report)
+            # silently showed the original text as if it were translated.
+            # The exception type tells the user (and a bug report)
             # what broke; the details stay in the log.
             logger.error(f"Translation error: {e}")
             logger.error(traceback.format_exc())

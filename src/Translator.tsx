@@ -328,7 +328,7 @@ export class GameTranslatorLogic {
     }
 
     // Хоткей «перевести». Предпроверка идёт до паузы и скриншота: если модель
-    // не скачана, незачем замораживать игру и снимать экран (пункт 4 плана).
+    // не скачана, незачем замораживать игру и снимать экран.
     private translateFromHotkey = async (): Promise<void> => {
         if (this.imageState.isVisible()) return;
         if (this.isProcessing) return;
