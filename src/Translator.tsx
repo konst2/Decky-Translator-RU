@@ -57,6 +57,7 @@ export class GameTranslatorLogic {
     private hasGeminiApiKey: boolean = false;
     private hasYandexApiKey: boolean = false;
     private hasYandexFolderId: boolean = false;
+    private hasGigachatApiKey: boolean = false;
 
     isOverlayVisible(): boolean {
         return this.imageState.isVisible();
@@ -608,6 +609,7 @@ export class GameTranslatorLogic {
             mymemory: "MyMemory",
             googlecloud: "Google Cloud",
             yandex: "Яндекс",
+            gigachat: "GigaChat",
         };
         return labels[this.translationProvider] || this.translationProvider;
     }
@@ -654,6 +656,11 @@ export class GameTranslatorLogic {
     setHasYandexFolderId = (hasFolderId: boolean): void => {
         this.hasYandexFolderId = hasFolderId;
         logger.debug('Translator', `Yandex folder ID available: ${hasFolderId}`);
+    }
+
+    setHasGigachatApiKey = (hasKey: boolean): void => {
+        this.hasGigachatApiKey = hasKey;
+        logger.debug('Translator', `GigaChat Authorization Key available: ${hasKey}`);
     }
 
     // Runs all pre-checks that would prevent a translation from starting.
@@ -725,6 +732,10 @@ export class GameTranslatorLogic {
 
         if (this.translationProvider === 'yandex' && !(this.hasYandexApiKey && this.hasYandexFolderId)) {
             return { missing: true, message: "Для Яндекс Перевода требуются API-ключ и folder_id" };
+        }
+
+        if (this.translationProvider === 'gigachat' && !this.hasGigachatApiKey) {
+            return { missing: true, message: "Для GigaChat требуется Authorization Key" };
         }
 
         return { missing: false, message: "" };

@@ -19,7 +19,7 @@ import {
 } from "@decky/ui";
 
 import { VFC, ReactNode, useState, useEffect, useRef, useCallback, RefObject } from "react";
-import { call } from "@decky/api";
+import { call, toaster } from "@decky/api";
 import { useSettings } from "../SettingsContext";
 import { BottomSpacer } from "./BottomSpacer";
 import { DataFlowBadge, OCR_DATA_FLOW, TRANSLATION_DATA_FLOW } from "./DataFlowBadge";
@@ -38,6 +38,8 @@ import geminiLogo from "../../assets/gemini-logo.png";
 import yandexTranslateLogo from "../../assets/yandex-translate-logo.png";
 // @ts-ignore
 import mymemoryLogo from "../../assets/mymemory-logo.png";
+// @ts-ignore
+import gigachatLogo from "../../assets/gigachat-logo.png";
 // @ts-ignore
 import steamdeckLogo from "../../assets/steamdeck-logo.png";
 // @ts-ignore
@@ -163,6 +165,7 @@ const cacheProviderLabel = (p: string) => ({
     mymemory: "MyMemory",
     googlecloud: "Google Cloud",
     yandex: "Яндекс",
+    gigachat: "GigaChat",
     gemini_vision: "Gemini Vision",
 } as Record<string, string>)[p] || p || "?";
 
@@ -798,8 +801,82 @@ interface TabTranslationProps {
     onScrolled?: () => void;
 }
 
+// Проверка ключа — это OAuth + список моделей: не всякая неудача означает
+// «неверный ключ», поэтому текст различает эти случаи.
+const gigachatErrorText = (reason: string): string =>
+    reason.toLowerCase().includes('authorization key')
+        ? `Ключ не принят: ${reason}`
+        : `Проверка не прошла: ${reason}`;
+
 export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrolled }) => {
     const { settings, updateSetting } = useSettings();
+    const [gigachatKeyStatus, setGigachatKeyStatus] = useState<'unknown' | 'checking' | 'ok' | 'invalid'>('unknown');
+    const [gigachatKeyError, setGigachatKeyError] = useState('');
+
+    const checkGigachatKey = useCallback(async (keyOverride?: string, notify = false) => {
+        const key = keyOverride !== undefined ? keyOverride : settings.gigachatApiKey;
+        if (!key) {
+            setGigachatKeyStatus('unknown');
+            setGigachatKeyError('');
+            return;
+        }
+
+        setGigachatKeyStatus('checking');
+        setGigachatKeyError('');
+        try {
+            const result = await call<[], { ok: boolean; reason: string }>('check_gigachat_key');
+            if (result?.ok) {
+                setGigachatKeyStatus('ok');
+                if (notify) {
+                    toaster.toast({ title: 'GigaChat', body: 'Ключ принят', duration: 2500 });
+                }
+            } else {
+                const reason = result?.reason || 'неизвестная причина';
+                setGigachatKeyStatus('invalid');
+                setGigachatKeyError(reason);
+                if (notify) {
+                    toaster.toast({
+                        title: 'GigaChat',
+                        body: gigachatErrorText(reason),
+                        duration: 4000,
+                        critical: true,
+                    });
+                }
+            }
+        } catch (e) {
+            setGigachatKeyStatus('invalid');
+            setGigachatKeyError('не удалось проверить');
+            if (notify) {
+                toaster.toast({
+                    title: 'GigaChat',
+                    body: 'Не удалось проверить ключ',
+                    duration: 4000,
+                    critical: true,
+                });
+            }
+        }
+    }, [settings.gigachatApiKey]);
+
+    // Проверяем при входе на вкладку с выбранным GigaChat; после сохранения
+    // ключ проверяется из onSave, когда бэкенд уже записал значение.
+    useEffect(() => {
+        if (settings.translationProvider === 'gigachat' && settings.gigachatApiKey) {
+            checkGigachatKey();
+        } else {
+            setGigachatKeyStatus('unknown');
+            setGigachatKeyError('');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [settings.translationProvider]);
+
+    const gigachatDotColor = !settings.gigachatApiKey
+        ? "#ff6b6b"
+        : gigachatKeyStatus === 'ok'
+            ? "#4caf50"
+            : gigachatKeyStatus === 'invalid'
+                ? "#ff6b6b"
+                : "#f0b429";
+
     const chromescreenaiActionRef = useRef<HTMLDivElement>(null);
     const rapidocrActionRef = useRef<HTMLDivElement>(null);
     const ct2ActionRef = useRef<HTMLDivElement>(null);
@@ -821,6 +898,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
     ].join("|");
     const translationListKey = [
         keyNeeds(!!settings.yandexApiKey && !!settings.yandexFolderId),
+        keyNeeds(!!settings.gigachatApiKey),
         downloadNeeds(nllb),
         downloadNeeds(opusmt),
         keyNeeds(!!settings.googleApiKey),
@@ -1279,6 +1357,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         // from the top of the list. Only the order changed; the
                                         // saved setting is the "data" value, not the position.
                                         { label: <ProviderOptionLabel name="Яндекс" needs={keyNeeds(!!settings.yandexApiKey && !!settings.yandexFolderId)} />, data: "yandex" },
+                                        { label: <ProviderOptionLabel name="GigaChat" needs={keyNeeds(!!settings.gigachatApiKey)} />, data: "gigachat" },
                                         { label: <ProviderOptionLabel name="MyMemory" />, data: "mymemory" },
                                         { label: <ProviderOptionLabel name="Локально" needs={downloadNeeds(nllb)} />, data: "ct2" },
                                         { label: <ProviderOptionLabel name="Локально" variant="en→ru" needs={downloadNeeds(opusmt)} note="лёгкая" />, data: "opusmt" },
@@ -1343,6 +1422,38 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                             height: "6px",
                                             borderRadius: "50%",
                                             backgroundColor: (settings.yandexApiKey && settings.yandexFolderId) ? "#4caf50" : "#ff6b6b"
+                                        }} />
+                                    </div>
+                                </DialogButton>
+                            )}
+                            {settings.translationProvider === 'gigachat' && (
+                                <DialogButton
+                                    onClick={() => {
+                                        showModal(
+                                            <ApiKeyModal
+                                                currentKey={settings.gigachatApiKey}
+                                                onSave={async (key) => {
+                                                    const saved = await updateSetting('gigachatApiKey', key, 'Authorization Key GigaChat');
+                                                    if (saved) checkGigachatKey(key, true);
+                                                }}
+                                                title="GigaChat"
+                                                description="Authorization Key из личного кабинета developers.sber.ru: проект GigaChat API → «Настройки API» → «Получить ключ». Ключ показывают один раз."
+                                                fieldLabel="Authorization Key"
+                                            />
+                                        );
+                                    }}
+                                    style={{ minWidth: "40px", width: "40px", padding: "10px 0" }}
+                                >
+                                    <div style={{ position: "relative", display: "inline-flex" }}>
+                                        <HiKey />
+                                        <div style={{
+                                            position: "absolute",
+                                            bottom: "-8px",
+                                            right: "-6px",
+                                            width: "6px",
+                                            height: "6px",
+                                            borderRadius: "50%",
+                                            backgroundColor: gigachatDotColor
                                         }} />
                                     </div>
                                 </DialogButton>
@@ -1482,6 +1593,32 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     <div>- Требуется API-ключ и folder_id Яндекс Облака</div>
                                     {(!settings.yandexApiKey || !settings.yandexFolderId) && (
                                         <div style={{ color: "#ff6b6b", marginTop: "4px" }}>Необходимо добавить API-ключ и folder_id</div>
+                                    )}
+                                </>
+                            )}
+                            {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'gigachat' && (
+                                <>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                                        <img src={gigachatLogo} alt="" style={{ height: "18px" }} />
+                                        <span style={{ fontWeight: "bold", color: "#dcdedf" }}>GigaChat</span>
+                                    </div>
+                                    <ProviderRating quality={3} speed={2} />
+                                    <DataFlowBadge flow={TRANSLATION_DATA_FLOW.gigachat} />
+                                    <div>- Работает из России</div>
+                                    <div>- Требуется Authorization Key с developers.sber.ru (карта не нужна)</div>
+                                    <div>- Бесплатно 365 млн токенов на 12 месяцев для физлица</div>
+                                    <div>- Перевод идёт в один поток: чуть медленнее Яндекса</div>
+                                    {settings.gigachatApiKey && gigachatKeyStatus === 'checking' && (
+                                        <div style={{ color: "#f0b429", marginTop: "4px" }}>Проверяю ключ…</div>
+                                    )}
+                                    {settings.gigachatApiKey && gigachatKeyStatus === 'ok' && (
+                                        <div style={{ color: "#4caf50", marginTop: "4px" }}>Ключ принят</div>
+                                    )}
+                                    {settings.gigachatApiKey && gigachatKeyStatus === 'invalid' && (
+                                        <div style={{ color: "#ff6b6b", marginTop: "4px" }}>{gigachatErrorText(gigachatKeyError)}</div>
+                                    )}
+                                    {!settings.gigachatApiKey && (
+                                        <div style={{ color: "#ff6b6b", marginTop: "4px" }}>Необходимо добавить Authorization Key</div>
                                     )}
                                 </>
                             )}

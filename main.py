@@ -102,6 +102,7 @@ SENSITIVE_SETTING_KEYS = {
     "google_translate_api_key",
     "gemini_api_key",
     "yandex_api_key",
+    "gigachat_api_key",
     # Not a secret, but personal data: masked in logs the same way.
     "mymemory_email",
 }
@@ -1216,6 +1217,7 @@ class Plugin:
     _gemini_model: str = "gemini-2.5-flash"
     _yandex_api_key: str = ""
     _yandex_folder_id: str = ""
+    _gigachat_api_key: str = ""
     _mymemory_email: str = ""  # Optional; raises MyMemory's daily quota 10x
 
     _has_pngenc = None
@@ -1424,6 +1426,10 @@ class Plugin:
                 self._mymemory_email = value
                 if self._provider_manager:
                     self._provider_manager.set_mymemory_email(value)
+            elif key == "gigachat_api_key":
+                self._gigachat_api_key = value
+                if self._provider_manager:
+                    self._provider_manager.set_gigachat_api_key(value)
             elif key == "hold_time_translate":
                 self._hold_time_translate = value
             elif key == "hold_time_dismiss":
@@ -1587,6 +1593,7 @@ class Plugin:
                 "gemini_model": self._gemini_model,
                 "yandex_api_key": self._yandex_api_key,
                 "yandex_folder_id": self._yandex_folder_id,
+                "gigachat_api_key": self._gigachat_api_key,
                 "mymemory_email": self._mymemory_email,
                 "hold_time_translate": self._settings.get_setting("hold_time_translate", 1000),
                 "hold_time_dismiss": self._settings.get_setting("hold_time_dismiss", 500),
@@ -1631,6 +1638,26 @@ class Plugin:
         except Exception as e:
             logger.error(f"Error fetching Gemini models: {e}")
             return []
+
+    async def check_gigachat_key(self):
+        """Проверить сохранённый Authorization Key: OAuth и список моделей."""
+        try:
+            if not self._gigachat_api_key:
+                return {"ok": False, "reason": "Требуется Authorization Key GigaChat"}
+
+            provider = None
+            if self._provider_manager:
+                from providers.base import ProviderType
+                provider = self._provider_manager.get_translation_provider(ProviderType.GIGACHAT)
+            if provider is None:
+                from providers.gigachat_translate import GigaChatTranslateProvider
+                provider = GigaChatTranslateProvider(api_key=self._gigachat_api_key)
+
+            ok, reason = await provider.test_network()
+            return {"ok": bool(ok), "reason": reason or ""}
+        except Exception as e:
+            logger.error(f"Error checking GigaChat key: {type(e).__name__}: {e}")
+            return {"ok": False, "reason": "Не удалось проверить ключ"}
 
     async def get_provider_status(self):
         try:
@@ -2899,6 +2926,7 @@ class Plugin:
             yandex_folder_id = load_api_key("yandex_folder_id")
             if yandex_folder_id:
                 self._yandex_folder_id = yandex_folder_id
+            self._gigachat_api_key = load_api_key("gigachat_api_key")
             self._mymemory_email = load_api_key("mymemory_email")
 
             saved_ocr_provider = self._settings.get_setting("ocr_provider")
@@ -2975,6 +3003,7 @@ class Plugin:
                 rapidocr_models_dir=rapidocr_models_dir,
             )
             self._provider_manager.set_mymemory_email(self._mymemory_email)
+            self._provider_manager.set_gigachat_api_key(self._gigachat_api_key)
 
             # Load and apply RapidOCR-specific settings
             if self._settings.get_setting("custom_recognition_settings", False):

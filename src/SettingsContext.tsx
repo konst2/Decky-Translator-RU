@@ -25,11 +25,12 @@ export interface Settings {
     quickToggleEnabled: boolean; // Quick toggle overlay with right button in combo modes
     useFreeProviders: boolean; // Use free providers (OCR.space + free Google Translate) - deprecated, use ocrProvider
     ocrProvider: 'rapidocr' | 'ocrspace' | 'googlecloud' | 'gemini_vision' | 'chromescreenai'; // OCR provider
-    translationProvider: 'mymemory' | 'freegoogle' | 'googlecloud' | 'ct2' | 'opusmt' | 'yandex'; // Translation provider
+    translationProvider: 'mymemory' | 'freegoogle' | 'googlecloud' | 'ct2' | 'opusmt' | 'yandex' | 'gigachat'; // Translation provider
     googleApiKey: string; // Google Cloud Vision API key for text recognition
     geminiApiKey: string; // Gemini API key for Gemini Vision (free tier available)
     yandexApiKey: string; // Yandex Cloud API key for Yandex Translate
     yandexFolderId: string; // Yandex Cloud folder ID for Yandex Translate
+    gigachatApiKey: string; // GigaChat Authorization Key (Base64 of Client ID and Secret)
     myMemoryEmail: string; // Optional email for MyMemory: raises its daily quota from 5 000 to 50 000 chars
     geminiModel: string; // Gemini model to use
     debugMode: boolean; // Debug mode for verbose console logging
@@ -53,6 +54,7 @@ const SENSITIVE_SETTINGS: (keyof Settings)[] = [
     'googleApiKey',
     'geminiApiKey',
     'yandexApiKey',
+    'gigachatApiKey',
     'myMemoryEmail',
 ];
 
@@ -109,6 +111,7 @@ const initialSettings: Settings = {
     geminiApiKey: "", // Empty by default, needed for Gemini Vision
     yandexApiKey: "", // Empty by default, needed for Yandex Translate
     yandexFolderId: "", // Empty by default, needed for Yandex Translate
+    gigachatApiKey: "", // Empty by default, needed for GigaChat
     myMemoryEmail: "", // Empty by default, optional for MyMemory
     geminiModel: "gemini-2.5-flash", // Default Gemini model
     debugMode: false, // Debug mode off by default
@@ -189,6 +192,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     geminiApiKey: serverSettings.gemini_api_key || "", // Gemini API key
                     yandexApiKey: serverSettings.yandex_api_key || "", // Yandex API key
                     yandexFolderId: serverSettings.yandex_folder_id || "", // Yandex folder ID
+                    gigachatApiKey: serverSettings.gigachat_api_key || "", // GigaChat Authorization Key
                     myMemoryEmail: serverSettings.mymemory_email || "", // MyMemory email
                     geminiModel: serverSettings.gemini_model || "gemini-2.5-flash",
                     debugMode: serverSettings.debug_mode || false,
@@ -225,6 +229,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 logic.setHasGeminiApiKey(!!serverSettings.gemini_api_key);
                 logic.setHasYandexApiKey(!!serverSettings.yandex_api_key);
                 logic.setHasYandexFolderId(!!serverSettings.yandex_folder_id);
+                logic.setHasGigachatApiKey(!!serverSettings.gigachat_api_key);
 
                 logic.setFontScale(serverSettings.font_scale ?? 1.0);
                 logic.setGroupingPower(serverSettings.grouping_power ?? 0.25);
@@ -277,6 +282,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 geminiApiKey: 'gemini_api_key',
                 yandexApiKey: 'yandex_api_key',
                 yandexFolderId: 'yandex_folder_id',
+                gigachatApiKey: 'gigachat_api_key',
                 myMemoryEmail: 'mymemory_email',
                 geminiModel: 'gemini_model',
                 debugMode: 'debug_mode',
@@ -366,6 +372,9 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     break;
                 case 'yandexFolderId':
                     logic.setHasYandexFolderId(!!value);
+                    break;
+                case 'gigachatApiKey':
+                    logic.setHasGigachatApiKey(!!value);
                     break;
             }
 

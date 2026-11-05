@@ -19,6 +19,7 @@ from .base import (
 from .google_ocr import GoogleVisionProvider
 from .google_translate import GoogleTranslateProvider
 from .yandex_translate import YandexTranslateProvider
+from .gigachat_translate import GigaChatTranslateProvider
 from .ocrspace import OCRSpaceProvider
 from .free_translate import FreeTranslateProvider
 from .mymemory_translate import MyMemoryTranslateProvider
@@ -39,10 +40,12 @@ _REACHABILITY_TTL = 4.0
 # The frontend asks for reachability every 10 s while the main tab is open.
 # MyMemory has no free endpoint to probe: each probe is a real translation
 # that eats its small daily quota, so its result is kept longer.
-_REACHABILITY_TTL_BY_PROVIDER = {"mymemory": 60.0}
+# GigaChat is a full LLM service; the token is cached, but there is no reason
+# to ask it for the model list every 10 s either.
+_REACHABILITY_TTL_BY_PROVIDER = {"mymemory": 60.0, "gigachat": 60.0}
 
 _WEB_OCR_PROVIDERS = {"gemini_vision", "googlecloud", "ocrspace"}
-_WEB_TRANSLATION_PROVIDERS = {"googlecloud", "freegoogle", "yandex", "mymemory"}
+_WEB_TRANSLATION_PROVIDERS = {"googlecloud", "freegoogle", "yandex", "gigachat", "mymemory"}
 
 # Export all public classes
 __all__ = [
@@ -57,6 +60,7 @@ __all__ = [
     'GoogleVisionProvider',
     'GoogleTranslateProvider',
     'YandexTranslateProvider',
+    'GigaChatTranslateProvider',
     'OCRSpaceProvider',
     'FreeTranslateProvider',
     'MyMemoryTranslateProvider',
@@ -88,6 +92,7 @@ class ProviderManager:
         self._gemini_api_key = ""
         self._yandex_api_key = ""
         self._yandex_folder_id = ""
+        self._gigachat_api_key = ""
         self._mymemory_email = ""
         self._gemini_model = "gemini-2.5-flash"
         self._gemini_target_language = "ru"
@@ -222,6 +227,13 @@ class ProviderManager:
         mymemory = self._translation_providers.get(ProviderType.MYMEMORY)
         if mymemory:
             mymemory.set_email(email)
+
+    def set_gigachat_api_key(self, api_key: str) -> None:
+        """Set the GigaChat Authorization Key (same reason for a separate setter)."""
+        self._gigachat_api_key = api_key
+        gigachat = self._translation_providers.get(ProviderType.GIGACHAT)
+        if gigachat:
+            gigachat.set_api_key(api_key)
 
     def set_gemini_model(self, model: str) -> None:
         """Update the Gemini model. Recreates the provider on next use if model changed."""
@@ -484,6 +496,8 @@ class ProviderManager:
                 provider_type = ProviderType.GOOGLE
             elif self._translation_provider_preference == "yandex":
                 provider_type = ProviderType.YANDEX
+            elif self._translation_provider_preference == "gigachat":
+                provider_type = ProviderType.GIGACHAT
             elif self._translation_provider_preference == "mymemory":
                 provider_type = ProviderType.MYMEMORY
             elif self._translation_provider_preference == "ct2":
@@ -504,6 +518,10 @@ class ProviderManager:
                 self._translation_providers[provider_type] = YandexTranslateProvider(
                     api_key=self._yandex_api_key,
                     folder_id=self._yandex_folder_id,
+                )
+            elif provider_type == ProviderType.GIGACHAT:
+                self._translation_providers[provider_type] = GigaChatTranslateProvider(
+                    api_key=self._gigachat_api_key,
                 )
             elif provider_type == ProviderType.MYMEMORY:
                 self._translation_providers[provider_type] = MyMemoryTranslateProvider(
@@ -603,6 +621,7 @@ class ProviderManager:
             "google_api_configured": bool(self._google_api_key),
             "gemini_api_configured": bool(self._gemini_api_key),
             "yandex_api_configured": bool(self._yandex_api_key and self._yandex_folder_id),
+            "gigachat_api_configured": bool(self._gigachat_api_key),
             "ocr_provider": ocr_provider.name if ocr_provider else "None",
             "translation_provider": trans_provider.name if trans_provider else "None",
             "ocr_available": ocr_provider.is_available() if ocr_provider else False,
@@ -683,6 +702,8 @@ class ProviderManager:
                 key = self._google_api_key
             elif trans_pref == "yandex":
                 key = f"{self._yandex_api_key}|{self._yandex_folder_id}"
+            elif trans_pref == "gigachat":
+                key = self._gigachat_api_key
             elif trans_pref == "mymemory":
                 # Part of the cache key, so a corrected email is re-probed at
                 # once instead of showing "wrong email" for up to a minute.
@@ -717,6 +738,8 @@ class ProviderManager:
                 p = self.get_translation_provider(ProviderType.GOOGLE)
             elif provider == "yandex" and kind == "translation":
                 p = self.get_translation_provider(ProviderType.YANDEX)
+            elif provider == "gigachat" and kind == "translation":
+                p = self.get_translation_provider(ProviderType.GIGACHAT)
             elif provider == "ocrspace":
                 p = self.get_ocr_provider(ProviderType.OCR_SPACE)
             elif provider == "freegoogle":

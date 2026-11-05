@@ -362,6 +362,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                              settings.translationProvider === 'ct2' ? 'Локально (NLLB)' :
                                              settings.translationProvider === 'opusmt' ? 'Локально (лёгкая, en→ru)' :
                                              settings.translationProvider === 'yandex' ? 'Яндекс' :
+                                             settings.translationProvider === 'gigachat' ? 'GigaChat' :
                                              settings.translationProvider === 'mymemory' ? 'MyMemory' : 'Google Translate'}
                                         </span>
                                         <DataFlowIcon flow={TRANSLATION_DATA_FLOW[settings.translationProvider]} />
@@ -397,6 +398,12 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                         <>
                                             <div style={{ color: '#666', fontSize: '10px' }}>Требуется API-ключ и folder_id</div>
                                             <ReachabilityRow result={webReachability?.translation} expectedProvider="yandex" />
+                                        </>
+                                    )}
+                                    {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'gigachat' && (
+                                        <>
+                                            <div style={{ color: '#666', fontSize: '10px' }}>Требуется Authorization Key</div>
+                                            <ReachabilityRow result={webReachability?.translation} expectedProvider="gigachat" />
                                         </>
                                     )}
                                     {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'ct2' && (

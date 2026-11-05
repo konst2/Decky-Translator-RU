@@ -29,6 +29,7 @@ export const TRANSLATION_DATA_FLOW: Record<Settings["translationProvider"], Data
     freegoogle: "text",
     googlecloud: "text",
     yandex: "text",
+    gigachat: "text",
     mymemory: "text",
 };
 

@@ -17,6 +17,8 @@ PROVIDER_TIERS = {
     "mymemory": 2,  # free service, quality comparable to free Google
     "googlecloud": 3,
     "yandex": 3,
+    # LLM translation: same quality tier as the other paid cloud services.
+    "gigachat": 3,
     "gemini_vision": 3,
 }
 
