@@ -13,7 +13,6 @@ import {
     ModalRoot,
     ConfirmModal,
     DialogButton,
-    TextField,
     Field,
     Focusable
 } from "@decky/ui";
@@ -22,6 +21,7 @@ import { VFC, ReactNode, useState, useEffect, useRef, useCallback, RefObject } f
 import { call, toaster } from "@decky/api";
 import { useSettings } from "../SettingsContext";
 import { BottomSpacer } from "./BottomSpacer";
+import { ApiKeyModal } from "./ApiKeyModal";
 import { DataFlowBadge, OCR_DATA_FLOW, TRANSLATION_DATA_FLOW } from "./DataFlowBadge";
 import { HiKey, HiEnvelope, HiLockClosed, HiInboxArrowDown, HiTrash, HiXMark, HiXCircle, HiExclamationTriangle, HiInformationCircle } from "react-icons/hi2";
 import { BsArrowRepeat, BsStars } from "react-icons/bs";
@@ -95,68 +95,6 @@ function formatBytes(bytes: number): string {
     if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' КБ';
     return Math.round(bytes / (1024 * 1024)) + ' МБ';
 }
-
-// API Key Modal Component
-const ApiKeyModal: VFC<{
-    currentKey: string;
-    onSave: (key: string) => void;
-    currentFolderId?: string;
-    onSaveFolderId?: (folderId: string) => void;
-    closeModal?: () => void;
-    title?: string;
-    description?: string;
-    // Reused for fields that are not API keys (e.g. the MyMemory email):
-    // own label, and shown in plain text since such a value is not a secret.
-    fieldLabel?: string;
-    isPassword?: boolean;
-}> = ({ currentKey, onSave, currentFolderId, onSaveFolderId, closeModal, title, description, fieldLabel = "API-ключ", isPassword = true }) => {
-    const [apiKey, setApiKey] = useState(currentKey || "");
-    const [folderId, setFolderId] = useState(currentFolderId || "");
-
-    return (
-        <ModalRoot onCancel={closeModal} onEscKeypress={closeModal}>
-            <div style={{ padding: "20px", minWidth: "400px" }}>
-                <h2 style={{ marginBottom: "15px" }}>{title || "API-ключ"}</h2>
-                <p style={{ marginBottom: "15px", color: "#aaa", fontSize: "13px" }}>
-                    {description || "Введите ваш API-ключ."}
-                </p>
-                <TextField
-                    label={fieldLabel}
-                    value={apiKey}
-                    bIsPassword={isPassword}
-                    bShowClearAction={true}
-                    onChange={(e) => setApiKey(e.target.value)}
-                />
-                {onSaveFolderId && (
-                    <div style={{ marginTop: "12px" }}>
-                        <TextField
-                            label="folder_id"
-                            value={folderId}
-                            bShowClearAction={true}
-                            onChange={(e) => setFolderId(e.target.value)}
-                        />
-                    </div>
-                )}
-                <Focusable
-                    style={{ display: "flex", gap: "10px", marginTop: "20px", justifyContent: "flex-end" }}
-                >
-                    <DialogButton onClick={closeModal}>
-                        Отмена
-                    </DialogButton>
-                    <DialogButton
-                        onClick={() => {
-                            onSave(apiKey.trim());
-                            onSaveFolderId?.(folderId.trim());
-                            closeModal?.();
-                        }}
-                    >
-                        Сохранить
-                    </DialogButton>
-                </Focusable>
-            </div>
-        </ModalRoot>
-    );
-};
 
 const cacheProviderLabel = (p: string) => ({
     ct2: "Локально",
@@ -1049,6 +987,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                                 currentKey={settings.googleApiKey}
                                                 onSave={(key) => updateSetting('googleApiKey', key, 'API-ключ Google Cloud')}
                                                 title="API-ключ Google Cloud"
+                                                keyEntryMethod="googlecloud"
                                                 description="Введите ваш API-ключ Google Cloud для сервисов Vision и Translation."
                                             />
                                         );
@@ -1077,6 +1016,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                                 currentKey={settings.geminiApiKey}
                                                 onSave={(key) => updateSetting('geminiApiKey', key, 'API-ключ Gemini')}
                                                 title="API-ключ Gemini"
+                                                keyEntryMethod="gemini_vision"
                                                 description="Введите бесплатный API-ключ Gemini с aistudio.google.com."
                                             />
                                         );
@@ -1383,6 +1323,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                                 currentKey={settings.googleApiKey}
                                                 onSave={(key) => updateSetting('googleApiKey', key, 'API-ключ Google Cloud')}
                                                 title="API-ключ Google Cloud"
+                                                keyEntryMethod="googlecloud"
                                                 description="Введите ваш API-ключ Google Cloud для сервисов перевода."
                                             />
                                         );
@@ -1413,6 +1354,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                                 onSave={(key) => updateSetting('yandexApiKey', key, 'API-ключ Яндекса')}
                                                 onSaveFolderId={(folderId) => updateSetting('yandexFolderId', folderId, 'folder_id Яндекса')}
                                                 title="Ключи Яндекс Облака"
+                                                keyEntryMethod="yandex"
                                                 description="Введите API-ключ сервисного аккаунта и folder_id каталога (роль ai.translate.user)."
                                             />
                                         );
@@ -1444,6 +1386,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                                     if (saved) checkGigachatKey(key, true);
                                                 }}
                                                 title="GigaChat"
+                                                keyEntryMethod="gigachat"
                                                 description="Authorization Key из личного кабинета developers.sber.ru: проект GigaChat API → «Настройки API» → «Получить ключ». Ключ показывают один раз."
                                                 fieldLabel="Authorization Key"
                                             />
@@ -1473,6 +1416,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                                 currentKey={settings.myMemoryEmail}
                                                 onSave={(email) => updateSetting('myMemoryEmail', email, 'Email для MyMemory')}
                                                 title="Email для MyMemory"
+                                                keyEntryMethod="mymemory"
                                                 description="Необязательно. С email дневной лимит MyMemory вырастает с 5 000 до 50 000 символов. Адрес передаётся только сервису MyMemory."
                                                 fieldLabel="Email"
                                                 isPassword={false}

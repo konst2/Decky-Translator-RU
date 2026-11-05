@@ -93,6 +93,7 @@ import requests
 from providers import ProviderManager, TextRegion, NetworkError, ApiKeyError, RateLimitError, TranslationUnavailableError
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
 from providers import readiness
+from providers.key_entry_server import KeyEntryServer, detect_local_ip
 
 _processing_lock = False
 
@@ -1220,6 +1221,9 @@ class Plugin:
     _gigachat_api_key: str = ""
     _mymemory_email: str = ""  # Optional; raises MyMemory's daily quota 10x
 
+    # Web page for typing keys on a phone or PC instead of the gamepad
+    _key_entry_server: KeyEntryServer = None
+
     _has_pngenc = None
     _fallback_dims = None
     _capture_backend = None  # "pipewire" | "spectacle" | "portal" | None
@@ -1575,6 +1579,59 @@ class Plugin:
             logger.error(f"Error setting {key}: {str(e)}")
             logger.error(traceback.format_exc())
             return False
+
+    # Key entry from another device in the local network
+    async def start_key_entry(self, method):
+        """
+        Starts the key entry page for one method (see key_entry_server.py)
+        and returns where to open it. The page lives while the key dialog on
+        the Deck is open: the dialog calls stop_key_entry when it closes.
+        """
+        try:
+            if self._key_entry_server is None:
+                loop = asyncio.get_running_loop()
+                self._key_entry_server = KeyEntryServer(
+                    lambda key, value: self._save_key_from_web(loop, key, value)
+                )
+            # start/stop wait for the server thread (up to ~0.5 s for
+            # shutdown); in a worker thread so the event loop keeps serving
+            # other calls, including the save that a page request waits for.
+            port = await asyncio.to_thread(self._key_entry_server.start, method)
+            ip = await asyncio.to_thread(detect_local_ip)
+            return {"ok": True, "ip": ip, "port": port}
+        except Exception as e:
+            logger.error(f"Failed to start key entry page: {e}")
+            logger.error(traceback.format_exc())
+            return {"ok": False, "error": str(e)}
+
+    async def get_key_entry_saved(self):
+        """Values saved from the page since the last call: {setting_key: value}."""
+        if self._key_entry_server is None:
+            return {}
+        return self._key_entry_server.pop_saved()
+
+    async def stop_key_entry(self):
+        """
+        Stops the page and returns values saved there that the dialog has not
+        polled yet ({setting_key: value}): the dialog may close a moment after
+        the key was sent from the phone, before its next poll.
+        """
+        if self._key_entry_server is None:
+            return {}
+        return await asyncio.to_thread(self._key_entry_server.stop)
+
+    def _save_key_from_web(self, loop, key, value):
+        """
+        Saves one value from the key entry page. Called from the page's
+        server thread, so the async set_setting runs on the plugin's event
+        loop, exactly as when the key is typed on the Deck: same cleaning,
+        same log masking, same provider update.
+        """
+        future = asyncio.run_coroutine_threadsafe(self.set_setting(key, value), loop)
+        if not future.result(timeout=10):
+            raise RuntimeError(f"set_setting failed for {key}")
+        # The cleaned value as stored, so the Deck dialog shows exactly it.
+        return self._settings.get_setting(key, "")
 
     async def get_all_settings(self):
         try:
@@ -3089,6 +3146,15 @@ class Plugin:
     async def _unload(self):
         logger.info("Unloading plugin")
         try:
+            # First, before the providers: a key saved from the page during
+            # unload would otherwise reconfigure an already stopped provider
+            # manager. In a worker thread: stop waits up to ~0.5 s for the
+            # server loop and for a save in progress, and that save itself
+            # needs this event loop to finish.
+            if self._key_entry_server:
+                await asyncio.to_thread(self._key_entry_server.stop)
+                self._key_entry_server = None
+
             if self._provider_manager:
                 self._provider_manager.shutdown()
 
