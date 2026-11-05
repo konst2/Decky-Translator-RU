@@ -13,10 +13,11 @@ from typing import List, Set
 import providers
 from providers.base import OCRProvider, TranslationProvider
 
-# Сейчас провайдеров 12 (5 OCR + 7 перевода, Opus-MT — наследник CT2).
+# Сейчас провайдеров 13 (5 OCR + 8 перевода, Opus-MT — наследник CT2,
+# GigaChat+ — наследник GigaChat).
 # Нижняя граница страхует сам поиск: если он сломается и ничего не найдёт,
 # тест контракта прошёл бы «успешно» на пустом списке.
-MIN_EXPECTED_PROVIDERS = 12
+MIN_EXPECTED_PROVIDERS = 13
 
 
 def find_provider_classes() -> List[type]:

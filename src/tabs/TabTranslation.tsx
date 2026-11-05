@@ -166,6 +166,7 @@ const cacheProviderLabel = (p: string) => ({
     googlecloud: "Google Cloud",
     yandex: "Яндекс",
     gigachat: "GigaChat",
+    gigachat_plus: "GigaChat+",
     gemini_vision: "Gemini Vision",
 } as Record<string, string>)[p] || p || "?";
 
@@ -803,6 +804,11 @@ interface TabTranslationProps {
 
 // Проверка ключа — это OAuth + список моделей: не всякая неудача означает
 // «неверный ключ», поэтому текст различает эти случаи.
+// Оба метода GigaChat (прямой и «плюс» с контекстом) используют один ключ,
+// одну кнопку ключа и одну проверку.
+const isGigachatProvider = (provider: string): boolean =>
+    provider === 'gigachat' || provider === 'gigachat_plus';
+
 const gigachatErrorText = (reason: string): string =>
     reason.toLowerCase().includes('authorization key')
         ? `Ключ не принят: ${reason}`
@@ -860,7 +866,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
     // Проверяем при входе на вкладку с выбранным GigaChat; после сохранения
     // ключ проверяется из onSave, когда бэкенд уже записал значение.
     useEffect(() => {
-        if (settings.translationProvider === 'gigachat' && settings.gigachatApiKey) {
+        if (isGigachatProvider(settings.translationProvider) && settings.gigachatApiKey) {
             checkGigachatKey();
         } else {
             setGigachatKeyStatus('unknown');
@@ -1358,6 +1364,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         // saved setting is the "data" value, not the position.
                                         { label: <ProviderOptionLabel name="Яндекс" needs={keyNeeds(!!settings.yandexApiKey && !!settings.yandexFolderId)} />, data: "yandex" },
                                         { label: <ProviderOptionLabel name="GigaChat" needs={keyNeeds(!!settings.gigachatApiKey)} />, data: "gigachat" },
+                                        { label: <ProviderOptionLabel name="GigaChat+" needs={keyNeeds(!!settings.gigachatApiKey)} note="с контекстом" />, data: "gigachat_plus" },
                                         { label: <ProviderOptionLabel name="MyMemory" />, data: "mymemory" },
                                         { label: <ProviderOptionLabel name="Локально" needs={downloadNeeds(nllb)} />, data: "ct2" },
                                         { label: <ProviderOptionLabel name="Локально" variant="en→ru" needs={downloadNeeds(opusmt)} note="лёгкая" />, data: "opusmt" },
@@ -1426,7 +1433,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     </div>
                                 </DialogButton>
                             )}
-                            {settings.translationProvider === 'gigachat' && (
+                            {isGigachatProvider(settings.translationProvider) && (
                                 <DialogButton
                                     onClick={() => {
                                         showModal(
@@ -1596,14 +1603,27 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     )}
                                 </>
                             )}
-                            {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'gigachat' && (
+                            {settings.ocrProvider !== 'gemini_vision' && isGigachatProvider(settings.translationProvider) && (
                                 <>
                                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
                                         <img src={gigachatLogo} alt="" style={{ height: "18px" }} />
-                                        <span style={{ fontWeight: "bold", color: "#dcdedf" }}>GigaChat</span>
+                                        <span style={{ fontWeight: "bold", color: "#dcdedf" }}>
+                                            {settings.translationProvider === 'gigachat_plus' ? 'GigaChat+' : 'GigaChat'}
+                                        </span>
                                     </div>
+                                    {/* Скорость одна: «плюс» на старшей модели по замерам переводит
+                                        экран примерно за то же время, что и обычный GigaChat. */}
                                     <ProviderRating quality={3} speed={2} />
-                                    <DataFlowBadge flow={TRANSLATION_DATA_FLOW.gigachat} />
+                                    <DataFlowBadge flow={TRANSLATION_DATA_FLOW[settings.translationProvider]} />
+                                    {settings.translationProvider === 'gigachat_plus' && (
+                                        <>
+                                            <div>- Перевод с контекстом: модель знает, какая это игра, и ведёт словарь имён и терминов</div>
+                                            <div>- Чем дольше сессия, тем единообразнее имена, термины и обращения</div>
+                                            <div>- Словарь сбрасывается при смене игры, языка или перезапуске плагина</div>
+                                            <div>- Выбирает самую сильную доступную модель GigaChat (сейчас Ultra) — у неё свой бесплатный лимит токенов</div>
+                                            <div>- Если лимит закончится, плагин об этом скажет — переключитесь на обычный GigaChat</div>
+                                        </>
+                                    )}
                                     <div>- Работает из России</div>
                                     <div>- Требуется Authorization Key с developers.sber.ru (карта не нужна)</div>
                                     <div>- Бесплатно 365 млн токенов на 12 месяцев для физлица</div>

@@ -1204,7 +1204,7 @@ class Plugin:
     _provider_manager: ProviderManager = None
     _use_free_providers: bool = True  # Default to free providers (no API key needed)
     _ocr_provider: str = "chromescreenai"  # "rapidocr" (RapidOCR), "ocrspace" (OCR.space), or "googlecloud" (Google Cloud)
-    _translation_provider: str = "mymemory"  # "mymemory", "freegoogle", "googlecloud", "yandex" or "ct2"
+    _translation_provider: str = "mymemory"  # "mymemory", "freegoogle", "googlecloud", "yandex", "gigachat", "gigachat_plus", "ct2" or "opusmt"
 
     # Translation cache
     _translation_cache: TranslationCache = None
@@ -1725,6 +1725,14 @@ class Plugin:
 
         try:
             _processing_lock = True
+
+            # GigaChat+ needs the game's name: it goes into the prompt, and a
+            # new name starts a new glossary. Taken here because the frontend
+            # already sends it with every screenshot; the raw name, before
+            # it is sanitized for the file name below.
+            if self._provider_manager:
+                game_name = "" if not app_name or app_name.strip().lower() == "null" else app_name.strip()
+                self._provider_manager.set_current_game(game_name)
 
             # Sanitize and default app name
             if not app_name or app_name.strip().lower() == "null":

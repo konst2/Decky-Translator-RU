@@ -75,6 +75,7 @@ class ProviderType(Enum):
     YANDEX = "yandex"           # Yandex Cloud Translate (requires API key + folder ID)
     MYMEMORY = "mymemory"       # MyMemory (free, no key; optional email raises the quota)
     GIGACHAT = "gigachat"       # GigaChat (Sber LLM; requires an Authorization Key)
+    GIGACHAT_PLUS = "gigachat_plus"  # GigaChat with game name and a running glossary
 
 
 @dataclass

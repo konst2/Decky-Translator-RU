@@ -1,7 +1,7 @@
 """
 GigaChat provider: OAuth, token cache, batch translation and error mapping.
 
-HTTP is replaced with fakes: no real keys, no network. The CA bundle and TLS
+HTTP (in gigachat_client) is replaced with fakes: no real keys, no network. The CA bundle and TLS
 are checked separately against the live hosts; here the point is the logic
 that the user's translation depends on.
 """
@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from unittest.mock import patch
 
+from providers import gigachat_client as gcc
 from providers import gigachat_translate as gc
 from providers.base import ApiKeyError, NetworkError, RateLimitError
 
@@ -115,8 +116,8 @@ class FakeApi:
 @contextmanager
 def fake_http(api):
     """Patch both HTTP methods used by the provider."""
-    with patch.object(gc.requests, "post", side_effect=api.post), \
-            patch.object(gc.requests, "get", side_effect=api.get):
+    with patch.object(gcc.requests, "post", side_effect=api.post), \
+            patch.object(gcc.requests, "get", side_effect=api.get):
         yield
 
 
@@ -168,7 +169,7 @@ class GigaChatTranslationTest(unittest.TestCase):
         self.assertEqual(len(api.models_calls), 1)
 
         # The Ministry of Digital Development bundle is used for both hosts.
-        self.assertTrue(all(path == gc._CA_BUNDLE for path in api.verify_paths))
+        self.assertTrue(all(path == gcc._CA_BUNDLE for path in api.verify_paths))
 
     def test_first_model_from_list_is_used(self):
         api = FakeApi(
@@ -216,14 +217,14 @@ class GigaChatTranslationTest(unittest.TestCase):
         api = FakeApi(chat_contents=["1. Привет"])
 
         def fail_get(*args, **kwargs):
-            raise gc.requests.exceptions.ConnectionError("no network")
+            raise gcc.requests.exceptions.ConnectionError("no network")
 
-        with patch.object(gc.requests, "post", side_effect=api.post), \
-                patch.object(gc.requests, "get", side_effect=fail_get):
+        with patch.object(gcc.requests, "post", side_effect=api.post), \
+                patch.object(gcc.requests, "get", side_effect=fail_get):
             result = run(provider().translate_batch(["Hello"], "en", "ru"))
 
         self.assertEqual(result, ["Привет"])
-        self.assertEqual(api.chat_calls[0]["json"]["model"], gc._FALLBACK_MODEL)
+        self.assertEqual(api.chat_calls[0]["json"]["model"], gcc._FALLBACK_MODEL)
 
     def test_model_list_failure_is_not_retried_every_request(self):
         api = FakeApi(chat_contents=["1. Привет", "1. Пока"])
@@ -232,11 +233,11 @@ class GigaChatTranslationTest(unittest.TestCase):
         def fail_get(*args, **kwargs):
             nonlocal attempts
             attempts += 1
-            raise gc.requests.exceptions.ConnectionError("no network")
+            raise gcc.requests.exceptions.ConnectionError("no network")
 
         p = provider()
-        with patch.object(gc.requests, "post", side_effect=api.post), \
-                patch.object(gc.requests, "get", side_effect=fail_get):
+        with patch.object(gcc.requests, "post", side_effect=api.post), \
+                patch.object(gcc.requests, "get", side_effect=fail_get):
             run(p.translate_batch(["Hello"], "en", "ru"))
             run(p.translate_batch(["Bye"], "en", "ru"))
 
@@ -264,7 +265,7 @@ class GigaChatTranslationTest(unittest.TestCase):
         p = provider()
         with fake_http(api):
             run(p.translate_batch(["Hello"], "en", "ru"))
-            p._models_refresh_at = 0  # simulate the 10-minute cache expiry
+            p._client._models_refresh_at = 0  # simulate the 10-minute cache expiry
             run(p.translate_batch(["Bye"], "en", "ru"))
 
         self.assertEqual(len(api.models_calls), 2)
@@ -443,13 +444,13 @@ class GigaChatTranslationTest(unittest.TestCase):
                 run(provider().translate_batch(["Hello"], "en", "ru"))
 
     def test_missing_ca_bundle_raises(self):
-        with patch.object(gc, "_CA_BUNDLE", "/nonexistent/giga-ca.pem"):
+        with patch.object(gcc, "_CA_BUNDLE", "/nonexistent/giga-ca.pem"):
             with self.assertRaises(NetworkError):
                 run(provider().translate_batch(["Hello"], "en", "ru"))
 
     def test_expired_bundle_asks_to_update_plugin(self):
         expired = datetime(2020, 1, 1, tzinfo=timezone.utc)
-        with patch.object(gc, "_CA_BUNDLE_NOT_AFTER", expired):
+        with patch.object(gcc, "_CA_BUNDLE_NOT_AFTER", expired):
             with self.assertRaises(NetworkError) as ctx:
                 run(provider().translate_batch(["Hello"], "en", "ru"))
         self.assertIn("Сертификат GigaChat устарел", str(ctx.exception))
@@ -459,10 +460,10 @@ class GigaChatTranslationTest(unittest.TestCase):
         api = FakeApi()
 
         def fail_post(*args, **kwargs):
-            raise gc.requests.exceptions.SSLError("certificate verify failed")
+            raise gcc.requests.exceptions.SSLError("certificate verify failed")
 
-        with patch.object(gc.requests, "post", side_effect=fail_post), \
-                patch.object(gc.requests, "get", side_effect=api.get):
+        with patch.object(gcc.requests, "post", side_effect=fail_post), \
+                patch.object(gcc.requests, "get", side_effect=api.get):
             with self.assertRaises(NetworkError) as ctx:
                 run(provider().translate_batch(["Hello"], "en", "ru"))
         self.assertIn("Обновите плагин", str(ctx.exception))
@@ -523,10 +524,10 @@ class GigaChatNetworkTest(unittest.TestCase):
         api = FakeApi()
 
         def fail_get(*args, **kwargs):
-            raise gc.requests.exceptions.ConnectionError("no network")
+            raise gcc.requests.exceptions.ConnectionError("no network")
 
-        with patch.object(gc.requests, "post", side_effect=api.post), \
-                patch.object(gc.requests, "get", side_effect=fail_get):
+        with patch.object(gcc.requests, "post", side_effect=api.post), \
+                patch.object(gcc.requests, "get", side_effect=fail_get):
             ok, reason = run(provider().test_network())
         self.assertFalse(ok)
         self.assertIn("список моделей", reason)
@@ -539,19 +540,19 @@ class GigaChatNetworkTest(unittest.TestCase):
 
         def flaky_get(*args, **kwargs):
             if not network_up:
-                raise gc.requests.exceptions.ConnectionError("no network")
+                raise gcc.requests.exceptions.ConnectionError("no network")
             return api.get(*args, **kwargs)
 
         p = provider()
         start = time.time()
-        with patch.object(gc.requests, "post", side_effect=api.post), \
-                patch.object(gc.requests, "get", side_effect=flaky_get):
+        with patch.object(gcc.requests, "post", side_effect=api.post), \
+                patch.object(gcc.requests, "get", side_effect=flaky_get):
             ok_down, _ = run(p.test_network())
             network_up = True
             # Before the retry delay the failure is still cached.
             ok_cached, _ = run(p.test_network())
-            with patch.object(gc.time, "time",
-                              return_value=start + gc._MODELS_RETRY_AFTER_FAILURE + 1):
+            with patch.object(gcc.time, "time",
+                              return_value=start + gcc._MODELS_RETRY_AFTER_FAILURE + 1):
                 ok_up, reason = run(p.test_network())
 
         self.assertFalse(ok_down)
@@ -573,7 +574,7 @@ class GigaChatNetworkTest(unittest.TestCase):
 
     def test_network_probe_reports_expired_bundle(self):
         expired = datetime(2020, 1, 1, tzinfo=timezone.utc)
-        with patch.object(gc, "_CA_BUNDLE_NOT_AFTER", expired):
+        with patch.object(gcc, "_CA_BUNDLE_NOT_AFTER", expired):
             ok, reason = run(provider().test_network())
         self.assertFalse(ok)
         self.assertIn("Обновите плагин", reason)

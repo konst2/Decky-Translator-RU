@@ -1,68 +1,16 @@
 # providers/gigachat_translate.py
-# GigaChat (Sber) translation provider
+# GigaChat (Sber) translation provider: prompts, batching, answer parsing.
+# Network, OAuth and the model list live in gigachat_client.py.
 
 import asyncio
 import logging
-import os
 import re
-import threading
-import time
-import uuid
-from datetime import datetime, timezone
-from typing import List, NamedTuple, Optional, Tuple
+from typing import List, Optional, Tuple
 
-import requests
-
-from .base import TranslationProvider, ProviderType, NetworkError, ApiKeyError, RateLimitError
+from .base import TranslationProvider, ProviderType, NetworkError
+from .gigachat_client import ChatAnswer, GigaChatClient, INVALID_RESPONSE_MESSAGE
 
 logger = logging.getLogger(__name__)
-
-_OAUTH_URL = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
-_API_BASE = "https://api.giga.chat/v1"
-_CHAT_URL = f"{_API_BASE}/chat/completions"
-_MODELS_URL = f"{_API_BASE}/models"
-
-# Individual (physical person) plan. Corporate plans need another scope and
-# are not what a Steam Deck user has.
-_OAUTH_SCOPE = "GIGACHAT_API_PERS"
-
-# The first model in /v1/models is used; the list changes over time (the
-# former "GigaChat" model was removed in favour of GigaChat-2 and GigaChat-3),
-# so it is not hardcoded. The fallback is only for the case when the list
-# cannot be fetched at all.
-_FALLBACK_MODEL = "GigaChat-2"
-
-# The CA chain of the Ministry of Digital Development is not in any system
-# store (macOS, SteamOS, browsers), so requests would reject the TLS
-# certificate. The bundle ships with the plugin and is used only for the two
-# GigaChat hosts; disabling verification is not an option: the long-lived
-# Authorization Key travels over the same connection.
-_CA_BUNDLE = os.path.join(os.path.dirname(__file__), "certs", "giga-ca.pem")
-
-# notAfter of the Sub CA in the bundle (see the header of giga-ca.pem). The
-# server certificates are signed by it, so this is the last moment TLS can be
-# verified. Keep in sync with the dates in the file.
-_CA_BUNDLE_NOT_AFTER = datetime(2029, 7, 19, 12, 50, 41, tzinfo=timezone.utc)
-
-_OAUTH_TIMEOUT = 10.0
-_CHAT_TIMEOUT = 40.0
-_MODELS_TIMEOUT = 10.0
-
-# Access tokens live 30 minutes; refresh a minute early so a token cannot
-# expire between the check and the request.
-_TOKEN_TTL = 30 * 60
-_TOKEN_REFRESH_MARGIN = 60
-
-# The model list is re-read every 10 minutes: models appear and disappear,
-# and a stale name turns every translation into a 404.
-_MODELS_TTL = 600
-
-# After a failed fetch the list is retried sooner. Waiting the full TTL kept
-# the probe red for 10 minutes after the network came back (e.g. the Deck
-# woke up before Wi-Fi connected). Retrying on every call is not an option
-# either: while /models is down each translation would wait for its timeout.
-# 30 s is below the 60 s reachability TTL, so the next probe sees the fix.
-_MODELS_RETRY_AFTER_FAILURE = 30
 
 # One request carries several lines, which is faster than one request per
 # line (the free plan generates in a single thread). The limits keep the
@@ -70,28 +18,6 @@ _MODELS_RETRY_AFTER_FAILURE = 30
 # lines.
 _MAX_TEXTS_PER_REQUEST = 20
 _MAX_CHARS_PER_REQUEST = 4000
-
-# GigaChat error text is shown in the overlay as is; a long one would
-# overflow it, so it is cut to this length.
-_MAX_ERROR_MESSAGE_LENGTH = 200
-
-_INVALID_RESPONSE_MESSAGE = "GigaChat вернул некорректный ответ"
-
-# finish_reason values whose text must not be shown as a translation.
-# "blacklist": GigaChat refused the topic and answered with a canned phrase
-# (HTTP 200, so only this field tells it apart from a real translation; game
-# text with violence or politics hits it). "length": the answer was cut off,
-# a truncated last line could still pass the numbering check.
-_UNUSABLE_FINISH_REASONS = {"blacklist", "length"}
-
-
-class _ChatAnswer(NamedTuple):
-    content: str
-    finish_reason: str
-
-    @property
-    def usable(self) -> bool:
-        return self.finish_reason not in _UNUSABLE_FINISH_REASONS
 
 # The plugin uses Google-style codes; GigaChat has one code for Chinese.
 _LANGUAGE_ALIASES = {
@@ -146,20 +72,6 @@ def _normalize_language(code: str) -> str:
 
 def _language_name(code: str) -> str:
     return _LANGUAGE_NAMES.get(_normalize_language(code), code)
-
-
-def _shorten(message: str) -> str:
-    message = message.strip()
-    if len(message) > _MAX_ERROR_MESSAGE_LENGTH:
-        message = message[:_MAX_ERROR_MESSAGE_LENGTH].rstrip() + "…"
-    return message
-
-
-def _check_bundle_fresh() -> None:
-    """Fail with an actionable message once the shipped CA chain has expired."""
-    if datetime.now(timezone.utc) >= _CA_BUNDLE_NOT_AFTER:
-        logger.error(f"GigaChat CA bundle expired on {_CA_BUNDLE_NOT_AFTER.isoformat()}")
-        raise NetworkError("Сертификат GigaChat устарел. Обновите плагин")
 
 
 def _flatten(text: str) -> str:
@@ -245,25 +157,6 @@ def _make_batches(texts: List[str]):
         yield batch
 
 
-def _error_message(response) -> str:
-    """Return the message of a GigaChat/OpenAI-style error response, or ""."""
-    try:
-        payload = response.json()
-    except ValueError:
-        return ""
-    if not isinstance(payload, dict):
-        return ""
-
-    message = payload.get("message")
-    if not isinstance(message, str):
-        error = payload.get("error")
-        if isinstance(error, dict):
-            message = error.get("message")
-    if not isinstance(message, str):
-        return ""
-    return _shorten(message)
-
-
 class GigaChatTranslateProvider(TranslationProvider):
     """Translation provider using the GigaChat chat completions API."""
 
@@ -273,35 +166,20 @@ class GigaChatTranslateProvider(TranslationProvider):
         'cs', 'hu', 'sv', 'da'
     ]
 
-    def __init__(self, api_key: str = ""):
-        """Initialize the GigaChat provider."""
-        self._api_key = api_key
-        self._model = ""
-        # Shared cache: the reachability probe and translation must not fetch
-        # the list more often than once per _MODELS_TTL.
-        self._models: Optional[List[str]] = None
-        # When to fetch the list next: after a success and after a failure
-        # the delays differ, so the deadline is stored, not the fetch time.
-        self._models_refresh_at = 0.0
-        self._access_token = ""
-        self._token_expires_at = 0.0
-        # test_network and translate run in worker threads, so the token and
-        # model caches need locks: two simultaneous calls must not fetch twice.
-        self._token_lock = threading.Lock()
-        self._model_lock = threading.Lock()
+    def __init__(self, api_key: str = "", client: Optional[GigaChatClient] = None):
+        """
+        Initialize the GigaChat provider.
+
+        ProviderManager passes the client it shares between both GigaChat
+        methods; without one (tests, a one-off key check) a private client is
+        created from api_key.
+        """
+        self._client = client if client is not None else GigaChatClient(api_key)
         logger.debug("GigaChatTranslateProvider initialized")
 
     def set_api_key(self, api_key: str) -> None:
-        """Update the Authorization Key and drop token and model caches."""
-        if api_key != self._api_key:
-            self._api_key = api_key
-            self._invalidate_token()
-            # A different key can see a different set of models, so the list
-            # cached for the old key must not be reused.
-            with self._model_lock:
-                self._models = None
-                self._models_refresh_at = 0.0
-                self._model = ""
+        """Update the Authorization Key (on the shared client, if any)."""
+        self._client.set_api_key(api_key)
 
     @property
     def name(self) -> str:
@@ -313,7 +191,7 @@ class GigaChatTranslateProvider(TranslationProvider):
 
     def is_available(self, source_lang: str, target_lang: str) -> bool:
         """Check if translation is available for the language pair."""
-        if not self._api_key:
+        if not self._client.api_key:
             return False
         source = _normalize_language(source_lang)
         target = _normalize_language(target_lang)
@@ -360,19 +238,11 @@ class GigaChatTranslateProvider(TranslationProvider):
             the original for None and does not put it into the translation
             cache, so a refusal phrase never reaches the screen or the cache.
         """
-        if not self._api_key:
-            logger.error("GigaChat Authorization Key not configured")
-            raise ApiKeyError("Не задан Authorization Key GigaChat")
-
+        # Key and CA bundle first: a missing one is reported even for an
+        # empty request, so the user sees the real problem.
+        self._client.check_ready()
         if not texts:
             return []
-
-        if not os.path.isfile(_CA_BUNDLE):
-            logger.error(f"GigaChat CA bundle not found: {_CA_BUNDLE}")
-            raise NetworkError(
-                "Не найден сертификат Минцифры для GigaChat. Переустановите плагин"
-            )
-        _check_bundle_fresh()
 
         source = _normalize_language(source_lang)
         target = _normalize_language(target_lang)
@@ -442,8 +312,19 @@ class GigaChatTranslateProvider(TranslationProvider):
         result = _clean_translation(answer.content, text)
         if not result:
             logger.error("GigaChat returned an empty translation")
-            raise NetworkError(_INVALID_RESPONSE_MESSAGE)
+            raise NetworkError(INVALID_RESPONSE_MESSAGE)
         return result
+
+    def _choose_model(self, models: List[str]) -> Optional[str]:
+        """No preference: the client's default, the first model of the list."""
+        return None
+
+    def _chat(self, messages: List[dict]) -> ChatAnswer:
+        """
+        Every request of this method goes through here, so a subclass that
+        prefers another model gets it for all of them, fallbacks included.
+        """
+        return self._client.chat(messages, choose_model=self._choose_model)
 
     def _system_prompt(self, source_lang: str, target_lang: str) -> str:
         target_name = _language_name(target_lang)
@@ -486,334 +367,5 @@ class GigaChatTranslateProvider(TranslationProvider):
             },
         ]
 
-    @staticmethod
-    def _payload(messages: List[dict], model: str) -> dict:
-        return {
-            "model": model,
-            "messages": messages,
-            "temperature": 0.1,
-        }
-
-    def _fetch_models(self, token: str) -> Optional[List[str]]:
-        """
-        Return chat model ids in the order the API lists them.
-
-        None means the list could not be fetched; an empty list means the API
-        answered but offered no chat models. Embeds are filtered out: they are
-        listed next to chat models but cannot translate.
-        """
-        try:
-            response = requests.get(
-                _MODELS_URL,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/json",
-                },
-                timeout=_MODELS_TIMEOUT,
-                verify=_CA_BUNDLE,
-            )
-        except requests.exceptions.Timeout as e:
-            logger.warning(f"GigaChat model list timeout: {e}")
-            return None
-        except requests.exceptions.SSLError as e:
-            logger.warning(f"GigaChat model list TLS error: {e}")
-            return None
-        except requests.exceptions.ConnectionError as e:
-            logger.warning(f"GigaChat model list connection error: {e}")
-            return None
-        except Exception as e:
-            logger.warning(f"GigaChat model list error: {e}")
-            return None
-
-        if response.status_code != 200:
-            logger.warning(f"GigaChat model list: HTTP {response.status_code}")
-            return None
-
-        try:
-            payload = response.json()
-        except ValueError:
-            logger.warning("GigaChat model list returned invalid JSON")
-            return None
-
-        models: List[str] = []
-        data = payload.get("data") if isinstance(payload, dict) else None
-        for item in data if isinstance(data, list) else []:
-            if not isinstance(item, dict):
-                continue
-            model_id = item.get("id")
-            if not isinstance(model_id, str) or not model_id:
-                continue
-            if "embedding" in model_id.lower():
-                continue
-            models.append(model_id)
-
-        logger.info(f"GigaChat model list: {len(models)} chat models available")
-        return models
-
-    def _get_models(self, token: str, force: bool = False) -> Optional[List[str]]:
-        """
-        Return the cached model list, refreshing it at most once per TTL.
-
-        The probe and translation share this cache: a translation must not
-        re-read the list on every request, and a model rename is still picked
-        up without a plugin update.
-        """
-        with self._model_lock:
-            now = time.time()
-            if not force and now < self._models_refresh_at:
-                return self._models
-
-            models = self._fetch_models(token)
-            if models is None:
-                self._models_refresh_at = now + _MODELS_RETRY_AFTER_FAILURE
-                logger.warning("GigaChat model list unavailable, keeping previous list")
-                return self._models
-            self._models_refresh_at = now + _MODELS_TTL
-            self._models = models
-            return models
-
-    def _ensure_model(self, token: str, force: bool = False) -> str:
-        """Return the first available chat model."""
-        models = self._get_models(token, force=force)
-        with self._model_lock:
-            if models:
-                if models[0] != self._model:
-                    logger.info(f"GigaChat model selected: {models[0]}")
-                self._model = models[0]
-                return self._model
-
-            # The list is unavailable: try the previous choice or the last
-            # known model name rather than failing before the chat request.
-            if not self._model:
-                self._model = _FALLBACK_MODEL
-            logger.warning(
-                f"GigaChat model list unavailable, using model {self._model}"
-            )
-            return self._model
-
-    def _chat(self, messages: List[dict]) -> _ChatAnswer:
-        """Send one chat request and return the assistant's text and finish_reason."""
-        token = self._ensure_token()
-        model = self._ensure_model(token)
-        response = self._post_chat(token, self._payload(messages, model))
-
-        # The token can expire or be revoked between the check and the
-        # request; one refresh is cheap and avoids a failed translation.
-        if response.status_code == 401:
-            logger.info("GigaChat token rejected, refreshing it once")
-            self._invalidate_token()
-            token = self._ensure_token()
-            response = self._post_chat(token, self._payload(messages, model))
-
-        # The model list changes: a name can be removed or replaced. Re-read
-        # the list and retry once with the current first model.
-        if response.status_code == 404:
-            logger.warning(f"GigaChat model {model} not found, refreshing the list")
-            new_model = self._ensure_model(token, force=True)
-            if new_model != model:
-                logger.info(f"GigaChat retry with model {new_model}")
-                response = self._post_chat(token, self._payload(messages, new_model))
-
-        if response.status_code != 200:
-            self._handle_chat_error(response)
-
-        try:
-            body = response.json()
-        except ValueError as e:
-            logger.error("GigaChat returned invalid JSON")
-            raise NetworkError(_INVALID_RESPONSE_MESSAGE) from e
-
-        usage = body.get("usage") if isinstance(body, dict) else None
-        if isinstance(usage, dict):
-            logger.info(f"GigaChat tokens: {usage.get('total_tokens', '?')}")
-
-        try:
-            choice = body["choices"][0]
-            content = choice["message"]["content"]
-        except (KeyError, IndexError, TypeError):
-            logger.error(f"Unexpected GigaChat response structure: {str(body)[:500]}")
-            raise NetworkError(_INVALID_RESPONSE_MESSAGE)
-
-        finish_reason = choice.get("finish_reason")
-        if not isinstance(finish_reason, str):
-            finish_reason = ""
-        # Checked before the content: a refused or cut-off answer is handled
-        # by the caller even when its text is empty, it is not a broken reply.
-        if finish_reason in _UNUSABLE_FINISH_REASONS:
-            return _ChatAnswer(content if isinstance(content, str) else "", finish_reason)
-
-        if not isinstance(content, str) or not content.strip():
-            logger.error("GigaChat response has no translation text")
-            raise NetworkError(_INVALID_RESPONSE_MESSAGE)
-        return _ChatAnswer(content, finish_reason)
-
-    def _post_chat(self, token: str, payload: dict):
-        return self._post(
-            _CHAT_URL,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
-            json=payload,
-            timeout=_CHAT_TIMEOUT,
-        )
-
-    def _post(self, url: str, headers: dict, timeout: float, data=None, json=None):
-        try:
-            return requests.post(
-                url,
-                headers=headers,
-                data=data,
-                json=json,
-                timeout=timeout,
-                verify=_CA_BUNDLE,
-            )
-        except requests.exceptions.Timeout as e:
-            logger.error(f"GigaChat timeout: {e}")
-            raise NetworkError("Превышено время ожидания GigaChat") from e
-        except requests.exceptions.SSLError as e:
-            logger.error(f"GigaChat TLS error: {e}")
-            raise NetworkError(
-                "Сертификат GigaChat не прошёл проверку. Обновите плагин"
-            ) from e
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"GigaChat connection error: {e}")
-            raise NetworkError("Нет подключения к интернету") from e
-        except Exception as e:
-            logger.error(f"GigaChat request error: {e}")
-            raise NetworkError(f"Ошибка запроса к GigaChat: {type(e).__name__}") from e
-
-    # -- OAuth token --
-
-    def _invalidate_token(self) -> None:
-        with self._token_lock:
-            self._access_token = ""
-            self._token_expires_at = 0.0
-
-    def _ensure_token(self) -> str:
-        """Return a valid access token, requesting a new one when needed."""
-        with self._token_lock:
-            now = time.time()
-            if self._access_token and now < self._token_expires_at - _TOKEN_REFRESH_MARGIN:
-                return self._access_token
-
-            token, expires_at = self._fetch_token()
-            self._access_token = token
-            self._token_expires_at = expires_at
-            logger.info("GigaChat access token refreshed")
-            return token
-
-    def _fetch_token(self) -> Tuple[str, float]:
-        response = self._post(
-            _OAUTH_URL,
-            headers={
-                # The Authorization Key is already Base64 of Client ID and
-                # Client Secret; GigaChat expects it in the Basic header.
-                "Authorization": f"Basic {self._api_key}",
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json",
-                # Required header, a fresh UUID for every request.
-                "RqUID": str(uuid.uuid4()),
-            },
-            data={"scope": _OAUTH_SCOPE},
-            timeout=_OAUTH_TIMEOUT,
-        )
-
-        if response.status_code != 200:
-            self._handle_oauth_error(response)
-
-        try:
-            payload = response.json()
-        except ValueError as e:
-            logger.error("GigaChat OAuth returned invalid JSON")
-            raise NetworkError("GigaChat вернул некорректный ответ при авторизации") from e
-
-        token = payload.get("access_token") if isinstance(payload, dict) else None
-        if not isinstance(token, str) or not token:
-            logger.error(f"GigaChat OAuth response has no access_token: {str(payload)[:300]}")
-            raise NetworkError("GigaChat вернул некорректный ответ при авторизации")
-
-        now = time.time()
-        expires_at = payload.get("expires_at")
-        if isinstance(expires_at, (int, float)):
-            # The API has returned both seconds and milliseconds over time.
-            if expires_at > 1e12:
-                expires_at /= 1000.0
-            expires_at = min(float(expires_at), now + _TOKEN_TTL)
-        else:
-            expires_at = now + _TOKEN_TTL
-        return token, expires_at
-
-    def _handle_oauth_error(self, response) -> None:
-        logger.error(f"GigaChat OAuth error: {response.status_code}")
-        if response.status_code in (400, 401, 403):
-            raise ApiKeyError("Неверный Authorization Key GigaChat")
-        if response.status_code == 429:
-            raise RateLimitError("Превышен лимит запросов GigaChat. Попробуйте позже")
-        if response.status_code >= 500:
-            raise NetworkError(
-                f"Сервис GigaChat временно недоступен (код {response.status_code})"
-            )
-        raise NetworkError(f"Ошибка авторизации GigaChat (код {response.status_code})")
-
-    # -- errors --
-
-    def _handle_chat_error(self, response) -> None:
-        body = (response.text or "")[:500]
-        logger.error(f"GigaChat API error: {response.status_code}")
-        if body:
-            logger.error(f"Response: {body}")
-
-        if response.status_code == 401:
-            raise ApiKeyError("Неверный Authorization Key GigaChat")
-        if response.status_code == 403:
-            raise ApiKeyError("Доступ к GigaChat запрещён. Проверьте ключ и тариф")
-        if response.status_code == 402:
-            raise RateLimitError(
-                "Закончился бесплатный лимит токенов GigaChat. Проверьте лимит в личном кабинете"
-            )
-        if response.status_code == 429:
-            raise RateLimitError("Превышен лимит запросов GigaChat. Попробуйте позже")
-        if response.status_code >= 500:
-            raise NetworkError(
-                f"Сервис GigaChat временно недоступен (код {response.status_code})"
-            )
-        if response.status_code == 404:
-            raise NetworkError("Модель GigaChat не найдена. Повторите позже или обновите плагин")
-        if response.status_code == 400:
-            reason = _error_message(response)
-            if reason:
-                raise NetworkError(f"GigaChat отклонил запрос: {reason}")
-            raise NetworkError("GigaChat отклонил запрос (код 400)")
-        raise NetworkError(f"Ошибка GigaChat (код {response.status_code})")
-
     async def test_network(self) -> tuple:
-        if not self._api_key:
-            return False, "Требуется Authorization Key GigaChat"
-
-        def _probe():
-            try:
-                _check_bundle_fresh()
-                token = self._ensure_token()
-            except ApiKeyError:
-                return False, "Неверный Authorization Key"
-            except RateLimitError:
-                return False, "Превышен лимит запросов GigaChat"
-            except NetworkError as e:
-                return False, str(e) or "Сеть недоступна"
-
-            models = self._get_models(token)
-            if models is None:
-                return False, "Не удалось получить список моделей GigaChat"
-            if not models:
-                return False, "Нет доступных моделей GigaChat"
-
-            # The probe and the first translation must use the same model.
-            with self._model_lock:
-                if models[0] != self._model:
-                    logger.info(f"GigaChat model selected: {models[0]}")
-                self._model = models[0]
-            return True, ""
-
-        return await asyncio.to_thread(_probe)
+        return await asyncio.to_thread(self._client.probe)

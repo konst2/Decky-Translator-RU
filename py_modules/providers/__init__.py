@@ -19,7 +19,9 @@ from .base import (
 from .google_ocr import GoogleVisionProvider
 from .google_translate import GoogleTranslateProvider
 from .yandex_translate import YandexTranslateProvider
+from .gigachat_client import GigaChatClient
 from .gigachat_translate import GigaChatTranslateProvider
+from .gigachat_plus_translate import GigaChatPlusTranslateProvider
 from .ocrspace import OCRSpaceProvider
 from .free_translate import FreeTranslateProvider
 from .mymemory_translate import MyMemoryTranslateProvider
@@ -42,10 +44,12 @@ _REACHABILITY_TTL = 4.0
 # that eats its small daily quota, so its result is kept longer.
 # GigaChat is a full LLM service; the token is cached, but there is no reason
 # to ask it for the model list every 10 s either.
-_REACHABILITY_TTL_BY_PROVIDER = {"mymemory": 60.0, "gigachat": 60.0}
+_REACHABILITY_TTL_BY_PROVIDER = {"mymemory": 60.0, "gigachat": 60.0, "gigachat_plus": 60.0}
 
 _WEB_OCR_PROVIDERS = {"gemini_vision", "googlecloud", "ocrspace"}
-_WEB_TRANSLATION_PROVIDERS = {"googlecloud", "freegoogle", "yandex", "gigachat", "mymemory"}
+_WEB_TRANSLATION_PROVIDERS = {
+    "googlecloud", "freegoogle", "yandex", "gigachat", "gigachat_plus", "mymemory",
+}
 
 # Export all public classes
 __all__ = [
@@ -61,6 +65,7 @@ __all__ = [
     'GoogleTranslateProvider',
     'YandexTranslateProvider',
     'GigaChatTranslateProvider',
+    'GigaChatPlusTranslateProvider',
     'OCRSpaceProvider',
     'FreeTranslateProvider',
     'MyMemoryTranslateProvider',
@@ -93,11 +98,16 @@ class ProviderManager:
         self._yandex_api_key = ""
         self._yandex_folder_id = ""
         self._gigachat_api_key = ""
+        # One client for both GigaChat methods: one access token and one model
+        # cache, so switching between them costs no extra OAuth.
+        self._gigachat_client = GigaChatClient()
+        # Name of the running game, for GigaChat+ (see set_current_game).
+        self._current_game = ""
         self._mymemory_email = ""
         self._gemini_model = "gemini-2.5-flash"
         self._gemini_target_language = "ru"
         self._ocr_provider_preference = "chromescreenai"  # "rapidocr", "ocrspace", "googlecloud", "gemini_vision", or "chromescreenai"
-        self._translation_provider_preference = "mymemory"  # "mymemory", "freegoogle", "googlecloud", "yandex", or "ct2"
+        self._translation_provider_preference = "mymemory"  # "mymemory", "freegoogle", "googlecloud", "yandex", "gigachat", "gigachat_plus", "ct2" or "opusmt"
         self._rapidocr_confidence = 0.5  # Default RapidOCR confidence threshold (0.0-1.0)
         self._rapidocr_box_thresh = 0.5  # Default RapidOCR box detection threshold (0.0-1.0)
         self._rapidocr_unclip_ratio = 1.6  # Default RapidOCR box expansion ratio (1.0-3.0)
@@ -231,9 +241,20 @@ class ProviderManager:
     def set_gigachat_api_key(self, api_key: str) -> None:
         """Set the GigaChat Authorization Key (same reason for a separate setter)."""
         self._gigachat_api_key = api_key
-        gigachat = self._translation_providers.get(ProviderType.GIGACHAT)
-        if gigachat:
-            gigachat.set_api_key(api_key)
+        # Both GigaChat methods use this client, so one call updates both.
+        self._gigachat_client.set_api_key(api_key)
+
+    def set_current_game(self, game: str) -> None:
+        """
+        Remember the running game's name for GigaChat+.
+
+        GigaChat+ puts the name into the prompt and starts a new glossary when
+        it changes. Stored here too, so a provider created later gets it.
+        """
+        self._current_game = game
+        gigachat_plus = self._translation_providers.get(ProviderType.GIGACHAT_PLUS)
+        if gigachat_plus:
+            gigachat_plus.set_game(game)
 
     def set_gemini_model(self, model: str) -> None:
         """Update the Gemini model. Recreates the provider on next use if model changed."""
@@ -498,6 +519,8 @@ class ProviderManager:
                 provider_type = ProviderType.YANDEX
             elif self._translation_provider_preference == "gigachat":
                 provider_type = ProviderType.GIGACHAT
+            elif self._translation_provider_preference == "gigachat_plus":
+                provider_type = ProviderType.GIGACHAT_PLUS
             elif self._translation_provider_preference == "mymemory":
                 provider_type = ProviderType.MYMEMORY
             elif self._translation_provider_preference == "ct2":
@@ -521,8 +544,12 @@ class ProviderManager:
                 )
             elif provider_type == ProviderType.GIGACHAT:
                 self._translation_providers[provider_type] = GigaChatTranslateProvider(
-                    api_key=self._gigachat_api_key,
+                    client=self._gigachat_client,
                 )
+            elif provider_type == ProviderType.GIGACHAT_PLUS:
+                provider = GigaChatPlusTranslateProvider(client=self._gigachat_client)
+                provider.set_game(self._current_game)
+                self._translation_providers[provider_type] = provider
             elif provider_type == ProviderType.MYMEMORY:
                 self._translation_providers[provider_type] = MyMemoryTranslateProvider(
                     email=self._mymemory_email
@@ -702,7 +729,7 @@ class ProviderManager:
                 key = self._google_api_key
             elif trans_pref == "yandex":
                 key = f"{self._yandex_api_key}|{self._yandex_folder_id}"
-            elif trans_pref == "gigachat":
+            elif trans_pref in ("gigachat", "gigachat_plus"):
                 key = self._gigachat_api_key
             elif trans_pref == "mymemory":
                 # Part of the cache key, so a corrected email is re-probed at
@@ -740,6 +767,8 @@ class ProviderManager:
                 p = self.get_translation_provider(ProviderType.YANDEX)
             elif provider == "gigachat" and kind == "translation":
                 p = self.get_translation_provider(ProviderType.GIGACHAT)
+            elif provider == "gigachat_plus" and kind == "translation":
+                p = self.get_translation_provider(ProviderType.GIGACHAT_PLUS)
             elif provider == "ocrspace":
                 p = self.get_ocr_provider(ProviderType.OCR_SPACE)
             elif provider == "freegoogle":

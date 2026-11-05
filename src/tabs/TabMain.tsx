@@ -363,6 +363,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                              settings.translationProvider === 'opusmt' ? 'Локально (лёгкая, en→ru)' :
                                              settings.translationProvider === 'yandex' ? 'Яндекс' :
                                              settings.translationProvider === 'gigachat' ? 'GigaChat' :
+                                             settings.translationProvider === 'gigachat_plus' ? 'GigaChat+' :
                                              settings.translationProvider === 'mymemory' ? 'MyMemory' : 'Google Translate'}
                                         </span>
                                         <DataFlowIcon flow={TRANSLATION_DATA_FLOW[settings.translationProvider]} />
@@ -400,10 +401,10 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                             <ReachabilityRow result={webReachability?.translation} expectedProvider="yandex" />
                                         </>
                                     )}
-                                    {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'gigachat' && (
+                                    {settings.ocrProvider !== 'gemini_vision' && (settings.translationProvider === 'gigachat' || settings.translationProvider === 'gigachat_plus') && (
                                         <>
                                             <div style={{ color: '#666', fontSize: '10px' }}>Требуется Authorization Key</div>
-                                            <ReachabilityRow result={webReachability?.translation} expectedProvider="gigachat" />
+                                            <ReachabilityRow result={webReachability?.translation} expectedProvider={settings.translationProvider} />
                                         </>
                                     )}
                                     {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'ct2' && (

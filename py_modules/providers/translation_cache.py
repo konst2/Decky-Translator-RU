@@ -19,6 +19,10 @@ PROVIDER_TIERS = {
     "yandex": 3,
     # LLM translation: same quality tier as the other paid cloud services.
     "gigachat": 3,
+    # GigaChat with game name and glossary: the most consistent method. It
+    # does not reuse tier-3 entries (made without its glossary, names could
+    # differ) and overwrites them; tier-3 methods may reuse its entries.
+    "gigachat_plus": 4,
     "gemini_vision": 3,
 }
 

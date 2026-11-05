@@ -610,6 +610,7 @@ export class GameTranslatorLogic {
             googlecloud: "Google Cloud",
             yandex: "Яндекс",
             gigachat: "GigaChat",
+            gigachat_plus: "GigaChat+",
         };
         return labels[this.translationProvider] || this.translationProvider;
     }
@@ -734,7 +735,10 @@ export class GameTranslatorLogic {
             return { missing: true, message: "Для Яндекс Перевода требуются API-ключ и folder_id" };
         }
 
-        if (this.translationProvider === 'gigachat' && !this.hasGigachatApiKey) {
+        // Оба метода GigaChat работают с одним и тем же ключом.
+        const usesGigachatKey = this.translationProvider === 'gigachat'
+            || this.translationProvider === 'gigachat_plus';
+        if (usesGigachatKey && !this.hasGigachatApiKey) {
             return { missing: true, message: "Для GigaChat требуется Authorization Key" };
         }
 

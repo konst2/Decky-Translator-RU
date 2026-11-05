@@ -1,0 +1,587 @@
+"""
+GigaChat+ : game name and session glossary on top of the direct method.
+
+HTTP is faked the same way as in test_gigachat_translate (helpers are reused
+from there). The point is what goes into the prompt, what is taken from the
+answer into the glossary, and that a bad answer still yields a translation.
+"""
+
+import unittest
+from unittest.mock import patch
+
+from providers import gigachat_plus_translate as gp
+from providers.base import ProviderType
+from providers.gigachat_client import GigaChatClient
+from test_gigachat_translate import (
+    API_KEY,
+    REFUSAL,
+    FakeApi,
+    chat_response,
+    fake_http,
+    run,
+)
+
+
+def provider(game="Baldur's Gate 3"):
+    p = gp.GigaChatPlusTranslateProvider(api_key=API_KEY)
+    p.set_game(game)
+    return p
+
+
+def system_prompt(call):
+    return call["json"]["messages"][0]["content"]
+
+
+def user_prompt(call):
+    return call["json"]["messages"][1]["content"]
+
+
+class GigaChatPlusPromptTest(unittest.TestCase):
+
+    def test_identity(self):
+        p = provider()
+        self.assertEqual(p.name, "GigaChat+")
+        self.assertEqual(p.provider_type, ProviderType.GIGACHAT_PLUS)
+
+    def test_game_name_and_glossary_instruction_are_sent(self):
+        api = FakeApi(chat_contents=["1. Привет\n---"])
+        with fake_http(api):
+            result = run(provider().translate_batch(["Hello"], "en", "ru"))
+
+        self.assertEqual(result, ["Привет"])
+        self.assertIn("«Baldur's Gate 3»", system_prompt(api.chat_calls[0]))
+        self.assertIn("---", user_prompt(api.chat_calls[0]))
+        # Empty glossary: no glossary block yet.
+        self.assertNotIn("Словарь игры", user_prompt(api.chat_calls[0]))
+
+    def test_formal_address_only_for_russian(self):
+        api = FakeApi(chat_contents=["1. Привет\n---", "1. Hallo\n---"])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Hello"], "en", "ru"))
+            run(p.translate_batch(["Hello"], "en", "de"))
+
+        self.assertIn("на «вы»", system_prompt(api.chat_calls[0]))
+        self.assertNotIn("на «вы»", system_prompt(api.chat_calls[1]))
+
+    def test_no_game_line_without_game(self):
+        api = FakeApi(chat_contents=["1. Привет\n---"])
+        with fake_http(api):
+            run(provider(game="").translate_batch(["Hello"], "en", "ru"))
+
+        self.assertNotIn("Это текст из игры", system_prompt(api.chat_calls[0]))
+
+
+class GigaChatPlusGlossaryTest(unittest.TestCase):
+
+    def test_glossary_is_learned_and_sent_next_time(self):
+        api = FakeApi(chat_contents=[
+            "1. Шэдоухарт ранена\n---\nShadowheart → Шэдоухарт (ж)",
+            "1. Шэдоухарт улыбается\n---",
+        ])
+        p = provider()
+        with fake_http(api):
+            first = run(p.translate_batch(["Shadowheart is wounded"], "en", "ru"))
+            second = run(p.translate_batch(["Shadowheart smiles"], "en", "ru"))
+
+        self.assertEqual(first, ["Шэдоухарт ранена"])
+        self.assertEqual(second, ["Шэдоухарт улыбается"])
+        self.assertEqual(p.glossary_entries(), [("Shadowheart", "Шэдоухарт (ж)")])
+        self.assertIn("Shadowheart → Шэдоухарт (ж)", user_prompt(api.chat_calls[1]))
+
+    def test_existing_entry_is_not_overwritten(self):
+        api = FakeApi(chat_contents=[
+            "1. Шэдоухарт\n---\nShadowheart → Шэдоухарт (ж)",
+            "1. Тенесердце\n---\nshadowheart → Тенесердце (ж)",
+        ])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Shadowheart"], "en", "ru"))
+            run(p.translate_batch(["Shadowheart"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("Shadowheart", "Шэдоухарт (ж)")])
+
+    def test_ascii_arrow_and_bullets_are_accepted(self):
+        api = FakeApi(chat_contents=["1. Свежеватель атакует\n---\n- Mind Flayer -> Свежеватель разума"])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["The Mind Flayer attacks"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("Mind Flayer", "Свежеватель разума")])
+
+    def test_junk_in_glossary_part_does_not_break_translation(self):
+        long_term = "x" * (gp._MAX_TERM_LENGTH + 1)
+        api = FakeApi(chat_contents=[
+            "1. Привет\n2. Тав пришёл\n---\nНовых терминов нет.\n → пусто\n"
+            f"{long_term} → длинно\nok → \nTav → Тав (м)"
+        ])
+        p = provider()
+        with fake_http(api):
+            result = run(p.translate_batch(["Hello", f"Tav came {long_term}"], "en", "ru"))
+
+        self.assertEqual(result, ["Привет", "Тав пришёл"])
+        self.assertEqual(p.glossary_entries(), [("Tav", "Тав (м)")])
+
+    def test_echoed_format_and_absent_terms_are_rejected(self):
+        # Seen live: the model copied the format example and listed names
+        # that were not in the lines.
+        api = FakeApi(chat_contents=[
+            "1. Тав пришёл\n---\nоригинал → перевод\nGeralt → Геральт (м)\nTav → Тав (м)"
+        ])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Tav came"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("Tav", "Тав (м)")])
+
+    def test_gender_after_original_name_is_dropped_from_term(self):
+        # Seen live: "Kim Kitsuragi (м) → Ким Кицураги (м)".
+        api = FakeApi(chat_contents=["1. Ким кивает\n---\nKim Kitsuragi (м) → Ким Кицураги (м)"])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Kim Kitsuragi nods"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("Kim Kitsuragi", "Ким Кицураги (м)")])
+
+    def test_typographic_apostrophe_matches_ascii_one(self):
+        api = FakeApi(chat_contents=["1. Лаэзель\n---\nLae'zel → Лаэзель (ж)"])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Lae’zel draws her sword"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("Lae'zel", "Лаэзель (ж)")])
+
+    def test_gender_mark_is_removed_from_translated_lines(self):
+        # Seen live (GigaChat-2-Max, GigaChat-3-Ultra): the mark leaked into
+        # the line and would be shown in the overlay.
+        api = FakeApi(chat_contents=[
+            "1. Шэдоухарт хранит своё прошлое в тайне. (ж)\n2. Лаэзель обнажает меч.(м)\n"
+            "---\nShadowheart → Шэдоухарт (ж)"
+        ])
+        p = provider()
+        with fake_http(api):
+            result = run(p.translate_batch(
+                ["Shadowheart keeps her past a secret.", "Lae'zel draws her sword."], "en", "ru"
+            ))
+
+        self.assertEqual(result, ["Шэдоухарт хранит своё прошлое в тайне.", "Лаэзель обнажает меч."])
+        # The glossary keeps its gender: only the lines are cleaned.
+        self.assertEqual(p.glossary_entries(), [("Shadowheart", "Шэдоухарт (ж)")])
+
+    def test_prompt_forbids_gender_in_lines(self):
+        api = FakeApi(chat_contents=["1. Привет\n---"])
+        with fake_http(api):
+            run(provider().translate_batch(["Hello"], "en", "ru"))
+
+        self.assertIn("В переводах строк пол не пиши", user_prompt(api.chat_calls[0]))
+
+    def test_missing_gender_is_added_later(self):
+        api = FakeApi(chat_contents=[
+            "1. Шэдоухарт\n---\nShadowheart → Шэдоухарт",
+            "1. Шэдоухарт улыбается\n---\nShadowheart → Шэдоухарт (ж)",
+        ])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Shadowheart"], "en", "ru"))
+            run(p.translate_batch(["Shadowheart smiles, she is happy"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("Shadowheart", "Шэдоухарт (ж)")])
+
+    def test_gender_does_not_replace_gender_or_translation(self):
+        api = FakeApi(chat_contents=[
+            "1. Карлах\n---\nKarlach → Карлах (ж)\nGale → Гейл",
+            # Another gender and another translation of the name: both ignored.
+            "1. Карлах и Гейл\n---\nKarlach → Карлах (м)\nGale → Гэйл (м)",
+        ])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Karlach and Gale"], "en", "ru"))
+            run(p.translate_batch(["Karlach and Gale"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("Karlach", "Карлах (ж)"), ("Gale", "Гейл")])
+
+    def test_missing_separator_retries_without_context(self):
+        # Without a separator any line after the translations would be glued
+        # to the last one as its "continuation" and reach the screen
+        # ("Тав пришёл Словарь:"). Such an answer is not trusted.
+        for junk in ["Tav → Тав (м)", "Словарь:\nTav → Тав (м)", "Tav — Тав (м)"]:
+            with self.subTest(junk=junk):
+                api = FakeApi(chat_contents=[
+                    f"1. Привет\n2. Тав пришёл\n{junk}",
+                    "1. Привет\n2. Тав пришёл",
+                ])
+                p = provider()
+                with fake_http(api):
+                    result = run(p.translate_batch(["Hello", "Tav came"], "en", "ru"))
+
+                self.assertEqual(result, ["Привет", "Тав пришёл"])
+                self.assertEqual(len(api.chat_calls), 2)
+                self.assertNotIn("---", user_prompt(api.chat_calls[1]))
+                self.assertEqual(p.glossary_entries(), [])
+
+    def test_separator_variants_are_accepted(self):
+        for separator in ["---", "----", "———", "***", "==="]:
+            with self.subTest(separator=separator):
+                api = FakeApi(chat_contents=[f"1. Привет\n2. Тав пришёл\n{separator}\nTav → Тав (м)"])
+                p = provider()
+                with fake_http(api):
+                    result = run(p.translate_batch(["Hello", "Tav came"], "en", "ru"))
+
+                self.assertEqual(result, ["Привет", "Тав пришёл"])
+                self.assertEqual(p.glossary_entries(), [("Tav", "Тав (м)")])
+
+    def test_answer_without_separator_and_without_glossary_is_fine(self):
+        api = FakeApi(chat_contents=["1. Привет\n2. Мир"])
+        p = provider()
+        with fake_http(api):
+            result = run(p.translate_batch(["Hello", "World"], "en", "ru"))
+
+        self.assertEqual(result, ["Привет", "Мир"])
+        self.assertEqual(len(api.chat_calls), 1)
+
+    def test_apostrophe_variants_are_one_entry(self):
+        api = FakeApi(chat_contents=[
+            "1. Лаэзель\n---\nLae'zel → Лаэзель (ж)",
+            "1. Лейзел\n---\nLae’zel → Лейзел (ж)",
+        ])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Lae'zel"], "en", "ru"))
+            run(p.translate_batch(["Lae’zel"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("Lae'zel", "Лаэзель (ж)")])
+
+    def test_game_change_during_request_keeps_old_terms_out(self):
+        api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
+        p = provider()
+
+        def post_and_switch_game(*args, **kwargs):
+            # A new screenshot from another game arrives while the request
+            # for the old game is in flight.
+            response = api.post(*args, **kwargs)
+            if args and args[0].endswith("/chat/completions"):
+                p.set_game("Disco Elysium")
+            return response
+
+        from providers import gigachat_client as gcc
+        with patch.object(gcc.requests, "post", side_effect=post_and_switch_game), \
+                patch.object(gcc.requests, "get", side_effect=api.get):
+            result = run(p.translate_batch(["Tav"], "en", "ru"))
+
+        self.assertEqual(result, ["Тав"])
+        self.assertEqual(p.glossary_entries(), [])
+
+    def test_line_of_only_gender_mark_is_kept(self):
+        api = FakeApi(chat_contents=["1. (ж)\n---"])
+        with fake_http(api):
+            result = run(provider().translate_batch(["(f)"], "en", "ru"))
+
+        self.assertEqual(result, ["(ж)"])
+
+    def test_new_game_resets_glossary(self):
+        api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Tav"], "en", "ru"))
+        p.set_game("Baldur's Gate 3")  # same game: kept
+        self.assertEqual(len(p.glossary_entries()), 1)
+        p.set_game("Disco Elysium")
+        self.assertEqual(p.glossary_entries(), [])
+
+    def test_language_pair_change_resets_glossary(self):
+        api = FakeApi(chat_contents=[
+            "1. Тав\n---\nTav → Тав (м)",
+            "1. Привет\n---",
+        ])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Tav"], "en", "ru"))
+            run(p.translate_batch(["こんにちは"], "ja", "ru"))
+
+        self.assertNotIn("Tav → Тав", user_prompt(api.chat_calls[1]))
+        self.assertEqual(p.glossary_entries(), [])
+
+    def test_full_glossary_evicts_oldest_unused_entry(self):
+        api = FakeApi(chat_contents=[
+            "1. а б\n---\nA → А\nB → Б",
+            # "A" occurs in this batch, so it is "used" and survives.
+            "1. а в\n---\nC → В",
+        ])
+        p = provider()
+        with patch.object(gp, "_MAX_GLOSSARY_ENTRIES", 2), fake_http(api):
+            run(p.translate_batch(["a b"], "en", "ru"))
+            run(p.translate_batch(["a c"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("A", "А"), ("C", "В")])
+
+
+class GigaChatPlusFallbackTest(unittest.TestCase):
+
+    def test_refusal_with_context_retries_without_it(self):
+        api = FakeApi(chat_responses=[
+            chat_response(REFUSAL, "blacklist"),
+            chat_response("1. Привет"),
+        ])
+        p = provider()
+        with fake_http(api):
+            result = run(p.translate_batch(["Hello"], "en", "ru"))
+
+        self.assertEqual(result, ["Привет"])
+        self.assertEqual(len(api.chat_calls), 2)
+        # The retry is the direct method's request: no game, no glossary.
+        self.assertNotIn("Это текст из игры", system_prompt(api.chat_calls[1]))
+        self.assertNotIn("---", user_prompt(api.chat_calls[1]))
+
+    def test_broken_numbering_retries_without_context(self):
+        api = FakeApi(chat_contents=["Вот перевод: Привет", "1. Привет"])
+        p = provider()
+        with fake_http(api):
+            result = run(p.translate_batch(["Hello"], "en", "ru"))
+
+        self.assertEqual(result, ["Привет"])
+        self.assertEqual(p.glossary_entries(), [])
+
+    def test_glossary_from_failed_answer_is_ignored(self):
+        api = FakeApi(chat_contents=["1. Привет\n---\nTav → Тав (м)", "1. Привет\n2. Мир"])
+        p = provider()
+        with fake_http(api):
+            # Two lines asked, one answered: the answer is not trusted.
+            run(p.translate_batch(["Hello", "World"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [])
+
+
+LIVE_MODELS = [
+    "GigaChat-2", "GigaChat-2-Max", "GigaChat-2-Pro",
+    "GigaChat-3-Lightning", "GigaChat-3-Pro", "GigaChat-3-Ultra",
+]
+
+
+class GigaChatPlusModelChoiceTest(unittest.TestCase):
+    """Which model GigaChat+ takes from the list (the direct method takes the first)."""
+
+    def test_rules(self):
+        cases = [
+            ("list of 05.11.2026", LIVE_MODELS, "GigaChat-3-Ultra"),
+            ("newer Ultra wins", LIVE_MODELS + ["GigaChat-4-Ultra"], "GigaChat-4-Ultra"),
+            ("old Ultra beats new Pro", ["GigaChat-4-Pro", "GigaChat-3-Ultra"], "GigaChat-3-Ultra"),
+            ("no Ultra: newest generation of Max/Pro",
+             ["GigaChat-2", "GigaChat-2-Max", "GigaChat-2-Pro", "GigaChat-3-Lightning", "GigaChat-3-Pro"],
+             "GigaChat-3-Pro"),
+            ("same generation: Max before Pro", ["GigaChat-3-Pro", "GigaChat-3-Max"], "GigaChat-3-Max"),
+            ("dotted generation", ["GigaChat-3-Pro", "GigaChat-3.1-Pro"], "GigaChat-3.1-Pro"),
+            ("nothing strong: newest, first of equals",
+             ["GigaChat-2", "GigaChat-3-Lightning", "GigaChat-3-Mini"], "GigaChat-3-Lightning"),
+            ("class is a whole part, not a substring", ["GigaChat-2-Promo", "GigaChat-3"], "GigaChat-3"),
+            ("empty list", [], None),
+        ]
+        for label, models, expected in cases:
+            with self.subTest(label):
+                self.assertEqual(gp._preferred_model(models), expected)
+
+    def test_plus_uses_ultra_and_direct_uses_first(self):
+        from providers.gigachat_translate import GigaChatTranslateProvider
+
+        client = GigaChatClient(API_KEY)
+        direct = GigaChatTranslateProvider(client=client)
+        plus = gp.GigaChatPlusTranslateProvider(client=client)
+        api = FakeApi(chat_contents=["1. Привет", "1. Пока\n---"], model_ids=LIVE_MODELS)
+        with fake_http(api):
+            run(direct.translate_batch(["Hello"], "en", "ru"))
+            run(plus.translate_batch(["Bye"], "en", "ru"))
+
+        self.assertEqual(api.chat_calls[0]["json"]["model"], "GigaChat-2")
+        self.assertEqual(api.chat_calls[1]["json"]["model"], "GigaChat-3-Ultra")
+        # One list for both methods.
+        self.assertEqual(len(api.models_calls), 1)
+
+    def test_retry_without_context_stays_on_plus_model(self):
+        api = FakeApi(
+            chat_responses=[chat_response(REFUSAL, "blacklist"), chat_response("1. Привет")],
+            model_ids=LIVE_MODELS,
+        )
+        with fake_http(api):
+            run(provider().translate_batch(["Hello"], "en", "ru"))
+
+        self.assertEqual([c["json"]["model"] for c in api.chat_calls],
+                         ["GigaChat-3-Ultra", "GigaChat-3-Ultra"])
+
+    def test_removed_ultra_falls_to_next_choice(self):
+        from test_gigachat_translate import FakeResponse, models_response
+
+        api = FakeApi(
+            chat_responses=[FakeResponse(404, {"message": "No such model"}), chat_response("1. Привет\n---")],
+            models_responses=[
+                models_response(LIVE_MODELS),
+                models_response([m for m in LIVE_MODELS if m != "GigaChat-3-Ultra"]),
+            ],
+        )
+        with fake_http(api):
+            result = run(provider().translate_batch(["Hello"], "en", "ru"))
+
+        self.assertEqual(result, ["Привет"])
+        self.assertEqual([c["json"]["model"] for c in api.chat_calls],
+                         ["GigaChat-3-Ultra", "GigaChat-3-Pro"])
+
+    def test_used_up_pool_of_plus_model_suggests_direct_method(self):
+        from providers.base import RateLimitError
+        from test_gigachat_translate import FakeResponse
+
+        api = FakeApi(chat_responses=[FakeResponse(402, {"message": "Payment Required"})],
+                      model_ids=LIVE_MODELS)
+        with fake_http(api):
+            with self.assertRaises(RateLimitError) as ctx:
+                run(provider().translate_batch(["Hello"], "en", "ru"))
+
+        message = str(ctx.exception)
+        self.assertIn("GigaChat-3-Ultra", message)
+        self.assertIn("Переключитесь на метод GigaChat", message)
+
+    def test_quota_after_404_names_the_retried_model(self):
+        from providers.base import RateLimitError
+        from test_gigachat_translate import FakeResponse, models_response
+
+        api = FakeApi(
+            chat_responses=[FakeResponse(404, {"message": "no"}), FakeResponse(402, {"message": "pay"})],
+            models_responses=[
+                models_response(LIVE_MODELS),
+                models_response([m for m in LIVE_MODELS if m != "GigaChat-3-Ultra"]),
+            ],
+        )
+        with fake_http(api):
+            with self.assertRaises(RateLimitError) as ctx:
+                run(provider().translate_batch(["Hello"], "en", "ru"))
+
+        self.assertIn("GigaChat-3-Pro", str(ctx.exception))
+        self.assertIn("Переключитесь на метод GigaChat", str(ctx.exception))
+
+    def test_listed_model_answering_404_is_skipped(self):
+        # The model is in /v1/models but not usable (e.g. by the plan):
+        # re-reading the list chooses it again. GigaChat+ must move on to
+        # the next choice and not knock on it every request.
+        from test_gigachat_translate import FakeResponse
+
+        api = FakeApi(
+            chat_responses=[
+                FakeResponse(404, {"message": "no"}),
+                chat_response("1. Привет\n---"),
+                chat_response("1. Пока\n---"),
+            ],
+            model_ids=LIVE_MODELS,
+        )
+        p = provider()
+        with fake_http(api):
+            first = run(p.translate_batch(["Hello"], "en", "ru"))
+            second = run(p.translate_batch(["Bye"], "en", "ru"))
+
+        self.assertEqual((first, second), (["Привет"], ["Пока"]))
+        self.assertEqual([c["json"]["model"] for c in api.chat_calls],
+                         ["GigaChat-3-Ultra", "GigaChat-3-Pro", "GigaChat-3-Pro"])
+
+    def test_used_up_pool_of_shared_model_keeps_general_message(self):
+        # No strong model: GigaChat+ is on the same model as the direct
+        # method, so "switch to GigaChat" would not help.
+        from providers.base import RateLimitError
+        from test_gigachat_translate import FakeResponse
+
+        api = FakeApi(chat_responses=[FakeResponse(402, {"message": "Payment Required"})],
+                      model_ids=["GigaChat-2"])
+        with fake_http(api):
+            with self.assertRaises(RateLimitError) as ctx:
+                run(provider().translate_batch(["Hello"], "en", "ru"))
+
+        self.assertNotIn("Переключитесь", str(ctx.exception))
+
+
+class GigaChatSharedClientTest(unittest.TestCase):
+
+    def test_both_methods_share_one_token(self):
+        from providers.gigachat_translate import GigaChatTranslateProvider
+
+        client = GigaChatClient(API_KEY)
+        direct = GigaChatTranslateProvider(client=client)
+        plus = gp.GigaChatPlusTranslateProvider(client=client)
+        api = FakeApi(chat_contents=["1. Привет", "1. Пока\n---"])
+        with fake_http(api):
+            run(direct.translate_batch(["Hello"], "en", "ru"))
+            run(plus.translate_batch(["Bye"], "en", "ru"))
+
+        self.assertEqual(len(api.oauth_calls), 1)
+        self.assertEqual(len(api.models_calls), 1)
+
+    def test_new_key_reaches_both_methods(self):
+        from providers.gigachat_translate import GigaChatTranslateProvider
+
+        client = GigaChatClient(API_KEY)
+        direct = GigaChatTranslateProvider(client=client)
+        plus = gp.GigaChatPlusTranslateProvider(client=client)
+        direct.set_api_key("")
+        self.assertFalse(plus.is_available("en", "ru"))
+
+
+class GigaChatPlusManagerTest(unittest.TestCase):
+    """Wiring in ProviderManager: selection, shared client, game name."""
+
+    def manager(self):
+        from providers import ProviderManager
+
+        m = ProviderManager()
+        m.configure(ocr_provider="rapidocr", translation_provider="gigachat_plus")
+        m.set_gigachat_api_key(API_KEY)
+        return m
+
+    def test_preference_selects_gigachat_plus(self):
+        m = self.manager()
+        self.assertIsInstance(m.get_translation_provider(), gp.GigaChatPlusTranslateProvider)
+
+    def test_game_set_before_provider_exists_reaches_it(self):
+        m = self.manager()
+        m.set_current_game("Disco Elysium")
+        api = FakeApi(chat_contents=["1. Привет\n---"])
+        with fake_http(api):
+            run(m.translate_text(["Hello"], "en", "ru"))
+
+        self.assertIn("«Disco Elysium»", system_prompt(api.chat_calls[0]))
+
+    def test_game_change_resets_glossary_of_existing_provider(self):
+        m = self.manager()
+        m.set_current_game("Baldur's Gate 3")
+        api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
+        with fake_http(api):
+            run(m.translate_text(["Tav"], "en", "ru"))
+        plus = m.get_translation_provider()
+        self.assertEqual(len(plus.glossary_entries()), 1)
+
+        m.set_current_game("Disco Elysium")
+        self.assertEqual(plus.glossary_entries(), [])
+
+    def test_both_methods_use_the_managers_client(self):
+        from providers.gigachat_translate import GigaChatTranslateProvider
+
+        m = self.manager()
+        direct = m.get_translation_provider(ProviderType.GIGACHAT)
+        plus = m.get_translation_provider(ProviderType.GIGACHAT_PLUS)
+        self.assertIsInstance(direct, GigaChatTranslateProvider)
+        self.assertIs(direct._client, plus._client)
+
+        m.set_gigachat_api_key("")
+        self.assertFalse(direct.is_available("en", "ru"))
+        self.assertFalse(plus.is_available("en", "ru"))
+
+    def test_reachability_probes_gigachat_plus(self):
+        m = self.manager()
+        api = FakeApi()
+        with fake_http(api):
+            result = run(m.check_web_reachability())
+
+        self.assertEqual(result["translation"]["provider"], "gigachat_plus")
+        self.assertTrue(result["translation"]["ok"])
+
+    def test_cache_tier_is_above_direct_gigachat(self):
+        from providers.translation_cache import PROVIDER_TIERS
+
+        self.assertGreater(PROVIDER_TIERS["gigachat_plus"], PROVIDER_TIERS["gigachat"])
+
+
+if __name__ == "__main__":
+    unittest.main()
