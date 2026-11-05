@@ -50,11 +50,19 @@ def token_response(token="token-1", expires_in=1800):
     })
 
 
-def chat_response(content):
+def chat_response(content, finish_reason="stop"):
     return FakeResponse(200, {
-        "choices": [{"message": {"role": "assistant", "content": content}}],
+        "choices": [{
+            "message": {"role": "assistant", "content": content},
+            "finish_reason": finish_reason,
+        }],
         "usage": {"total_tokens": 42},
     })
+
+
+# GigaChat's canned answer to a topic it refuses: HTTP 200, only finish_reason
+# tells it from a translation.
+REFUSAL = "Что-то в вашем вопросе меня смущает. Может, поговорим на другую тему?"
 
 
 def models_response(model_ids=None):
@@ -256,7 +264,7 @@ class GigaChatTranslationTest(unittest.TestCase):
         p = provider()
         with fake_http(api):
             run(p.translate_batch(["Hello"], "en", "ru"))
-            p._models_fetched_at = 0  # simulate the 10-minute cache expiry
+            p._models_refresh_at = 0  # simulate the 10-minute cache expiry
             run(p.translate_batch(["Bye"], "en", "ru"))
 
         self.assertEqual(len(api.models_calls), 2)
@@ -314,6 +322,29 @@ class GigaChatTranslationTest(unittest.TestCase):
 
         self.assertEqual(result, ["Привет, мир", "Пока"])
 
+    def test_quotes_from_source_are_kept(self):
+        # The source line is quoted, so the quotes in the answer are the
+        # game's, not the model's; the style may change ("..." -> «...»).
+        api = FakeApi(chat_contents=["1. «Привет»\n2. Пока"])
+        with fake_http(api):
+            result = run(provider().translate_batch(['"Hello"', "Bye"], "en", "ru"))
+
+        self.assertEqual(result, ["«Привет»", "Пока"])
+
+    def test_quotes_kept_in_single_line_mode(self):
+        api = FakeApi(chat_contents=["не текст с номерами", "«Привет»"])
+        with fake_http(api):
+            result = run(provider().translate_batch(['"Hello"'], "en", "ru"))
+
+        self.assertEqual(result, ["«Привет»"])
+
+    def test_added_quotes_removed_in_single_line_mode(self):
+        api = FakeApi(chat_contents=["не текст с номерами", "«Привет»"])
+        with fake_http(api):
+            result = run(provider().translate_batch(["Hello"], "en", "ru"))
+
+        self.assertEqual(result, ["Привет"])
+
     def test_blank_texts_are_not_sent(self):
         api = FakeApi(chat_contents=["1. Привет"])
         with fake_http(api):
@@ -347,6 +378,63 @@ class GigaChatTranslationTest(unittest.TestCase):
         self.assertEqual(len(api.oauth_calls), 2)
         self.assertEqual(api.chat_calls[0]["headers"]["Authorization"], "Bearer old")
         self.assertEqual(api.chat_calls[1]["headers"]["Authorization"], "Bearer new")
+
+    def test_refused_batch_loses_only_the_refused_line(self):
+        api = FakeApi(chat_responses=[
+            chat_response(REFUSAL, "blacklist"),  # the whole batch is refused
+            chat_response(REFUSAL, "blacklist"),  # line 1 alone: refused again
+            chat_response("Привет"),              # line 2 alone: translated
+        ])
+        with fake_http(api):
+            result = run(provider().translate_batch(["Kill them all", "Hello"], "en", "ru"))
+
+        # None: main.py shows the original and keeps it out of the cache.
+        self.assertEqual(result, [None, "Привет"])
+        self.assertEqual(len(api.chat_calls), 3)
+
+    def test_refusal_with_empty_text_is_not_an_error(self):
+        api = FakeApi(chat_responses=[
+            chat_response("", "blacklist"),
+            chat_response("", "blacklist"),
+        ])
+        with fake_http(api):
+            result = run(provider().translate_batch(["Kill them all"], "en", "ru"))
+
+        self.assertEqual(result, [None])
+
+    def test_cut_off_batch_is_not_trusted(self):
+        # Both numbers are present, so without finish_reason the truncated
+        # second line would pass as a translation.
+        api = FakeApi(chat_responses=[
+            chat_response("1. Привет\n2. Длинная фра", "length"),
+            chat_response("Привет"),
+            chat_response("Длинная фраза"),
+        ])
+        with fake_http(api):
+            result = run(provider().translate_batch(["Hello", "A long phrase"], "en", "ru"))
+
+        self.assertEqual(result, ["Привет", "Длинная фраза"])
+        self.assertEqual(len(api.chat_calls), 3)
+
+    def test_cut_off_single_line_is_none(self):
+        api = FakeApi(chat_responses=[
+            chat_response("1. Длинная фра", "length"),
+            chat_response("Длинная фра", "length"),
+        ])
+        with fake_http(api):
+            result = run(provider().translate_batch(["A long phrase"], "en", "ru"))
+
+        self.assertEqual(result, [None])
+
+    def test_single_translate_returns_original_on_refusal(self):
+        api = FakeApi(chat_responses=[
+            chat_response(REFUSAL, "blacklist"),
+            chat_response(REFUSAL, "blacklist"),
+        ])
+        with fake_http(api):
+            result = run(provider().translate("Kill them all", "en", "ru"))
+
+        self.assertEqual(result, "Kill them all")
 
     def test_empty_single_translation_raises(self):
         api = FakeApi(chat_contents=["не текст с номерами", "   "])
@@ -442,6 +530,34 @@ class GigaChatNetworkTest(unittest.TestCase):
             ok, reason = run(provider().test_network())
         self.assertFalse(ok)
         self.assertIn("список моделей", reason)
+
+    def test_probe_recovers_soon_after_model_list_failure(self):
+        # A failed fetch must not keep the probe red for the whole 10-minute
+        # TTL: once the retry delay passes and the network is back, it is green.
+        api = FakeApi()
+        network_up = False
+
+        def flaky_get(*args, **kwargs):
+            if not network_up:
+                raise gc.requests.exceptions.ConnectionError("no network")
+            return api.get(*args, **kwargs)
+
+        p = provider()
+        start = time.time()
+        with patch.object(gc.requests, "post", side_effect=api.post), \
+                patch.object(gc.requests, "get", side_effect=flaky_get):
+            ok_down, _ = run(p.test_network())
+            network_up = True
+            # Before the retry delay the failure is still cached.
+            ok_cached, _ = run(p.test_network())
+            with patch.object(gc.time, "time",
+                              return_value=start + gc._MODELS_RETRY_AFTER_FAILURE + 1):
+                ok_up, reason = run(p.test_network())
+
+        self.assertFalse(ok_down)
+        self.assertFalse(ok_cached)
+        self.assertTrue(ok_up, reason)
+        self.assertEqual(len(api.models_calls), 1)
 
     def test_network_probe_reports_bad_key(self):
         api = FakeApi(oauth_responses=[FakeResponse(401, {"message": "Unauthorized"})])

@@ -9,7 +9,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 
 import requests
 
@@ -57,6 +57,13 @@ _TOKEN_REFRESH_MARGIN = 60
 # and a stale name turns every translation into a 404.
 _MODELS_TTL = 600
 
+# After a failed fetch the list is retried sooner. Waiting the full TTL kept
+# the probe red for 10 minutes after the network came back (e.g. the Deck
+# woke up before Wi-Fi connected). Retrying on every call is not an option
+# either: while /models is down each translation would wait for its timeout.
+# 30 s is below the 60 s reachability TTL, so the next probe sees the fix.
+_MODELS_RETRY_AFTER_FAILURE = 30
+
 # One request carries several lines, which is faster than one request per
 # line (the free plan generates in a single thread). The limits keep the
 # prompt and the answer small enough that the model does not merge or drop
@@ -69,6 +76,22 @@ _MAX_CHARS_PER_REQUEST = 4000
 _MAX_ERROR_MESSAGE_LENGTH = 200
 
 _INVALID_RESPONSE_MESSAGE = "GigaChat вернул некорректный ответ"
+
+# finish_reason values whose text must not be shown as a translation.
+# "blacklist": GigaChat refused the topic and answered with a canned phrase
+# (HTTP 200, so only this field tells it apart from a real translation; game
+# text with violence or politics hits it). "length": the answer was cut off,
+# a truncated last line could still pass the numbering check.
+_UNUSABLE_FINISH_REASONS = {"blacklist", "length"}
+
+
+class _ChatAnswer(NamedTuple):
+    content: str
+    finish_reason: str
+
+    @property
+    def usable(self) -> bool:
+        return self.finish_reason not in _UNUSABLE_FINISH_REASONS
 
 # The plugin uses Google-style codes; GigaChat has one code for Chinese.
 _LANGUAGE_ALIASES = {
@@ -144,25 +167,42 @@ def _flatten(text: str) -> str:
     return " ".join(text.split())
 
 
-def _clean_translation(text: str) -> str:
-    """Strip surrounding quotes the model sometimes adds around a translation."""
-    value = text.strip()
-    pairs = (("«", "»"), ("“", "”"), ('"', '"'), ("'", "'"))
-    for opening, closing in pairs:
+_QUOTE_PAIRS = (("«", "»"), ("“", "”"), ('"', '"'), ("'", "'"))
+
+
+def _quote_pair(value: str) -> Optional[Tuple[str, str]]:
+    """Return the quote pair that wraps the whole value, or None."""
+    for opening, closing in _QUOTE_PAIRS:
         if len(value) >= 2 and value.startswith(opening) and value.endswith(closing):
-            value = value[1:-1].strip()
-            break
+            return opening, closing
+    return None
+
+
+def _clean_translation(text: str, source: str) -> str:
+    """
+    Strip surrounding quotes the model sometimes adds around a translation.
+
+    Only when the source itself is not quoted: a quoted game line ("Hello")
+    must keep its quotes in the translation. The quote style may differ
+    (the model turns "..." into «...»), so any pair around the source counts.
+    """
+    value = text.strip()
+    if _quote_pair(source.strip()) is not None:
+        return value
+    if _quote_pair(value) is not None:
+        value = value[1:-1].strip()
     return value
 
 
-def _parse_numbered(text: str, expected_count: int) -> Optional[List[str]]:
+def _parse_numbered(text: str, sources: List[str]) -> Optional[List[str]]:
     """
-    Parse the numbered answer "1. ...", "2. ..." into a list.
+    Parse the numbered answer "1. ...", "2. ..." into a list, one per source.
 
     None means the answer cannot be trusted (a missing number, a duplicate,
     an empty line), and the caller falls back to one request per line instead
     of returning a wrong translation for a line.
     """
+    expected_count = len(sources)
     found = {}
     current = None
     for raw_line in text.splitlines():
@@ -181,7 +221,10 @@ def _parse_numbered(text: str, expected_count: int) -> Optional[List[str]]:
 
     if set(found) != set(range(1, expected_count + 1)):
         return None
-    translations = [_clean_translation(found[i]) for i in range(1, expected_count + 1)]
+    translations = [
+        _clean_translation(found[number], source)
+        for number, source in enumerate(sources, start=1)
+    ]
     if any(not item for item in translations):
         return None
     return translations
@@ -237,7 +280,9 @@ class GigaChatTranslateProvider(TranslationProvider):
         # Shared cache: the reachability probe and translation must not fetch
         # the list more often than once per _MODELS_TTL.
         self._models: Optional[List[str]] = None
-        self._models_fetched_at = 0.0
+        # When to fetch the list next: after a success and after a failure
+        # the delays differ, so the deadline is stored, not the fetch time.
+        self._models_refresh_at = 0.0
         self._access_token = ""
         self._token_expires_at = 0.0
         # test_network and translate run in worker threads, so the token and
@@ -255,7 +300,7 @@ class GigaChatTranslateProvider(TranslationProvider):
             # cached for the old key must not be reused.
             with self._model_lock:
                 self._models = None
-                self._models_fetched_at = 0.0
+                self._models_refresh_at = 0.0
                 self._model = ""
 
     @property
@@ -292,9 +337,15 @@ class GigaChatTranslateProvider(TranslationProvider):
         if not text or not text.strip():
             return text
         results = await self.translate_batch([text], source_lang, target_lang)
-        return results[0] if results else text
+        # None (GigaChat refused the line) becomes the original here: this
+        # method promises a str, and nothing outside tests calls it.
+        if not results or results[0] is None:
+            return text
+        return results[0]
 
-    async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[str]:
+    async def translate_batch(
+        self, texts: List[str], source_lang: str, target_lang: str
+    ) -> List[Optional[str]]:
         """
         Translate multiple texts using GigaChat.
 
@@ -304,7 +355,10 @@ class GigaChatTranslateProvider(TranslationProvider):
             target_lang: Target language code
 
         Returns:
-            List of translated texts in the same order.
+            List of translated texts in the same order. An item is None when
+            GigaChat refused that line or cut its answer off: main.py shows
+            the original for None and does not put it into the translation
+            cache, so a refusal phrase never reaches the screen or the cache.
         """
         if not self._api_key:
             logger.error("GigaChat Authorization Key not configured")
@@ -333,7 +387,7 @@ class GigaChatTranslateProvider(TranslationProvider):
                 positions.append(len(originals) - 1)
                 to_translate.append(value)
 
-        translated = list(originals)
+        translated: List[Optional[str]] = list(originals)
         for batch in _make_batches(to_translate):
             batch_texts = [to_translate[i] for i in batch]
             logger.debug(f"Translating {len(batch_texts)} texts via GigaChat: {source} -> {target}")
@@ -347,28 +401,45 @@ class GigaChatTranslateProvider(TranslationProvider):
 
         return translated
 
-    def _translate_request(self, texts: List[str], source_lang: str, target_lang: str) -> List[str]:
-        """Translate a batch with one request, or line by line if numbering breaks."""
-        content = self._chat(self._batch_messages(texts, source_lang, target_lang))
-        parsed = _parse_numbered(content, len(texts))
-        if parsed is not None:
-            return parsed
-
-        # The model merged or dropped a line. Rather than guessing which
-        # translation belongs to which line, ask one line at a time: slower,
-        # but every line is matched exactly.
-        logger.warning(
-            f"GigaChat answer did not match {len(texts)} numbered lines, "
-            "falling back to one request per line"
-        )
+    def _translate_request(
+        self, texts: List[str], source_lang: str, target_lang: str
+    ) -> List[Optional[str]]:
+        """Translate a batch with one request, or line by line if it fails."""
+        answer = self._chat(self._batch_messages(texts, source_lang, target_lang))
+        if answer.usable:
+            parsed = _parse_numbered(answer.content, texts)
+            if parsed is not None:
+                return parsed
+            # The model merged or dropped a line. Rather than guessing which
+            # translation belongs to which line, ask one line at a time:
+            # slower, but every line is matched exactly.
+            logger.warning(
+                f"GigaChat answer did not match {len(texts)} numbered lines, "
+                "falling back to one request per line"
+            )
+        else:
+            # A refusal is usually caused by one line but covers the whole
+            # batch. Line by line, only that line is lost. A cut-off batch
+            # is retried the same way: shorter answers fit.
+            logger.warning(
+                f"GigaChat batch answer finished with '{answer.finish_reason}', "
+                "falling back to one request per line"
+            )
         return [
             self._translate_single(text, source_lang, target_lang)
             for text in texts
         ]
 
-    def _translate_single(self, text: str, source_lang: str, target_lang: str) -> str:
-        content = self._chat(self._single_messages(text, source_lang, target_lang))
-        result = _clean_translation(content)
+    def _translate_single(self, text: str, source_lang: str, target_lang: str) -> Optional[str]:
+        answer = self._chat(self._single_messages(text, source_lang, target_lang))
+        if not answer.usable:
+            # Not an error: the rest of the screen is translated, this line
+            # stays in the original (see translate_batch about None).
+            logger.warning(
+                f"GigaChat did not translate a line: finish_reason '{answer.finish_reason}'"
+            )
+            return None
+        result = _clean_translation(answer.content, text)
         if not result:
             logger.error("GigaChat returned an empty translation")
             raise NetworkError(_INVALID_RESPONSE_MESSAGE)
@@ -489,14 +560,15 @@ class GigaChatTranslateProvider(TranslationProvider):
         """
         with self._model_lock:
             now = time.time()
-            if not force and now < self._models_fetched_at + _MODELS_TTL:
+            if not force and now < self._models_refresh_at:
                 return self._models
 
             models = self._fetch_models(token)
-            self._models_fetched_at = now
             if models is None:
+                self._models_refresh_at = now + _MODELS_RETRY_AFTER_FAILURE
                 logger.warning("GigaChat model list unavailable, keeping previous list")
                 return self._models
+            self._models_refresh_at = now + _MODELS_TTL
             self._models = models
             return models
 
@@ -519,8 +591,8 @@ class GigaChatTranslateProvider(TranslationProvider):
             )
             return self._model
 
-    def _chat(self, messages: List[dict]) -> str:
-        """Send one chat request and return the assistant's text."""
+    def _chat(self, messages: List[dict]) -> _ChatAnswer:
+        """Send one chat request and return the assistant's text and finish_reason."""
         token = self._ensure_token()
         model = self._ensure_model(token)
         response = self._post_chat(token, self._payload(messages, model))
@@ -556,14 +628,24 @@ class GigaChatTranslateProvider(TranslationProvider):
             logger.info(f"GigaChat tokens: {usage.get('total_tokens', '?')}")
 
         try:
-            content = body["choices"][0]["message"]["content"]
+            choice = body["choices"][0]
+            content = choice["message"]["content"]
         except (KeyError, IndexError, TypeError):
             logger.error(f"Unexpected GigaChat response structure: {str(body)[:500]}")
             raise NetworkError(_INVALID_RESPONSE_MESSAGE)
+
+        finish_reason = choice.get("finish_reason")
+        if not isinstance(finish_reason, str):
+            finish_reason = ""
+        # Checked before the content: a refused or cut-off answer is handled
+        # by the caller even when its text is empty, it is not a broken reply.
+        if finish_reason in _UNUSABLE_FINISH_REASONS:
+            return _ChatAnswer(content if isinstance(content, str) else "", finish_reason)
+
         if not isinstance(content, str) or not content.strip():
             logger.error("GigaChat response has no translation text")
             raise NetworkError(_INVALID_RESPONSE_MESSAGE)
-        return content
+        return _ChatAnswer(content, finish_reason)
 
     def _post_chat(self, token: str, payload: dict):
         return self._post(
