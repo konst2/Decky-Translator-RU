@@ -433,6 +433,7 @@ class ProviderManager:
                 provider = RapidOCRProvider(
                     min_confidence=self._rapidocr_confidence,
                     models_dir=models_dir,
+                    downloader=self._rapidocr_downloader,
                 )
                 provider.set_box_thresh(self._rapidocr_box_thresh)
                 provider.set_unclip_ratio(self._rapidocr_unclip_ratio)
@@ -454,7 +455,10 @@ class ProviderManager:
                 self._ocr_providers[provider_type] = provider
             elif provider_type == ProviderType.CHROME_SCREEN_AI:
                 model_dir = self._screenai_downloader.get_resources_dir() if self._screenai_downloader else ""
-                provider = ChromeScreenAIProvider(model_dir=model_dir)
+                provider = ChromeScreenAIProvider(
+                    model_dir=model_dir,
+                    downloader=self._screenai_downloader,
+                )
                 if self._chromescreenai_persistent_mode:
                     provider.set_persistent_mode(True)
                 self._ocr_providers[provider_type] = provider
@@ -621,6 +625,7 @@ class ProviderManager:
                 self._status_rapidocr_provider = RapidOCRProvider(
                     min_confidence=self._rapidocr_confidence,
                     models_dir=models_dir,
+                    downloader=self._rapidocr_downloader,
                 )
             rapidocr = self._status_rapidocr_provider
         rapidocr_available = rapidocr.is_available()

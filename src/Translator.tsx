@@ -342,6 +342,11 @@ export class GameTranslatorLogic {
             .finally(() => { this.isCheckingReadiness = false; });
         if (!canStart) return;
 
+        // Пока шла предпроверка, всё могло измениться: плагин выключили или
+        // запустился перевод с кнопки на главной. Без этой перепроверки игра
+        // встала бы на паузу, а снимать её с паузы было бы некому.
+        if (!this.enabled || this.isProcessing || this.imageState.isVisible()) return;
+
         // Pause first so the game freezes before the screenshot
         if (this.pauseGameOnOverlay) {
             this.pauseCurrentGame().catch(err => logger.error('Translator', 'Pause failed', err));

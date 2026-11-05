@@ -45,6 +45,7 @@ class ChromeScreenAIProvider(OCRProvider):
         plugin_dir: str = "",
         model_dir: str = "",
         min_confidence: float = DEFAULT_MIN_CONFIDENCE,
+        downloader: Optional[screenai_downloader.ScreenAIDownloader] = None,
     ):
         self._plugin_dir = plugin_dir or os.environ.get(
             "DECKY_PLUGIN_DIR",
@@ -52,6 +53,10 @@ class ChromeScreenAIProvider(OCRProvider):
         )
         # model_dir holds the .so and TFLite files; owned by ScreenAIDownloader.
         self._model_dir = model_dir
+        # Ответ «модель скачана» — у загрузчика: он знает полный список файлов
+        # установки (REQUIRED_FILES). Своя проверка одного .so расходилась с ним:
+        # вкладка писала «Не установлено», а предпроверка пускала в работу.
+        self._downloader = downloader
         self._min_confidence = max(0.0, min(1.0, min_confidence))
         self._init_error: Optional[str] = None
         self._python_path: Optional[str] = None
@@ -141,10 +146,11 @@ class ChromeScreenAIProvider(OCRProvider):
         return LocalModel("Chrome Screen AI", screenai_downloader.APPROX_SIZE_MB)
 
     def is_model_downloaded(self) -> bool:
-        # Тот же признак, что раньше проверял _check_availability: без .so
-        # движок не запустить, остальные файлы ставятся вместе с ним.
-        so_path = os.path.join(self._model_dir or "", "libchromescreenai.so")
-        return bool(self._model_dir) and os.path.exists(so_path)
+        # Без загрузчика (каталог моделей не настроен) ставить модель некуда —
+        # значит, и считать её скачанной нельзя.
+        if self._downloader is None:
+            return False
+        return self._downloader.is_installed()
 
     def is_available(self, language: str = "auto") -> bool:
         if not self._check_availability():

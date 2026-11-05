@@ -100,6 +100,7 @@ class RapidOCRProvider(OCRProvider):
         plugin_dir: str = "",
         min_confidence: float = DEFAULT_MIN_CONFIDENCE,
         models_dir: str = "",
+        downloader: Optional[rapidocr_downloader.RapidOCRDownloader] = None,
     ):
         """
         Initialize the RapidOCR provider.
@@ -112,12 +113,17 @@ class RapidOCRProvider(OCRProvider):
                         downloader's target dir (settings dir based). Falls back
                         to the legacy bundled bin/rapidocr/models path so direct
                         instantiation in tests still works.
+            downloader: Загрузчик моделей. Ответ «модели скачаны» — у него:
+                        он знает полный список файлов (REQUIRED_FILES, вместе
+                        с моделями языков). Без него модели считаются
+                        не скачанными.
         """
         self._plugin_dir = plugin_dir or os.environ.get(
             "DECKY_PLUGIN_DIR",
             "/home/deck/homebrew/plugins/decky-translator-ru"
         )
         self._models_dir = models_dir or os.path.join(self._plugin_dir, LEGACY_MODELS_DIR)
+        self._downloader = downloader
         self._min_confidence = max(0.0, min(1.0, min_confidence))
         self._box_thresh = 0.5  # Detection box threshold
         self._unclip_ratio = 1.6  # Box expansion ratio
@@ -200,11 +206,13 @@ class RapidOCRProvider(OCRProvider):
         return LocalModel("RapidOCR", rapidocr_downloader.APPROX_SIZE_MB)
 
     def is_model_downloaded(self) -> bool:
-        # Тот же признак, что раньше проверял _check_availability: модели
-        # поиска и ориентации текста общие для всех языков.
-        det_model = os.path.join(self._models_dir, "ch_PP-OCRv5_mobile_det.onnx")
-        cls_model = os.path.join(self._models_dir, "ch_ppocr_mobile_v2.0_cls_infer.onnx")
-        return os.path.exists(det_model) and os.path.exists(cls_model)
+        # Раньше здесь проверялись только модели поиска и ориентации текста
+        # (det, cls), а загрузчик требует все файлы, включая модели языков.
+        # После обновления, которое добавит файлы в манифест, вкладка писала бы
+        # «Не установлено», а предпроверка пускала бы в работу.
+        if self._downloader is None:
+            return False
+        return self._downloader.is_installed()
 
     @property
     def provider_type(self) -> ProviderType:

@@ -19,7 +19,7 @@ import showQrModal from "../showQrModal";
 import { useSettings } from "../SettingsContext";
 import { GameTranslatorLogic } from "../Translator";
 import { logger } from "../Logger";
-import { fetchReadiness, Readiness } from "../Readiness";
+import { fetchReadiness, Readiness, readinessToastTitle, readinessToastBody } from "../Readiness";
 import { inputModeOptions } from "./TabControls";
 import { BottomSpacer } from "./BottomSpacer";
 import { VersionBadge } from "./VersionBadge";
@@ -113,6 +113,14 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
         // если она есть. Исключение — «плагин запускается»: там исправлять
         // нечего, это скажет тост из предпроверки перевода ниже.
         if (!fresh.ready && fresh.reason !== 'not_started') {
+            // Если дело не в модели (пара языков, «Автоопределение», метод не
+            // запускается), кнопки, к которой вести, нет — без объяснения
+            // переход выглядел бы как случайное переключение вкладки. Тот же
+            // тост, что у хоткея. При model_missing он лишний: кнопка уже
+            // подписана «Требуется загрузка», а фокус встанет на загрузку.
+            if (fresh.reason !== 'model_missing') {
+                logic.notify(readinessToastTitle(fresh), 5000, readinessToastBody(fresh));
+            }
             onNavigateToTab('translation', fresh.scroll_target ?? undefined);
             return;
         }
