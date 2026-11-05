@@ -106,7 +106,48 @@ class TextRegion:
         return d
 
 
-class OCRProvider(ABC):
+@dataclass(frozen=True)
+class LocalModel:
+    """
+    Скачиваемая модель локального метода — то, что нужно сказать о ней
+    пользователю: «Модель Chrome Screen AI не скачана (~120 МБ)».
+    """
+    # Название модели для сообщений. Это бренд, он не переводится.
+    label: str
+    # Примерный размер загрузки. Брать из модуля загрузчика, а не писать
+    # число заново: размер должен жить в одном месте.
+    approx_size_mb: int
+
+
+class ModelContract(ABC):
+    """
+    Часть контракта провайдера про модель — общая для распознавания
+    и перевода. По ней `readiness.py` отвечает «модель не скачана» для
+    любого метода, в том числе нового, о котором readiness ничего не знает.
+
+    Оба метода абстрактные намеренно: провайдер без них не создастся
+    (TypeError), и забыть о модели молча нельзя.
+    """
+
+    @abstractmethod
+    def local_model(self) -> Optional[LocalModel]:
+        """Модель метода, если он работает на устройстве; None — облачный метод."""
+        pass
+
+    @abstractmethod
+    def is_model_downloaded(self) -> bool:
+        """
+        Скачана ли модель. Облачному методу модель не нужна — он возвращает True.
+        Должна быть дешёвой (только наличие файлов): зовётся на каждый хоткей.
+        """
+        pass
+
+    def is_local(self) -> bool:
+        """Работает ли метод на устройстве. Выводится из local_model(), чтобы не разойтись с ним."""
+        return self.local_model() is not None
+
+
+class OCRProvider(ModelContract):
     """Abstract base class for OCR providers."""
 
     @property
@@ -159,7 +200,7 @@ class OCRProvider(ABC):
         pass
 
 
-class TranslationProvider(ABC):
+class TranslationProvider(ModelContract):
     """Abstract base class for translation providers."""
 
     @property

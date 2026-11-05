@@ -180,6 +180,13 @@ class GeminiVisionProvider(OCRProvider):
     def is_available(self, language: str = "auto") -> bool:
         return bool(self._api_key)
 
+    # Облачный метод: модель не скачивается (контракт — ModelContract в base.py).
+    def local_model(self) -> None:
+        return None
+
+    def is_model_downloaded(self) -> bool:
+        return True
+
     def get_supported_languages(self) -> List[str]:
         return list(LANG_NAMES.keys())
 

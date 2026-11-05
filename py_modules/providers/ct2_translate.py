@@ -12,6 +12,7 @@ import unicodedata
 from typing import List, Optional
 
 from .base import (
+    LocalModel,
     TranslationProvider,
     ProviderType,
     TranslationUnavailableError,
@@ -659,15 +660,23 @@ class CT2TranslateProvider(TranslationProvider):
     def provider_type(self) -> ProviderType:
         return self.PROVIDER_TYPE
 
+    def local_model(self) -> LocalModel:
+        # Размер — у загрузчика (у NLLB и Opus-MT свои), название — MODEL_LABEL
+        # класса: так один код обслуживает обе модели.
+        return LocalModel(self.MODEL_LABEL, self._model_manager.get_approx_size_mb())
+
+    def is_model_downloaded(self) -> bool:
+        return self._model_manager.is_model_downloaded()
+
     def is_available(self, source_lang: str = "auto", target_lang: str = "en") -> bool:
         if self.SINGLE_PAIR:
             return (
                 (source_lang, target_lang) == self.SINGLE_PAIR
-                and self._model_manager.is_model_downloaded()
+                and self.is_model_downloaded()
             )
         if source_lang == "auto":
             return False
-        return self._model_manager.is_model_downloaded()
+        return self.is_model_downloaded()
 
     def get_supported_languages(self) -> List[str]:
         if self.SINGLE_PAIR:

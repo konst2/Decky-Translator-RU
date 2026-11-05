@@ -12,7 +12,8 @@ import threading
 import time
 from typing import List, Optional
 
-from .base import OCRProvider, ProviderType, TextRegion
+from .base import OCRProvider, ProviderType, TextRegion, LocalModel
+from . import rapidocr_downloader
 from . import python_runtime
 
 logger = logging.getLogger(__name__)
@@ -165,9 +166,7 @@ class RapidOCRProvider(OCRProvider):
             logger.warning(self._init_error)
             return False
 
-        det_model = os.path.join(self._models_dir, "ch_PP-OCRv5_mobile_det.onnx")
-        cls_model = os.path.join(self._models_dir, "ch_ppocr_mobile_v2.0_cls_infer.onnx")
-        if not (os.path.exists(det_model) and os.path.exists(cls_model)):
+        if not self.is_model_downloaded():
             self._init_error = (
                 "Модели RapidOCR не скачаны. Откройте настройки плагина, "
                 "выберите RapidOCR и скачайте модели."
@@ -196,6 +195,16 @@ class RapidOCRProvider(OCRProvider):
     @property
     def name(self) -> str:
         return "RapidOCR (Local)"
+
+    def local_model(self) -> LocalModel:
+        return LocalModel("RapidOCR", rapidocr_downloader.APPROX_SIZE_MB)
+
+    def is_model_downloaded(self) -> bool:
+        # Тот же признак, что раньше проверял _check_availability: модели
+        # поиска и ориентации текста общие для всех языков.
+        det_model = os.path.join(self._models_dir, "ch_PP-OCRv5_mobile_det.onnx")
+        cls_model = os.path.join(self._models_dir, "ch_ppocr_mobile_v2.0_cls_infer.onnx")
+        return os.path.exists(det_model) and os.path.exists(cls_model)
 
     @property
     def provider_type(self) -> ProviderType:

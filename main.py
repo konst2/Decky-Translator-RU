@@ -92,6 +92,7 @@ import requests
 # Import provider system
 from providers import ProviderManager, TextRegion, NetworkError, ApiKeyError, RateLimitError, TranslationUnavailableError
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
+from providers import readiness
 
 _processing_lock = False
 
@@ -1640,6 +1641,37 @@ class Plugin:
             logger.error(f"Error getting provider status: {str(e)}")
             return {"error": str(e)}
 
+    async def check_readiness(self, input_language=None, target_language=None):
+        """
+        Предпроверка перед хоткеем и кнопкой «Перевести» (пункт 4 плана).
+
+        Фронтенд зовёт её до паузы игры и скриншота: если модель не скачана,
+        незачем снимать экран и гонять распознавание, чтобы потом показать
+        ошибку. Ответ — словарь из readiness.py: {"ready": True} или
+        {"ready": False, "stage", "reason", "message", "scroll_target"}.
+
+        Языки — как в translate_text: фронтенд передаёт свои, а без них
+        берутся настройки бэкенда. Так предпроверка смотрит ту же пару, что
+        потом уйдёт в перевод, даже если сохранение настройки не дошло.
+        """
+        try:
+            if not self._provider_manager:
+                return readiness.not_started()
+            input_lang = input_language or self._input_language
+            target_lang = target_language or self._target_language
+            # get_*_provider создают объект провайдера, если его ещё нет, — так же,
+            # как это сделает сам запуск (и get_provider_status каждые 10 с).
+            return readiness.check_all(
+                self._ocr_provider, self._provider_manager.get_ocr_provider(),
+                self._translation_provider, self._provider_manager.get_translation_provider(),
+                input_lang, target_lang)
+        except Exception as e:
+            # Сбой самой проверки не должен запрещать перевод: дальше сработают
+            # страховочные проверки в recognize_text / translate_text.
+            logger.error(f"Error checking readiness: {e}")
+            logger.error(traceback.format_exc())
+            return {"ready": True}
+
     async def check_web_reachability(self):
         try:
             if self._provider_manager:
@@ -2246,11 +2278,13 @@ class Plugin:
                 logger.error("Provider manager not initialized")
                 return []
 
-            if self._ocr_provider == "chromescreenai" and not self._provider_manager.is_chromescreenai_downloaded():
-                return {"error": "model_not_available", "message": "Движок Chrome Screen AI не скачан.\nСкачайте его в настройках плагина"}
-
-            if self._ocr_provider == "rapidocr" and not self._provider_manager.is_rapidocr_models_downloaded():
-                return {"error": "model_not_available", "message": "Модели RapidOCR не скачаны.\nСкачайте их в настройках плагина"}
+            # Страховка к предпроверке check_readiness: метод могли сменить
+            # между ней и запуском. Условия — общие, в readiness.py.
+            ocr_readiness = readiness.check_ocr(
+                self._ocr_provider, self._provider_manager.get_ocr_provider(),
+                self._input_language)
+            if not ocr_readiness["ready"]:
+                return {"error": "model_not_available", "message": ocr_readiness["message"]}
 
             # If using Gemini Vision, set the target language before OCR
             # so it can translate in the same API call
@@ -2335,20 +2369,15 @@ class Plugin:
                         )
                 return text_regions
 
-            # Check if CT2 provider has the needed models
-            if self._translation_provider in ("ct2", "opusmt"):
-                provider = self._provider_manager.get_translation_provider()
-                if provider and not provider.is_available(input_lang, target_lang):
-                    if self._translation_provider == "opusmt":
-                        if (input_lang, target_lang) != ("en", "ru"):
-                            return {
-                                "error": "model_not_available",
-                                "message": "Метод «Локально (лёгкая, en→ru)» переводит только английский → русский, а выбранная пара — другая. Выберите другой метод перевода или пару языков",
-                            }
-                        return {"error": "model_not_available", "message": "Лёгкая модель перевода не скачана. Скачайте её в настройках плагина"}
-                    if input_lang == "auto":
-                        return {"error": "model_not_available", "message": "Для офлайн-перевода нужен конкретный исходный язык. Выберите его в настройках плагина"}
-                    return {"error": "model_not_available", "message": "Офлайн-модель не найдена. Скачайте её в настройках плагина"}
+            # Страховка к предпроверке check_readiness: локальным методам
+            # нужна скачанная модель и подходящая пара языков. Условия —
+            # общие, в readiness.py.
+            translation_readiness = readiness.check_translation(
+                self._ocr_provider, self._translation_provider,
+                self._provider_manager.get_translation_provider(),
+                input_lang, target_lang)
+            if not translation_readiness["ready"]:
+                return {"error": "model_not_available", "message": translation_readiness["message"]}
 
             # Only translate regions that don't already have translatedText
             texts_to_translate = [

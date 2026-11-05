@@ -201,6 +201,13 @@ class OCRSpaceProvider(OCRProvider):
         """Check if OCR is available for the given language."""
         return language in self.SUPPORTED_LANGUAGES
 
+    # Облачный метод: модель не скачивается (контракт — ModelContract в base.py).
+    def local_model(self) -> None:
+        return None
+
+    def is_model_downloaded(self) -> bool:
+        return True
+
     def get_supported_languages(self) -> List[str]:
         """Return list of supported language codes."""
         return self.SUPPORTED_LANGUAGES.copy()

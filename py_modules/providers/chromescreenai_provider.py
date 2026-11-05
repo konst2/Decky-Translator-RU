@@ -10,7 +10,8 @@ import threading
 import time
 from typing import List, Optional
 
-from .base import OCRProvider, ProviderType, TextRegion
+from .base import OCRProvider, ProviderType, TextRegion, LocalModel
+from . import screenai_downloader
 from . import python_runtime
 
 logger = logging.getLogger(__name__)
@@ -120,8 +121,7 @@ class ChromeScreenAIProvider(OCRProvider):
             logger.warning(self._init_error)
             return False
 
-        so_path = os.path.join(self._model_dir or "", "libchromescreenai.so")
-        if not self._model_dir or not os.path.exists(so_path):
+        if not self.is_model_downloaded():
             self._init_error = "Движок Chrome Screen AI не скачан"
             return False
 
@@ -136,6 +136,15 @@ class ChromeScreenAIProvider(OCRProvider):
             return False
 
         return True
+
+    def local_model(self) -> LocalModel:
+        return LocalModel("Chrome Screen AI", screenai_downloader.APPROX_SIZE_MB)
+
+    def is_model_downloaded(self) -> bool:
+        # Тот же признак, что раньше проверял _check_availability: без .so
+        # движок не запустить, остальные файлы ставятся вместе с ним.
+        so_path = os.path.join(self._model_dir or "", "libchromescreenai.so")
+        return bool(self._model_dir) and os.path.exists(so_path)
 
     def is_available(self, language: str = "auto") -> bool:
         if not self._check_availability():
