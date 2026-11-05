@@ -50,6 +50,7 @@ TRANSLATION_NOT_AVAILABLE_MESSAGE = (
     "Выбранный метод перевода не настроен или не поддерживает эту пару языков. "
     "Проверьте вкладку «Перевод»"
 )
+NOT_AVAILABLE_DETAIL = "Проверьте вкладку «Перевод»"
 
 
 def format_approx_size(size_mb: int) -> str:
@@ -61,10 +62,15 @@ def format_approx_size(size_mb: int) -> str:
     return f"~{size_mb} МБ"
 
 
-def _not_ready(stage: str, reason: str, message: str,
+def _not_ready(stage: str, reason: str, message: str, detail: str,
                scroll_target: Optional[str] = None) -> dict:
     """
     stage — какой этап не готов: "ocr" или "translation".
+    message — полный текст: его показывает оверлей, когда срабатывает
+    страховка в recognize_text / translate_text.
+    detail — короткое тело тоста. Тост Steam показывает тело одной строкой,
+    а заголовок (по reason, `TOAST_TITLES` в Readiness.ts) уже говорит, что
+    случилось, — поэтому здесь только то, чего в заголовке нет, без повтора.
     scroll_target — id кнопки загрузки на вкладке перевода, к которой
     фронтенд прокручивает (см. `scrollTarget` в TabTranslation.tsx).
     None — кнопки нет, причина не в модели.
@@ -74,6 +80,7 @@ def _not_ready(stage: str, reason: str, message: str,
         "stage": stage,
         "reason": reason,
         "message": message,
+        "detail": detail,
         "scroll_target": scroll_target,
     }
 
@@ -89,6 +96,7 @@ def _missing_model(stage: str, method: str, provider: ModelContract) -> Optional
         reason=REASON_MODEL_MISSING,
         message=f"Модель {model.label} не скачана ({size}).\n"
                 "Скачайте её в настройках плагина",
+        detail=f"{model.label} ({size})",
         # Соглашение: кнопка загрузки метода на вкладке перевода — «<id>-action»
         # (chromescreenai-action, ct2-action …). Если у нового метода кнопки
         # с таким id нет, фронтенд просто откроет вкладку без прокрутки.
@@ -102,6 +110,7 @@ def not_started() -> dict:
         stage="ocr",
         reason=REASON_NOT_STARTED,
         message="Плагин ещё запускается. Попробуйте через несколько секунд",
+        detail="Попробуйте через несколько секунд",
     )
 
 
@@ -111,14 +120,14 @@ def check_ocr(method: str, provider: Optional[OCRProvider], input_lang: str) -> 
     provider — его объект (`ProviderManager.get_ocr_provider()`).
     """
     if provider is None:
-        return _not_ready("ocr", REASON_NOT_AVAILABLE, OCR_NOT_AVAILABLE_MESSAGE)
+        return _not_ready("ocr", REASON_NOT_AVAILABLE, OCR_NOT_AVAILABLE_MESSAGE, NOT_AVAILABLE_DETAIL)
 
     missing = _missing_model("ocr", method, provider)
     if missing:
         return missing
 
     if not provider.is_available(input_lang):
-        return _not_ready("ocr", REASON_NOT_AVAILABLE, OCR_NOT_AVAILABLE_MESSAGE)
+        return _not_ready("ocr", REASON_NOT_AVAILABLE, OCR_NOT_AVAILABLE_MESSAGE, NOT_AVAILABLE_DETAIL)
 
     return READY
 
@@ -136,7 +145,8 @@ def check_translation(ocr_method: str, method: str,
         return READY
 
     if provider is None:
-        return _not_ready("translation", REASON_NOT_AVAILABLE, TRANSLATION_NOT_AVAILABLE_MESSAGE)
+        return _not_ready("translation", REASON_NOT_AVAILABLE, TRANSLATION_NOT_AVAILABLE_MESSAGE,
+                          NOT_AVAILABLE_DETAIL)
 
     # Шаг 1: особые случаи про языки — тексты точнее общего шага 3.
     if method == "opusmt" and (input_lang, target_lang) != ("en", "ru"):
@@ -146,6 +156,7 @@ def check_translation(ocr_method: str, method: str,
             message="Метод «Локально (лёгкая, en→ru)» переводит только "
                     "английский → русский, а выбранная пара — другая. "
                     "Выберите другой метод перевода или пару языков",
+            detail="Только английский → русский",
         )
     if method == "ct2" and input_lang == "auto":
         return _not_ready(
@@ -153,6 +164,7 @@ def check_translation(ocr_method: str, method: str,
             reason=REASON_AUTO_UNSUPPORTED,
             message="Для офлайн-перевода нужен конкретный исходный язык. "
                     "Выберите его в настройках плагина",
+            detail="Выберите его в настройках плагина",
         )
 
     missing = _missing_model("translation", method, provider)
@@ -160,7 +172,8 @@ def check_translation(ocr_method: str, method: str,
         return missing
 
     if not provider.is_available(input_lang, target_lang):
-        return _not_ready("translation", REASON_NOT_AVAILABLE, TRANSLATION_NOT_AVAILABLE_MESSAGE)
+        return _not_ready("translation", REASON_NOT_AVAILABLE, TRANSLATION_NOT_AVAILABLE_MESSAGE,
+                          NOT_AVAILABLE_DETAIL)
 
     return READY
 

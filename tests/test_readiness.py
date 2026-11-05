@@ -25,6 +25,9 @@ class OcrReadinessTest(unittest.TestCase):
         self.assertEqual(result["reason"], readiness.REASON_MODEL_MISSING)
         self.assertEqual(result["scroll_target"], "chromescreenai-action")
         self.assertIn("Модель Chrome Screen AI не скачана (~120 МБ)", result["message"])
+        # Тело тоста — без повтора заголовка «Модель не скачана»: Steam
+        # показывает его одной строкой, длинное обрезалось.
+        self.assertEqual(result["detail"], "Chrome Screen AI (~120 МБ)")
 
     def test_ready_when_model_downloaded(self):
         chrome = local("Chrome Screen AI", 120)
@@ -104,6 +107,7 @@ class TranslationReadinessTest(unittest.TestCase):
         result = readiness.check_translation("ocrspace", "opusmt", opusmt, "ja", "ru")
 
         self.assertEqual(result["reason"], readiness.REASON_PAIR_UNSUPPORTED)
+        self.assertEqual(result["detail"], "Только английский → русский")
 
     def test_opusmt_missing_model(self):
         opusmt = local("Opus-MT en→ru", 82, downloaded=False)
@@ -129,6 +133,25 @@ class TranslationReadinessTest(unittest.TestCase):
         result = readiness.check_all("gemini_vision", cloud(), "ct2", nllb, "auto", "ru")
 
         self.assertTrue(result["ready"])
+
+
+class ToastDetailTest(unittest.TestCase):
+
+    def test_every_not_ready_result_has_short_detail(self):
+        # У каждого «не готово» есть короткое тело тоста. Граница в 40 знаков —
+        # примерно столько тост Steam показывает без обрезки (замечено на Деке).
+        results = [
+            readiness.check_ocr("superocr", local("SuperOCR", 300, downloaded=False), "en"),
+            readiness.check_ocr("ocrspace", None, "en"),
+            readiness.check_translation("ocrspace", "mymemory", None, "en", "ru"),
+            readiness.check_translation("ocrspace", "ct2", local("NLLB", 1410), "auto", "ru"),
+            readiness.check_translation("ocrspace", "opusmt", local("Opus-MT en→ru", 82), "ja", "ru"),
+            readiness.not_started(),
+        ]
+        for result in results:
+            with self.subTest(reason=result["reason"]):
+                self.assertTrue(result["detail"])
+                self.assertLessEqual(len(result["detail"]), 40)
 
 
 class HelpersTest(unittest.TestCase):

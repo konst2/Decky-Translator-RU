@@ -23,6 +23,8 @@ export interface Readiness {
     reason?: ReadinessReason;
     // Полный текст для пользователя; может содержать перенос строки.
     message?: string;
+    // Короткое тело тоста — без повтора заголовка (см. readinessToastBody).
+    detail?: string;
     // id кнопки загрузки на вкладке перевода («chromescreenai-action» …);
     // null — причина не в модели, кнопки нет.
     scroll_target?: string | null;
@@ -63,7 +65,11 @@ export function readinessToastTitle(readiness: Readiness): string {
     return 'Перевод сейчас недоступен';
 }
 
-// Перенос строки в сообщении — для оверлея; в теле тоста он не нужен.
+// Тост Steam показывает тело одной строкой: полное сообщение обрезалось,
+// да и повторяло заголовок («Модель не скачана» — «Модель X не скачана…»).
+// Поэтому в тело идёт короткий detail. message — запасной вариант для
+// бэкенда старее фронтенда; перенос строки в нём — для оверлея.
 export function readinessToastBody(readiness: Readiness): string {
+    if (readiness.detail) return readiness.detail;
     return (readiness.message ?? '').replace(/\n/g, ' ');
 }

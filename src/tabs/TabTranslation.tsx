@@ -466,6 +466,11 @@ function formatApproxSize(mb: number): string {
     return `${Math.round(mb)} МБ`;
 }
 
+// «Чего-то не хватает»: модель не установлена (строка статуса) и значок
+// в списке методов. Один цвет, чтобы значок читался как та же строка статуса.
+// Тот же красный на вкладке и у «Необходимо добавить API-ключ».
+const MISSING_COLOR = "#ff6b6b";
+
 function useModelDownload(opts: {
     getStatusCall: string;
     downloadCall: string;
@@ -532,7 +537,7 @@ function useModelDownload(opts: {
     const isDownloading = status.downloading;
     const isDownloaded = status.downloaded;
     const progressPct = Math.round((status.progress || 0) * 100);
-    const statusColor = isDownloading ? "#ffa726" : isDownloaded ? "#4caf50" : "#ff6b6b";
+    const statusColor = isDownloading ? "#ffa726" : isDownloaded ? "#4caf50" : MISSING_COLOR;
     const installedSize = status.size ? ` (${formatBytes(status.size)})` : '';
     const approxSize = status.approx_size_mb ? ` (${formatApproxSize(status.approx_size_mb)})` : '';
     const statusText = isDownloading
@@ -704,6 +709,9 @@ const HINT_COLOR = "#9aa0a6";
 // outside the wrapper, so the notes stay visible in it. The provider
 // description below the dropdown repeats any warning.
 const OPTION_NOTE_CLASS = "dt-option-note";
+// Значок «нужна загрузка / нужен ключ» скрыт на закрытой кнопке так же:
+// там он лишний — описание метода под списком говорит то же словами.
+const OPTION_NEEDS_CLASS = "dt-option-needs";
 
 /**
  * Чего методу не хватает, чтобы заработать: скачать модель или ввести ключ.
@@ -717,8 +725,10 @@ type ProviderNeeds = "download" | "key";
 
 const ProviderNeedsIcon: VFC<{ needs: ProviderNeeds }> = ({ needs }) => {
     const Icon = needs === "download" ? HiInboxArrowDown : HiKey;
-    // Серый, как замок у недоступного пункта: пометка, а не тревога.
-    return <Icon style={{ fontSize: "12px", color: "#888", alignSelf: "center" }} />;
+    // Цвет «не хватает» — как у «Не установлено» под списком. Серый (как у
+    // замка) терялся: значок стоит только у метода, которому чего-то не хватает,
+    // и должен быть заметен. Белый не годится — у пункта в фокусе светлый фон.
+    return <Icon className={OPTION_NEEDS_CLASS} style={{ fontSize: "12px", color: MISSING_COLOR, alignSelf: "center" }} />;
 };
 
 // Стрелка — когда модель нужно скачать: не скачана и не качается сейчас
@@ -798,6 +808,23 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
     const nllb = useNllbModelStatus();
     const opusmt = useOpusMtModelStatus();
     const rapidocr = useRapidOCRStatus();
+
+    // Dropdown из Steam запоминает пункты и не перерисовывает их, пока не
+    // сменится выбранный вариант: после удаления модели значок «нужна
+    // загрузка» не появлялся, пока не выберешь другой метод. Ключ из всех
+    // значков списка пересоздаёт Dropdown, когда какой-то из них меняется.
+    const ocrListKey = [
+        downloadNeeds(rapidocr),
+        downloadNeeds(csai),
+        keyNeeds(!!settings.googleApiKey),
+        keyNeeds(!!settings.geminiApiKey),
+    ].join("|");
+    const translationListKey = [
+        keyNeeds(!!settings.yandexApiKey && !!settings.yandexFolderId),
+        downloadNeeds(nllb),
+        downloadNeeds(opusmt),
+        keyNeeds(!!settings.googleApiKey),
+    ].join("|");
     const [cacheEntries, setCacheEntries] = useState<number | null>(null);
 
     const refreshCacheStats = useCallback(async () => {
@@ -910,9 +937,10 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                     >
                         <Focusable style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                             <div className="dt-ocr-dropdown-wrapper" style={{ flex: 1 }}>
-                                {/* See OPTION_NOTE_CLASS: notes are hidden on the closed button only. */}
-                                <style>{`.dt-ocr-dropdown-wrapper .${OPTION_NOTE_CLASS} { display: none !important; }`}</style>
+                                {/* See OPTION_NOTE_CLASS: notes and marks are hidden on the closed button only. */}
+                                <style>{`.dt-ocr-dropdown-wrapper .${OPTION_NOTE_CLASS}, .dt-ocr-dropdown-wrapper .${OPTION_NEEDS_CLASS} { display: none !important; }`}</style>
                             <Dropdown
+                                key={ocrListKey}
                                 rgOptions={[
                                     { label: <ProviderOptionLabel name="Локально" variant="RapidOCR" needs={downloadNeeds(rapidocr)} note="лучшая для EN игр" />, data: "rapidocr" },
                                     { label: <ProviderOptionLabel name="Локально" variant="Chrome" needs={downloadNeeds(csai)} note="★ рекомендуемый" />, data: "chromescreenai" },
@@ -1242,9 +1270,10 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         ) : (
                         <Focusable style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                             <div className="dt-trans-dropdown-wrapper" style={{ flex: 1 }}>
-                                {/* See OPTION_NOTE_CLASS: notes are hidden on the closed button only. */}
-                                <style>{`.dt-trans-dropdown-wrapper .${OPTION_NOTE_CLASS} { display: none !important; }`}</style>
+                                {/* See OPTION_NOTE_CLASS: notes and marks are hidden on the closed button only. */}
+                                <style>{`.dt-trans-dropdown-wrapper .${OPTION_NOTE_CLASS}, .dt-trans-dropdown-wrapper .${OPTION_NEEDS_CLASS} { display: none !important; }`}</style>
                                 <Dropdown
+                                    key={translationListKey}
                                     rgOptions={[
                                         // What works from Russia goes first: users tend to pick
                                         // from the top of the list. Only the order changed; the
