@@ -19,6 +19,7 @@ import showQrModal from "../showQrModal";
 import { useSettings } from "../SettingsContext";
 import { GameTranslatorLogic } from "../Translator";
 import { logger } from "../Logger";
+import { fetchReadiness, Readiness } from "../Readiness";
 import { inputModeOptions } from "./TabControls";
 import { BottomSpacer } from "./BottomSpacer";
 import { VersionBadge } from "./VersionBadge";
@@ -83,6 +84,8 @@ interface TabMainProps {
     logic: GameTranslatorLogic;
     overlayVisible: boolean;
     providerStatus: any;
+    // Опрашивается в index.tsx; null — ещё не пришла.
+    readiness: Readiness | null;
     webReachability: {
         ocr?: ReachResult;
         translation?: ReachResult;
@@ -90,34 +93,27 @@ interface TabMainProps {
     onNavigateToTab: (tabId: string, scrollTargetId?: string) => void;
 }
 
-export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStatus, webReachability, onNavigateToTab }) => {
+export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStatus, readiness, webReachability, onNavigateToTab }) => {
     const { settings, updateSetting } = useSettings();
 
-    const ocrNeedsDownload =
-        !!providerStatus
-        && ((settings.ocrProvider === 'chromescreenai' && !providerStatus.chromescreenai_downloaded)
-            || (settings.ocrProvider === 'rapidocr' && !providerStatus.rapidocr_downloaded));
+    // Что не готово — решает бэкенд (check_readiness): свои условия здесь
+    // уже расходились с ним (B28).
+    const needsDownload = readiness?.reason === 'model_missing';
 
-    const translationNeedsDownload =
-        settings.ocrProvider !== 'gemini_vision'
-        && ((settings.translationProvider === 'ct2'
-                && !!providerStatus && !providerStatus.nllb_downloaded)
-            || (settings.translationProvider === 'opusmt'
-                && !!providerStatus && !providerStatus.opusmt_downloaded));
-
-    const handleButtonClick = () => {
+    const handleButtonClick = async () => {
         if (overlayVisible) {
             logic.dismiss();
             Router.CloseSideMenus();
             return;
         }
-        if (ocrNeedsDownload) {
-            const target = settings.ocrProvider === 'rapidocr' ? 'rapidocr-action' : 'chromescreenai-action';
-            onNavigateToTab('translation', target);
-            return;
-        }
-        if (translationNeedsDownload) {
-            onNavigateToTab('translation', 'ct2-action');
+        // Свежий запрос, а не опрошенный: опрос бывает старше на 10 с.
+        const fresh = await fetchReadiness(settings.inputLanguage, settings.targetLanguage);
+        // Причину «не готово» можно исправить на вкладке перевода (скачать
+        // модель, сменить метод или языки) — ведём туда, к кнопке загрузки,
+        // если она есть. Исключение — «плагин запускается»: там исправлять
+        // нечего, это скажет тост из предпроверки перевода ниже.
+        if (!fresh.ready && fresh.reason !== 'not_started') {
+            onNavigateToTab('translation', fresh.scroll_target ?? undefined);
             return;
         }
         // Close menu first, then wait for UI to fully close before taking screenshot
@@ -153,7 +149,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
         if (overlayVisible) {
             return <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}><BsXLg /> Закрыть оверлей</span>;
         }
-        if (ocrNeedsDownload || translationNeedsDownload) {
+        if (needsDownload) {
             return <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}><HiInboxArrowDown size={20} /> Требуется загрузка</span>;
         }
         return <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}><BsTranslate /> Перевести</span>;

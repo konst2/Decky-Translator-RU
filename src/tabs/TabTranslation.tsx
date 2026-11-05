@@ -750,6 +750,9 @@ const ProviderWarning: VFC<{ children: ReactNode }> = ({ children }) => (
     <div style={{ color: WARNING_COLOR, marginTop: "6px" }}>{children}</div>
 );
 
+// Кнопки загрузки моделей, к которым умеет прокручивать вкладка.
+type ModelActionTarget = 'chromescreenai-action' | 'rapidocr-action' | 'ct2-action' | 'opusmt-action';
+
 interface TabTranslationProps {
     scrollTarget?: string | null;
     onScrolled?: () => void;
@@ -782,10 +785,21 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
 
     useEffect(() => {
         if (!scrollTarget) return;
-        const ref = scrollTarget === 'chromescreenai-action' ? chromescreenaiActionRef
-                  : scrollTarget === 'rapidocr-action' ? rapidocrActionRef
-                  : scrollTarget === 'ct2-action' ? ct2ActionRef
-                  : null;
+        // Цель приходит с бэкенда (readiness.py) как «<id метода>-action».
+        // Record по ModelActionTarget: забытая кнопка — ошибка TypeScript, а не
+        // молчаливое «не прокрутилось» (так было с Opus-MT, B28). Неизвестная
+        // цель (метод без кнопки здесь) — просто открытая вкладка без прокрутки.
+        const actionRefs: Record<ModelActionTarget, RefObject<HTMLDivElement>> = {
+            'chromescreenai-action': chromescreenaiActionRef,
+            'rapidocr-action': rapidocrActionRef,
+            'ct2-action': ct2ActionRef,
+            'opusmt-action': opusmtActionRef,
+        };
+        // hasOwnProperty, а не `in`: `in` пропустил бы и унаследованные
+        // ключи объекта («toString»).
+        const ref = Object.prototype.hasOwnProperty.call(actionRefs, scrollTarget)
+            ? actionRefs[scrollTarget as ModelActionTarget]
+            : null;
 
         // Wait for Steam's tab transition + focus router to settle before scrolling, otherwise our scroll gets overridden.
         const timeoutId = setTimeout(() => {

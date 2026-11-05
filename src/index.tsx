@@ -24,6 +24,7 @@ import {
 import { BsTranslate } from "react-icons/bs";
 import { ImageState, ImageOverlay } from "./Overlay";
 import { GameTranslatorLogic } from "./Translator";
+import { fetchReadiness, Readiness } from "./Readiness";
 import { cleanupAllFontDOM } from "./fonts";
 import { ProgressInfo } from "./Input";
 import { ActivationIndicator } from "./ActivationIndicator";
@@ -58,6 +59,10 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
     const [overlayVisible, setOverlayVisible] = useState<boolean>(logic.isOverlayVisible());
     const [inputDiagnostics, setInputDiagnostics] = useState<any>(null);
     const [providerStatus, setProviderStatus] = useState<any>(null);
+    // Для надписи на кнопке главной. Обновляется вместе со статусом провайдеров,
+    // в том числе при каждом переходе на главную — значит, после смены метода
+    // на вкладке перевода надпись уже свежая.
+    const [readiness, setReadiness] = useState<Readiness | null>(null);
     const [currentTabRoute, setCurrentTabRoute] = useState<string>("main");
     const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(null);
     const [webReachability, setWebReachability] = useState<{
@@ -122,6 +127,9 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
         } catch (error) {
             logger.error('GameTranslator', 'Failed to fetch provider status', error);
         }
+        // Без языков: для надписи хватает настроек бэкенда. Нажатие кнопки
+        // всё равно спрашивает заново, уже с языками фронтенда.
+        setReadiness(await fetchReadiness());
         await probeReachability();
     }, [probeReachability]);
 
@@ -202,7 +210,7 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
                         {
                             // @ts-ignore
                             title: <IconTranslate />,
-                            content: <TabMain logic={logic} overlayVisible={overlayVisible} providerStatus={providerStatus} webReachability={webReachability} onNavigateToTab={handleNavigateToTab} />,
+                            content: <TabMain logic={logic} overlayVisible={overlayVisible} providerStatus={providerStatus} readiness={readiness} webReachability={webReachability} onNavigateToTab={handleNavigateToTab} />,
                             id: "main",
                         },
                         {

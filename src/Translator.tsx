@@ -9,6 +9,7 @@ import { ImageState } from "./Overlay";
 import { OCR_DATA_FLOW, TRANSLATION_DATA_FLOW, mostExposed } from "./tabs/DataFlowBadge";
 import type { DataFlow } from "./tabs/DataFlowBadge";
 import { logger } from "./Logger";
+import { fetchReadiness, readinessToastTitle, readinessToastBody } from "./Readiness";
 
 // Screenshot response interface
 export interface ScreenshotResponse {
@@ -36,6 +37,8 @@ const waitForIndicatorToLeaveScreen = async (): Promise<void> => {
 // Main app logic
 export class GameTranslatorLogic {
     private isProcessing = false;
+    // Идёт предпроверка хоткея (check_readiness) — см. translateFromHotkey.
+    private isCheckingReadiness = false;
     public imageState: ImageState;
     private textRecognizer: TextRecognizer;
     private textTranslator: TextTranslator;
@@ -86,16 +89,7 @@ export class GameTranslatorLogic {
                     this.imageState.toggleTranslationsVisibility();
                 }
             } else {
-                // Translate action
-                if (this.imageState.isVisible()) return;
-                if (this.isProcessing) return;
-                if (!this.canStartTranslation()) return;
-
-                // Pause first so the game freezes before the screenshot
-                if (this.pauseGameOnOverlay) {
-                    this.pauseCurrentGame().catch(err => logger.error('Translator', 'Pause failed', err));
-                }
-                this.takeScreenshotAndTranslate().catch(err => logger.error('Translator', 'Screenshot failed', err));
+                this.translateFromHotkey().catch(err => logger.error('Translator', 'Hotkey translation failed', err));
             }
         });
 
@@ -333,14 +327,48 @@ export class GameTranslatorLogic {
         }
     }
 
+    // Хоткей «перевести». Предпроверка идёт до паузы и скриншота: если модель
+    // не скачана, незачем замораживать игру и снимать экран (пункт 4 плана).
+    private translateFromHotkey = async (): Promise<void> => {
+        if (this.imageState.isVisible()) return;
+        if (this.isProcessing) return;
+        // Предпроверка ходит в бэкенд, это доли секунды. Повторное нажатие
+        // за это время не должно запустить вторую паузу и второй снимок:
+        // isProcessing ставится только в captureAndTranslate, позже.
+        if (this.isCheckingReadiness) return;
+
+        this.isCheckingReadiness = true;
+        const canStart = await this.canStartTranslation()
+            .finally(() => { this.isCheckingReadiness = false; });
+        if (!canStart) return;
+
+        // Pause first so the game freezes before the screenshot
+        if (this.pauseGameOnOverlay) {
+            this.pauseCurrentGame().catch(err => logger.error('Translator', 'Pause failed', err));
+        }
+        await this.captureAndTranslate();
+    }
+
+    // Кнопка «Перевести» на главной: та же предпроверка, без паузы
+    // (как было и раньше).
     takeScreenshotAndTranslate = async (): Promise<void> => {
+        if (this.isProcessing || !this.enabled) {
+            logger.debug('Translator', 'Already processing a screenshot or plugin disabled, skipping');
+            return;
+        }
+        if (!(await this.canStartTranslation())) return;
+        await this.captureAndTranslate();
+    }
+
+    // Скриншот, распознавание и перевод. Предпроверки — у вызывающих
+    // (translateFromHotkey / takeScreenshotAndTranslate): у хоткея между ними
+    // и снимком стоит пауза игры.
+    private captureAndTranslate = async (): Promise<void> => {
         // If already processing or disabled, return
         if (this.isProcessing || !this.enabled) {
             logger.debug('Translator', 'Already processing a screenshot or plugin disabled, skipping');
             return;
         }
-
-        if (!this.canStartTranslation()) return;
 
         const runId = ++this.currentRunId;
         const isCancelled = (): boolean => runId !== this.currentRunId;
@@ -625,7 +653,9 @@ export class GameTranslatorLogic {
 
     // Runs all pre-checks that would prevent a translation from starting.
     // Returns false and shows a toast if any check fails.
-    private canStartTranslation(): boolean {
+    // Сначала дешёвые проверки без бэкенда (языки, ключи), потом готовность
+    // моделей — её знает только бэкенд.
+    private async canStartTranslation(): Promise<boolean> {
         const inputLang = this.getInputLanguage();
         const targetLang = this.getTargetLanguage();
         if (!inputLang && targetLang) {
@@ -654,6 +684,15 @@ export class GameTranslatorLogic {
         if (apiKeyCheck.missing) {
             logger.warn('Translator', `Cannot start translation: ${apiKeyCheck.message}`);
             this.notify(apiKeyCheck.message, 3000, "Настройте API-ключ на вкладке настроек перевода.");
+            return false;
+        }
+
+        const readiness = await fetchReadiness(inputLang, targetLang);
+        if (!readiness.ready) {
+            logger.warn('Translator', `Cannot start translation: ${readiness.reason} - ${readiness.message}`);
+            // 5 с, а не 3, как у остальных: в тексте размер модели и что делать,
+            // а в игре человек читает тост краем глаза.
+            this.notify(readinessToastTitle(readiness), 5000, readinessToastBody(readiness));
             return false;
         }
 
