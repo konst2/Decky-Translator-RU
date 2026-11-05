@@ -706,10 +706,38 @@ const HINT_COLOR = "#9aa0a6";
 const OPTION_NOTE_CLASS = "dt-option-note";
 
 /**
+ * Чего методу не хватает, чтобы заработать: скачать модель или ввести ключ.
+ * Значок в списке методов — тот же, что на кнопке, которую человек нажмёт
+ * следующей (кнопка загрузки модели, кнопка ключа рядом со списком), поэтому
+ * понятен без подписи. Полный текст — в описании метода под списком.
+ * Место справа в пункте списка (note) занято рекомендациями и «может не
+ * работать из РФ», поэтому значок, а не текст.
+ */
+type ProviderNeeds = "download" | "key";
+
+const ProviderNeedsIcon: VFC<{ needs: ProviderNeeds }> = ({ needs }) => {
+    const Icon = needs === "download" ? HiInboxArrowDown : HiKey;
+    // Серый, как замок у недоступного пункта: пометка, а не тревога.
+    return <Icon style={{ fontSize: "12px", color: "#888", alignSelf: "center" }} />;
+};
+
+// Стрелка — когда модель нужно скачать: не скачана и не качается сейчас
+// (то же условие, при котором пульсирует кнопка загрузки, ModelActionButton).
+function downloadNeeds(state: ModelDownloadState): ProviderNeeds | undefined {
+    const needsDownload = !state.isDownloaded && !state.isDownloading;
+    return needsDownload ? "download" : undefined;
+}
+
+function keyNeeds(hasKey: boolean): ProviderNeeds | undefined {
+    return hasKey ? undefined : "key";
+}
+
+/**
  * Label of an item in the OCR and translation provider lists. One layout for
  * both lists so the labels look the same everywhere:
- *   [lock] Name [icon] (variant)                      note
+ *   [lock] Name [icon] (variant) [needs]              note
  * - variant: which engine is behind the item ("Chrome", "en→ru"), small and grey;
+ * - needs: что методу не хватает для работы (пункт 4 плана) — см. ProviderNeeds;
  * - note: right-aligned; its colour carries the meaning: grey hint or
  *   orange warning.
  */
@@ -718,9 +746,10 @@ const ProviderOptionLabel: VFC<{
     variant?: string;
     icon?: ReactNode;
     locked?: boolean;
+    needs?: ProviderNeeds;
     note?: string;
     noteKind?: "hint" | "warning";
-}> = ({ name, variant, icon, locked = false, note, noteKind = "hint" }) => (
+}> = ({ name, variant, icon, locked = false, needs, note, noteKind = "hint" }) => (
     // Baseline alignment keeps the small grey text on the same line as the
     // name without per-item translateY tweaks; icons are centred separately.
     <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}>
@@ -729,6 +758,7 @@ const ProviderOptionLabel: VFC<{
             <span>{name}</span>
             {icon && <span style={{ display: "flex", alignSelf: "center", fontSize: "12px" }}>{icon}</span>}
             {variant && <span style={{ fontSize: "10px", opacity: 0.7 }}>({variant})</span>}
+            {needs && <ProviderNeedsIcon needs={needs} />}
         </span>
         {note && (
             <span
@@ -884,11 +914,11 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 <style>{`.dt-ocr-dropdown-wrapper .${OPTION_NOTE_CLASS} { display: none !important; }`}</style>
                             <Dropdown
                                 rgOptions={[
-                                    { label: <ProviderOptionLabel name="Локально" variant="RapidOCR" note="лучшая для EN игр" />, data: "rapidocr" },
-                                    { label: <ProviderOptionLabel name="Локально" variant="Chrome" note="★ рекомендуемый" />, data: "chromescreenai" },
+                                    { label: <ProviderOptionLabel name="Локально" variant="RapidOCR" needs={downloadNeeds(rapidocr)} note="лучшая для EN игр" />, data: "rapidocr" },
+                                    { label: <ProviderOptionLabel name="Локально" variant="Chrome" needs={downloadNeeds(csai)} note="★ рекомендуемый" />, data: "chromescreenai" },
                                     { label: <ProviderOptionLabel name="OCR.space" note={RUSSIA_NOTE} noteKind="warning" />, data: "ocrspace" },
-                                    { label: <ProviderOptionLabel name="Google Cloud" note={RUSSIA_NOTE} noteKind="warning" />, data: "googlecloud" },
-                                    { label: <ProviderOptionLabel name="Gemini Vision" icon={<BsStars />} note={RUSSIA_NOTE} noteKind="warning" />, data: "gemini_vision" }
+                                    { label: <ProviderOptionLabel name="Google Cloud" needs={keyNeeds(!!settings.googleApiKey)} note={RUSSIA_NOTE} noteKind="warning" />, data: "googlecloud" },
+                                    { label: <ProviderOptionLabel name="Gemini Vision" icon={<BsStars />} needs={keyNeeds(!!settings.geminiApiKey)} note={RUSSIA_NOTE} noteKind="warning" />, data: "gemini_vision" }
                                 ]}
                                 selectedOption={settings.ocrProvider}
                                 onChange={(option) => {
@@ -1219,12 +1249,12 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         // What works from Russia goes first: users tend to pick
                                         // from the top of the list. Only the order changed; the
                                         // saved setting is the "data" value, not the position.
-                                        { label: <ProviderOptionLabel name="Яндекс" />, data: "yandex" },
+                                        { label: <ProviderOptionLabel name="Яндекс" needs={keyNeeds(!!settings.yandexApiKey && !!settings.yandexFolderId)} />, data: "yandex" },
                                         { label: <ProviderOptionLabel name="MyMemory" />, data: "mymemory" },
-                                        { label: <ProviderOptionLabel name="Локально" />, data: "ct2" },
-                                        { label: <ProviderOptionLabel name="Локально" variant="en→ru" note="лёгкая" />, data: "opusmt" },
+                                        { label: <ProviderOptionLabel name="Локально" needs={downloadNeeds(nllb)} />, data: "ct2" },
+                                        { label: <ProviderOptionLabel name="Локально" variant="en→ru" needs={downloadNeeds(opusmt)} note="лёгкая" />, data: "opusmt" },
                                         { label: <ProviderOptionLabel name="Google Translate" note={RUSSIA_NOTE} noteKind="warning" />, data: "freegoogle" },
-                                        { label: <ProviderOptionLabel name="Google Cloud" note={RUSSIA_NOTE} noteKind="warning" />, data: "googlecloud" }
+                                        { label: <ProviderOptionLabel name="Google Cloud" needs={keyNeeds(!!settings.googleApiKey)} note={RUSSIA_NOTE} noteKind="warning" />, data: "googlecloud" }
                                     ]}
                                     selectedOption={settings.translationProvider}
                                     onChange={(option) => updateSetting('translationProvider', option.data, 'Метод перевода')}
