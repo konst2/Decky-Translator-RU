@@ -4,6 +4,8 @@
  * Logging can be enabled/disabled via debug mode
  */
 
+import { SETTINGS_DEFAULTS } from "./settingsDefaults";
+
 export enum LogLevel {
     DEBUG = 'DEBUG',
     INFO = 'INFO',
@@ -13,7 +15,7 @@ export enum LogLevel {
 
 class Logger {
     private readonly appName = 'DeckyTranslator';
-    private _enabled = false; // Debug mode off by default
+    private _enabled = SETTINGS_DEFAULTS.debugMode;
 
     // Color styles for console
     private readonly styles = {

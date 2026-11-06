@@ -3,7 +3,8 @@
 #
 # Mirrors the file list of the CI release artifact (DeckyTranslatorRu.zip):
 #   decky-translator-ru/
-#     dist/  main.py  py_modules/providers/  package.json  plugin.json  LICENSE  README.md
+#     dist/  main.py  py_modules/providers/  py_modules/settings_defaults.{py,json}
+#     package.json  plugin.json  LICENSE  README.md
 #
 # Dependencies are NOT rebuilt: package.json keeps its remote_binary URL, so
 # Decky downloads plugin-dependencies.tar.gz from the matching GitHub release.
@@ -51,6 +52,8 @@ mkdir -p "$PLUGIN/py_modules"
 
 cp -R dist "$PLUGIN/dist"
 cp -R py_modules/providers "$PLUGIN/py_modules/providers"
+# Settings defaults: the loader and the JSON it reads (see documentation/settings_defaults.md)
+cp py_modules/settings_defaults.py py_modules/settings_defaults.json "$PLUGIN/py_modules/"
 cp main.py package.json plugin.json LICENSE README.md "$PLUGIN/"
 
 find "$PLUGIN" -type d -name __pycache__ -exec rm -rf {} +

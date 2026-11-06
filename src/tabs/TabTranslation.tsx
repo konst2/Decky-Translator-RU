@@ -44,6 +44,7 @@ import gigachatLogo from "../../assets/gigachat-logo.png";
 import steamdeckLogo from "../../assets/steamdeck-logo.png";
 // @ts-ignore
 import chromeLogo from "../../assets/chrome-logo.png";
+import { SETTINGS_DEFAULTS } from "../settingsDefaults";
 
 // Language options with flag emojis
 const languageOptions = [
@@ -1194,10 +1195,11 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             onChange={(value) => {
                                 updateSetting('customRecognitionSettings', value, 'Настройка распознавания');
                                 if (!value) {
-                                    updateSetting('rapidocrConfidence', 0.5, 'RapidOCR: уверенность распознавания');
-                                    updateSetting('rapidocrBoxThresh', 0.5, 'RapidOCR: чувствительность обнаружения');
-                                    updateSetting('rapidocrUnclipRatio', 1.6, 'RapidOCR: расширение рамок');
-                                    updateSetting('confidenceThreshold', 0.6, 'Google Cloud: уверенность распознавания');
+                                    // Turning fine-tuning off returns every threshold to its default
+                                    updateSetting('rapidocrConfidence', SETTINGS_DEFAULTS.rapidocrConfidence, 'RapidOCR: уверенность распознавания');
+                                    updateSetting('rapidocrBoxThresh', SETTINGS_DEFAULTS.rapidocrBoxThresh, 'RapidOCR: чувствительность обнаружения');
+                                    updateSetting('rapidocrUnclipRatio', SETTINGS_DEFAULTS.rapidocrUnclipRatio, 'RapidOCR: расширение рамок');
+                                    updateSetting('confidenceThreshold', SETTINGS_DEFAULTS.confidenceThreshold, 'Google Cloud: уверенность распознавания');
                                 }
                             }}
                         />
@@ -1208,7 +1210,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                     <>
                         <PanelSectionRow>
                             <SliderField
-                                value={settings.rapidocrConfidence ?? 0.5}
+                                value={settings.rapidocrConfidence ?? SETTINGS_DEFAULTS.rapidocrConfidence}
                                 max={1.0}
                                 min={0.0}
                                 step={0.05}
@@ -1222,7 +1224,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         </PanelSectionRow>
                         <PanelSectionRow>
                             <SliderField
-                                value={settings.rapidocrBoxThresh ?? 0.5}
+                                value={settings.rapidocrBoxThresh ?? SETTINGS_DEFAULTS.rapidocrBoxThresh}
                                 max={1.0}
                                 min={0.1}
                                 step={0.05}
@@ -1236,7 +1238,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         </PanelSectionRow>
                         <PanelSectionRow>
                             <SliderField
-                                value={settings.rapidocrUnclipRatio ?? 1.6}
+                                value={settings.rapidocrUnclipRatio ?? SETTINGS_DEFAULTS.rapidocrUnclipRatio}
                                 max={3.0}
                                 min={1.0}
                                 step={0.1}

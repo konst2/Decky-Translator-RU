@@ -1,5 +1,6 @@
 import { call } from '@decky/api';
 import { logger } from './Logger';
+import { SETTINGS_DEFAULTS } from "./settingsDefaults";
 
 export const enum Button {
     R2 = 0,
@@ -114,10 +115,10 @@ export class Input {
     private clearCooldownTimeoutId: ReturnType<typeof setTimeout> | null = null;
     private cooldownDuration = 150; // 0.15s cooldown
 
-    private inputMode: InputMode = InputMode.L4_BUTTON;  // must match _input_mode in main.py
+    private inputMode: InputMode = SETTINGS_DEFAULTS.inputMode;
 
-    private translateHoldTime = 1000;
-    private dismissHoldTime = 500;
+    private translateHoldTime = SETTINGS_DEFAULTS.holdTimeTranslate;
+    private dismissHoldTime = SETTINGS_DEFAULTS.holdTimeDismiss;
 
     private overlayVisible = false;
     private waitingForRelease = false;

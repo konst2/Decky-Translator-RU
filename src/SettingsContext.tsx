@@ -4,6 +4,7 @@ import { call } from '@decky/api';
 import { GameTranslatorLogic } from './Translator';
 import { InputMode } from './Input';
 import { logger } from './Logger';
+import { SETTINGS_DEFAULTS } from './settingsDefaults';
 
 // Define the settings interface
 export interface Settings {
@@ -86,44 +87,19 @@ type SettingsAction =
     | { type: 'UPDATE_SETTING', key: keyof Settings, value: any }
     | { type: 'SET_INITIALIZED', initialized: boolean };
 
-// Define the initial state
+// Define the initial state. Defaults come from py_modules/settings_defaults.json
+// (see settingsDefaults.ts); only fields without a default are listed here.
 const initialSettings: Settings = {
-    inputLanguage: "en",
-    targetLanguage: "ru",
-    inputMode: InputMode.L4_BUTTON,  // Default to L4 back button; must match _input_mode in main.py
-    enabled: true,
+    ...SETTINGS_DEFAULTS,
     initialized: false,
-    holdTimeTranslate: 1000, // Default to 1 second (1000ms)
-    holdTimeDismiss: 500,    // Default to 0.5 seconds (500ms)
-    confidenceThreshold: 0.6, // Default confidence threshold
-    rapidocrConfidence: 0.5, // Default RapidOCR confidence threshold (0.0-1.0)
-    rapidocrBoxThresh: 0.5, // Default RapidOCR box detection threshold (0.0-1.0)
-    rapidocrUnclipRatio: 1.6, // Default RapidOCR box expansion ratio (1.0-3.0)
-    rapidocrPersistentMode: false,
-    chromeScreenAiPersistentMode: false,
-    ct2PersistentMode: false,
-    pauseGameOnOverlay: false, // Default to not pausing game
-    quickToggleEnabled: false, // Default to disabled
-    useFreeProviders: true, // Default to free providers (no API key needed) - deprecated
-    ocrProvider: "chromescreenai", // Default to chromescreenai (Chrome Screen AI) provider
-    translationProvider: "mymemory", // Default to MyMemory: free, no key, works from Russia
-    googleApiKey: "", // Empty by default, only needed for Google Cloud
-    geminiApiKey: "", // Empty by default, needed for Gemini Vision
-    yandexApiKey: "", // Empty by default, needed for Yandex Translate
-    yandexFolderId: "", // Empty by default, needed for Yandex Translate
-    gigachatApiKey: "", // Empty by default, needed for GigaChat
-    myMemoryEmail: "", // Empty by default, optional for MyMemory
-    geminiModel: "gemini-2.5-flash", // Default Gemini model
-    debugMode: false, // Debug mode off by default
-    fontScale: 1.0,
-    groupingPower: 0.25,
-    translatedTextAlignment: 'left',
-    translatedTextFontFamily: '',
-    translatedTextFontStyle: 'normal',
-    hideIdenticalTranslations: false,
-    allowLabelGrowth: true,
-    customRecognitionSettings: false,
-    translationCacheEnabled: true,
+    useFreeProviders: true, // Deprecated, derived from ocrProvider on the backend
+    // API keys and the MyMemory email: empty means "not entered"
+    googleApiKey: "",
+    geminiApiKey: "",
+    yandexApiKey: "",
+    yandexFolderId: "",
+    gigachatApiKey: "",
+    myMemoryEmail: "",
 };
 
 // Create the reducer
@@ -170,74 +146,75 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
 
                 // Map backend settings to frontend settings
                 const mappedSettings: Partial<Settings> = {
-                    inputLanguage: serverSettings.input_language,
-                    targetLanguage: serverSettings.target_language,
-                    inputMode: serverSettings.input_mode,
-                    enabled: serverSettings.enabled,
-                    holdTimeTranslate: serverSettings.hold_time_translate,
-                    holdTimeDismiss: serverSettings.hold_time_dismiss,
-                    confidenceThreshold: serverSettings.confidence_threshold || 0.6, // Add default if not present
-                    rapidocrConfidence: serverSettings.rapidocr_confidence ?? 0.5, // RapidOCR confidence (0.0-1.0)
-                    rapidocrBoxThresh: serverSettings.rapidocr_box_thresh ?? 0.5, // RapidOCR box threshold (0.0-1.0)
-                    rapidocrUnclipRatio: serverSettings.rapidocr_unclip_ratio ?? 1.6, // RapidOCR unclip ratio (1.0-3.0)
-                    rapidocrPersistentMode: serverSettings.rapidocr_persistent_mode ?? false,
-                    chromeScreenAiPersistentMode: serverSettings.chromescreenai_persistent_mode ?? false,
-                    ct2PersistentMode: serverSettings.ct2_persistent_mode ?? false,
-                    pauseGameOnOverlay: serverSettings.pause_game_on_overlay || false, // Add default if not present
-                    quickToggleEnabled: serverSettings.quick_toggle_enabled || false, // Add default if not present
+                    inputLanguage: serverSettings.input_language ?? SETTINGS_DEFAULTS.inputLanguage,
+                    targetLanguage: serverSettings.target_language ?? SETTINGS_DEFAULTS.targetLanguage,
+                    inputMode: serverSettings.input_mode ?? SETTINGS_DEFAULTS.inputMode,
+                    enabled: serverSettings.enabled ?? SETTINGS_DEFAULTS.enabled,
+                    holdTimeTranslate: serverSettings.hold_time_translate ?? SETTINGS_DEFAULTS.holdTimeTranslate,
+                    holdTimeDismiss: serverSettings.hold_time_dismiss ?? SETTINGS_DEFAULTS.holdTimeDismiss,
+                    // `||` (not `??`) turns a saved 0 into the default; a known bug, kept as is here
+                    confidenceThreshold: serverSettings.confidence_threshold || SETTINGS_DEFAULTS.confidenceThreshold,
+                    rapidocrConfidence: serverSettings.rapidocr_confidence ?? SETTINGS_DEFAULTS.rapidocrConfidence,
+                    rapidocrBoxThresh: serverSettings.rapidocr_box_thresh ?? SETTINGS_DEFAULTS.rapidocrBoxThresh,
+                    rapidocrUnclipRatio: serverSettings.rapidocr_unclip_ratio ?? SETTINGS_DEFAULTS.rapidocrUnclipRatio,
+                    rapidocrPersistentMode: serverSettings.rapidocr_persistent_mode ?? SETTINGS_DEFAULTS.rapidocrPersistentMode,
+                    chromeScreenAiPersistentMode: serverSettings.chromescreenai_persistent_mode ?? SETTINGS_DEFAULTS.chromeScreenAiPersistentMode,
+                    ct2PersistentMode: serverSettings.ct2_persistent_mode ?? SETTINGS_DEFAULTS.ct2PersistentMode,
+                    pauseGameOnOverlay: serverSettings.pause_game_on_overlay ?? SETTINGS_DEFAULTS.pauseGameOnOverlay,
+                    quickToggleEnabled: serverSettings.quick_toggle_enabled ?? SETTINGS_DEFAULTS.quickToggleEnabled,
                     useFreeProviders: serverSettings.use_free_providers !== false, // Default to true (deprecated)
-                    ocrProvider: serverSettings.ocr_provider || "chromescreenai", // OCR provider setting
-                    translationProvider: serverSettings.translation_provider || "mymemory", // Translation provider setting
+                    ocrProvider: serverSettings.ocr_provider || SETTINGS_DEFAULTS.ocrProvider,
+                    translationProvider: serverSettings.translation_provider || SETTINGS_DEFAULTS.translationProvider,
                     googleApiKey: serverSettings.google_api_key || "", // Google API key
                     geminiApiKey: serverSettings.gemini_api_key || "", // Gemini API key
                     yandexApiKey: serverSettings.yandex_api_key || "", // Yandex API key
                     yandexFolderId: serverSettings.yandex_folder_id || "", // Yandex folder ID
                     gigachatApiKey: serverSettings.gigachat_api_key || "", // GigaChat Authorization Key
                     myMemoryEmail: serverSettings.mymemory_email || "", // MyMemory email
-                    geminiModel: serverSettings.gemini_model || "gemini-2.5-flash",
-                    debugMode: serverSettings.debug_mode || false,
-                    fontScale: serverSettings.font_scale ?? 1.0,
-                    groupingPower: serverSettings.grouping_power ?? 0.25,
-                    translatedTextAlignment: serverSettings.translated_text_alignment ?? 'left',
-                    translatedTextFontFamily: serverSettings.translated_text_font_family ?? '',
-                    translatedTextFontStyle: serverSettings.translated_text_font_style ?? 'normal',
-                    hideIdenticalTranslations: serverSettings.hide_identical_translations ?? false,
-                    allowLabelGrowth: serverSettings.allow_label_growth ?? true,
-                    customRecognitionSettings: serverSettings.custom_recognition_settings ?? false,
-                    translationCacheEnabled: serverSettings.translation_cache_enabled ?? true,
+                    geminiModel: serverSettings.gemini_model || SETTINGS_DEFAULTS.geminiModel,
+                    debugMode: serverSettings.debug_mode ?? SETTINGS_DEFAULTS.debugMode,
+                    fontScale: serverSettings.font_scale ?? SETTINGS_DEFAULTS.fontScale,
+                    groupingPower: serverSettings.grouping_power ?? SETTINGS_DEFAULTS.groupingPower,
+                    translatedTextAlignment: serverSettings.translated_text_alignment ?? SETTINGS_DEFAULTS.translatedTextAlignment,
+                    translatedTextFontFamily: serverSettings.translated_text_font_family ?? SETTINGS_DEFAULTS.translatedTextFontFamily,
+                    translatedTextFontStyle: serverSettings.translated_text_font_style ?? SETTINGS_DEFAULTS.translatedTextFontStyle,
+                    hideIdenticalTranslations: serverSettings.hide_identical_translations ?? SETTINGS_DEFAULTS.hideIdenticalTranslations,
+                    allowLabelGrowth: serverSettings.allow_label_growth ?? SETTINGS_DEFAULTS.allowLabelGrowth,
+                    customRecognitionSettings: serverSettings.custom_recognition_settings ?? SETTINGS_DEFAULTS.customRecognitionSettings,
+                    translationCacheEnabled: serverSettings.translation_cache_enabled ?? SETTINGS_DEFAULTS.translationCacheEnabled,
                 };
 
                 // Update settings in context
                 dispatch({ type: 'INITIALIZE_SETTINGS', settings: mappedSettings });
 
                 // Update logic instance with settings
-                logic.setInputLanguage(serverSettings.input_language);
-                logic.setTargetLanguage(serverSettings.target_language);
-                logic.setInputMode(serverSettings.input_mode);
-                logic.setEnabled(serverSettings.enabled);
-                logic.setHoldTimeTranslate(serverSettings.hold_time_translate);
-                logic.setHoldTimeDismiss(serverSettings.hold_time_dismiss);
-                logic.setConfidenceThreshold(serverSettings.confidence_threshold || 0.6); // Set in logic
-                logic.setPauseGameOnOverlay(serverSettings.pause_game_on_overlay || false); // Set pause on overlay setting
-                logic.setQuickToggleEnabled(serverSettings.quick_toggle_enabled || false); // Set quick toggle setting
-                logger.setEnabled(serverSettings.debug_mode || false); // Set debug mode for logger
+                logic.setInputLanguage(serverSettings.input_language ?? SETTINGS_DEFAULTS.inputLanguage);
+                logic.setTargetLanguage(serverSettings.target_language ?? SETTINGS_DEFAULTS.targetLanguage);
+                logic.setInputMode(serverSettings.input_mode ?? SETTINGS_DEFAULTS.inputMode);
+                logic.setEnabled(serverSettings.enabled ?? SETTINGS_DEFAULTS.enabled);
+                logic.setHoldTimeTranslate(serverSettings.hold_time_translate ?? SETTINGS_DEFAULTS.holdTimeTranslate);
+                logic.setHoldTimeDismiss(serverSettings.hold_time_dismiss ?? SETTINGS_DEFAULTS.holdTimeDismiss);
+                logic.setConfidenceThreshold(serverSettings.confidence_threshold || SETTINGS_DEFAULTS.confidenceThreshold); // `||`: see above
+                logic.setPauseGameOnOverlay(serverSettings.pause_game_on_overlay ?? SETTINGS_DEFAULTS.pauseGameOnOverlay); // Set pause on overlay setting
+                logic.setQuickToggleEnabled(serverSettings.quick_toggle_enabled ?? SETTINGS_DEFAULTS.quickToggleEnabled); // Set quick toggle setting
+                logger.setEnabled(serverSettings.debug_mode ?? SETTINGS_DEFAULTS.debugMode); // Set debug mode for logger
 
                 // Set provider settings for upfront API key validation
-                logic.setOcrProvider(serverSettings.ocr_provider || "chromescreenai");
-                logic.setTranslationProvider(serverSettings.translation_provider || "mymemory");
+                logic.setOcrProvider(serverSettings.ocr_provider || SETTINGS_DEFAULTS.ocrProvider);
+                logic.setTranslationProvider(serverSettings.translation_provider || SETTINGS_DEFAULTS.translationProvider);
                 logic.setHasGoogleApiKey(!!serverSettings.google_api_key);
                 logic.setHasGeminiApiKey(!!serverSettings.gemini_api_key);
                 logic.setHasYandexApiKey(!!serverSettings.yandex_api_key);
                 logic.setHasYandexFolderId(!!serverSettings.yandex_folder_id);
                 logic.setHasGigachatApiKey(!!serverSettings.gigachat_api_key);
 
-                logic.setFontScale(serverSettings.font_scale ?? 1.0);
-                logic.setGroupingPower(serverSettings.grouping_power ?? 0.25);
-                logic.setTranslatedTextAlignment(serverSettings.translated_text_alignment ?? 'left');
-                logic.setTranslatedTextFontFamily(serverSettings.translated_text_font_family ?? '');
-                logic.setTranslatedTextFontStyle(serverSettings.translated_text_font_style ?? 'normal');
-                logic.setHideIdenticalTranslations(serverSettings.hide_identical_translations ?? false);
-                logic.setAllowLabelGrowth(serverSettings.allow_label_growth ?? true);
+                logic.setFontScale(serverSettings.font_scale ?? SETTINGS_DEFAULTS.fontScale);
+                logic.setGroupingPower(serverSettings.grouping_power ?? SETTINGS_DEFAULTS.groupingPower);
+                logic.setTranslatedTextAlignment(serverSettings.translated_text_alignment ?? SETTINGS_DEFAULTS.translatedTextAlignment);
+                logic.setTranslatedTextFontFamily(serverSettings.translated_text_font_family ?? SETTINGS_DEFAULTS.translatedTextFontFamily);
+                logic.setTranslatedTextFontStyle(serverSettings.translated_text_font_style ?? SETTINGS_DEFAULTS.translatedTextFontStyle);
+                logic.setHideIdenticalTranslations(serverSettings.hide_identical_translations ?? SETTINGS_DEFAULTS.hideIdenticalTranslations);
+                logic.setAllowLabelGrowth(serverSettings.allow_label_growth ?? SETTINGS_DEFAULTS.allowLabelGrowth);
 
                 logger.info('SettingsContext', 'All settings loaded successfully');
                 logger.logObject('SettingsContext', 'Settings', maskSettingsForLog(mappedSettings));

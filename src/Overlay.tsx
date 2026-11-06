@@ -7,6 +7,7 @@ import { CSSProperties, VFC, useEffect, useState, useRef, useCallback, useMemo }
 import { TranslatedRegion } from "./TextTranslator";
 import { NO_SPACE_SCRIPT, lineWrapSeparator } from "./TextRecognizer";
 import { logger } from "./Logger";
+import { SETTINGS_DEFAULTS } from "./settingsDefaults";
 import { buildTranslatedFontFamily, ensureFontLoaded, resolveFontStyleCSS } from "./fonts";
 import type { FontStyleOption } from "./fonts";
 import { DataFlowIconGlyph } from "./tabs/DataFlowBadge";
@@ -194,11 +195,11 @@ export class ImageState {
     private processingDataFlow: DataFlow | null = null;
     private loadingIndicatorTimer: ReturnType<typeof setTimeout> | null = null; // Timer for delayed indicator
     private translationsVisible = true; // New property to track translation visibility
-    private fontScale = 1.0;
-    private allowLabelGrowth = true;
-    private translatedTextAlignment: HorizontalTextAlignment = 'left';
-    private translatedTextFontFamily = "";
-    private translatedTextFontStyle: FontStyleOption = 'normal';
+    private fontScale = SETTINGS_DEFAULTS.fontScale;
+    private allowLabelGrowth = SETTINGS_DEFAULTS.allowLabelGrowth;
+    private translatedTextAlignment: HorizontalTextAlignment = SETTINGS_DEFAULTS.translatedTextAlignment;
+    private translatedTextFontFamily = SETTINGS_DEFAULTS.translatedTextFontFamily;
+    private translatedTextFontStyle: FontStyleOption = SETTINGS_DEFAULTS.translatedTextFontStyle;
     private onStateChangedListeners: Array<(visible: boolean, imageData: string, regions: TranslatedRegion[], loading: boolean, processingStep: string, processingDetail: string, processingIsError: boolean, translationsVisible: boolean, fontScale: number, allowLabelGrowth: boolean, translatedTextAlignment: HorizontalTextAlignment, translatedTextFontFamily: string, translatedTextFontStyle: FontStyleOption, processingDataFlow: DataFlow | null) => void> = [];
 
     onStateChanged(callback: (visible: boolean, imageData: string, regions: TranslatedRegion[], loading: boolean, processingStep: string, processingDetail: string, processingIsError: boolean, translationsVisible: boolean, fontScale: number, allowLabelGrowth: boolean, translatedTextAlignment: HorizontalTextAlignment, translatedTextFontFamily: string, translatedTextFontStyle: FontStyleOption, processingDataFlow: DataFlow | null) => void): void {
@@ -1378,11 +1379,11 @@ export const ImageOverlay: VFC<{
     const [processingDetail, setProcessingDetail] = useState<string>("");
     const [processingIsError, setProcessingIsError] = useState<boolean>(false);
     const [translationsVisible, setTranslationsVisible] = useState<boolean>(true);
-    const [fontScale, setFontScale] = useState<number>(1.0);
-    const [allowLabelGrowth, setAllowLabelGrowth] = useState<boolean>(true);
-    const [translatedTextAlignment, setTranslatedTextAlignment] = useState<HorizontalTextAlignment>('left');
-    const [translatedTextFontFamily, setTranslatedTextFontFamily] = useState<string>("");
-    const [translatedTextFontStyle, setTranslatedTextFontStyle] = useState<FontStyleOption>('normal');
+    const [fontScale, setFontScale] = useState<number>(SETTINGS_DEFAULTS.fontScale);
+    const [allowLabelGrowth, setAllowLabelGrowth] = useState<boolean>(SETTINGS_DEFAULTS.allowLabelGrowth);
+    const [translatedTextAlignment, setTranslatedTextAlignment] = useState<HorizontalTextAlignment>(SETTINGS_DEFAULTS.translatedTextAlignment);
+    const [translatedTextFontFamily, setTranslatedTextFontFamily] = useState<string>(SETTINGS_DEFAULTS.translatedTextFontFamily);
+    const [translatedTextFontStyle, setTranslatedTextFontStyle] = useState<FontStyleOption>(SETTINGS_DEFAULTS.translatedTextFontStyle);
     const [processingDataFlow, setProcessingDataFlow] = useState<DataFlow | null>(null);
 
     useEffect(() => {

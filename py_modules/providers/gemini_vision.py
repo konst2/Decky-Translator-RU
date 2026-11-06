@@ -10,6 +10,8 @@ from typing import List, Optional
 
 import requests
 
+from settings_defaults import DEFAULTS
+
 from .base import (
     OCRProvider,
     ProviderType,
@@ -23,7 +25,7 @@ from .base import (
 logger = logging.getLogger(__name__)
 
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = DEFAULTS["gemini_model"]
 REQUEST_TIMEOUT = 30
 
 # Gemini's error text is shown in the overlay as is (same as MyMemory
@@ -161,7 +163,7 @@ class GeminiVisionProvider(OCRProvider):
     def __init__(self, api_key: str = "", model: str = DEFAULT_MODEL):
         self._api_key = api_key
         self._model = model
-        self._target_language = "ru"
+        self._target_language = DEFAULTS["target_language"]
 
     def set_api_key(self, api_key: str) -> None:
         self._api_key = api_key

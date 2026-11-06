@@ -22,6 +22,10 @@ bower_components
 # Python modules
 py_modules/*
 !py_modules/providers/
+# Settings defaults: the loader and the JSON with the values
+# (see documentation/settings_defaults.md)
+!py_modules/settings_defaults.py
+!py_modules/settings_defaults.json
 
 # Editors
 .idea

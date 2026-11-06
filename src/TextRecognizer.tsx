@@ -1,5 +1,6 @@
 import { call } from "@decky/api";
 import { logger } from "./Logger";
+import { SETTINGS_DEFAULTS } from "./settingsDefaults";
 
 export interface ErrorResponse {
     error: string;
@@ -154,8 +155,8 @@ function computeMedianHeight(regions: TextRegion[]): number {
 }
 
 export class TextRecognizer {
-    private confidenceThreshold: number = 0.6;
-    private groupingPower: number = 0.25;
+    private confidenceThreshold: number = SETTINGS_DEFAULTS.confidenceThreshold;
+    private groupingPower: number = SETTINGS_DEFAULTS.groupingPower;
 
     constructor() {
         logger.info('TextRecognizer', 'TextRecognizer initialized');

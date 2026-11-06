@@ -94,6 +94,8 @@ from providers import ProviderManager, TextRegion, NetworkError, ApiKeyError, Ra
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
 from providers import readiness
 from providers.key_entry_server import KeyEntryServer, detect_local_ip
+# Значения по умолчанию — из общего с фронтендом settings_defaults.json.
+from settings_defaults import DEFAULTS
 
 _processing_lock = False
 
@@ -1181,20 +1183,20 @@ class Plugin:
     _filepath: str = None
     _screenshotPath: str = "/tmp/decky-translator-ru"  # Temporary directory for screenshots (deleted after OCR)
     _settings = None
-    _input_language: str = "en"  # Default to English
-    _target_language: str = "ru"
-    _input_mode: int = 0  # InputMode from src/Input.tsx: 0 = L4 (default), 2 = L5, ... Keep in sync with initialSettings in SettingsContext.tsx
-    _hold_time_translate: int = 1000  # Default to 1 second
-    _hold_time_dismiss: int = 500  # Default to 0.5 seconds for dismissal
-    _confidence_threshold: float = 0.6  # Default confidence threshold
-    _rapidocr_confidence: float = 0.5  # RapidOCR-specific confidence threshold (0.0-1.0)
-    _rapidocr_box_thresh: float = 0.5  # RapidOCR detection box threshold (0.0-1.0)
-    _rapidocr_unclip_ratio: float = 1.6  # RapidOCR box expansion ratio (1.0-3.0)
-    _rapidocr_persistent_mode: bool = False  # Keep RapidOCR worker alive between requests
-    _chromescreenai_persistent_mode: bool = False  # Keep Chrome Screen AI worker alive between requests
-    _ct2_persistent_mode: bool = False  # Keep CT2/NLLB worker alive between requests
-    _pause_game_on_overlay: bool = False  # Default to not pausing game on overlay
-    _quick_toggle_enabled: bool = False  # Default to disabled for quick toggle
+    _input_language: str = DEFAULTS["input_language"]
+    _target_language: str = DEFAULTS["target_language"]
+    _input_mode: int = DEFAULTS["input_mode"]  # InputMode from src/Input.tsx: 0 = L4, 2 = L5, ...
+    _hold_time_translate: int = DEFAULTS["hold_time_translate"]
+    _hold_time_dismiss: int = DEFAULTS["hold_time_dismiss"]
+    _confidence_threshold: float = DEFAULTS["confidence_threshold"]
+    _rapidocr_confidence: float = DEFAULTS["rapidocr_confidence"]  # RapidOCR-specific confidence threshold (0.0-1.0)
+    _rapidocr_box_thresh: float = DEFAULTS["rapidocr_box_thresh"]  # RapidOCR detection box threshold (0.0-1.0)
+    _rapidocr_unclip_ratio: float = DEFAULTS["rapidocr_unclip_ratio"]  # RapidOCR box expansion ratio (1.0-3.0)
+    _rapidocr_persistent_mode: bool = DEFAULTS["rapidocr_persistent_mode"]  # Keep RapidOCR worker alive between requests
+    _chromescreenai_persistent_mode: bool = DEFAULTS["chromescreenai_persistent_mode"]  # Keep Chrome Screen AI worker alive between requests
+    _ct2_persistent_mode: bool = DEFAULTS["ct2_persistent_mode"]  # Keep CT2/NLLB worker alive between requests
+    _pause_game_on_overlay: bool = DEFAULTS["pause_game_on_overlay"]
+    _quick_toggle_enabled: bool = DEFAULTS["quick_toggle_enabled"]
 
     # Hidraw button monitor
     _hidraw_monitor: HidrawButtonMonitor = None
@@ -1204,18 +1206,18 @@ class Plugin:
     # Provider system
     _provider_manager: ProviderManager = None
     _use_free_providers: bool = True  # Default to free providers (no API key needed)
-    _ocr_provider: str = "chromescreenai"  # "rapidocr" (RapidOCR), "ocrspace" (OCR.space), or "googlecloud" (Google Cloud)
-    _translation_provider: str = "mymemory"  # "mymemory", "freegoogle", "googlecloud", "yandex", "gigachat", "gigachat_plus", "ct2" or "opusmt"
+    _ocr_provider: str = DEFAULTS["ocr_provider"]  # "rapidocr" (RapidOCR), "ocrspace" (OCR.space), or "googlecloud" (Google Cloud)
+    _translation_provider: str = DEFAULTS["translation_provider"]  # "mymemory", "freegoogle", "googlecloud", "yandex", "gigachat", "gigachat_plus", "ct2" or "opusmt"
 
     # Translation cache
     _translation_cache: TranslationCache = None
-    _translation_cache_enabled: bool = True
+    _translation_cache_enabled: bool = DEFAULTS["translation_cache_enabled"]
 
     # OCR API configurations - user must provide their own API key
     _google_vision_api_key: str = ""
     _google_translate_api_key: str = ""
     _gemini_api_key: str = ""
-    _gemini_model: str = "gemini-2.5-flash"
+    _gemini_model: str = DEFAULTS["gemini_model"]
     _yandex_api_key: str = ""
     _yandex_folder_id: str = ""
     _gigachat_api_key: str = ""
@@ -1456,7 +1458,7 @@ class Plugin:
             elif key == "rapidocr_persistent_mode":
                 self._rapidocr_persistent_mode = bool(value)
                 if self._provider_manager:
-                    plugin_enabled = self._settings.get_setting("enabled", True)
+                    plugin_enabled = self._settings.get_setting("enabled", DEFAULTS["enabled"])
                     self._provider_manager.set_rapidocr_persistent_mode(
                         self._rapidocr_persistent_mode,
                         apply_to_provider=plugin_enabled,
@@ -1466,7 +1468,7 @@ class Plugin:
             elif key == "chromescreenai_persistent_mode":
                 self._chromescreenai_persistent_mode = bool(value)
                 if self._provider_manager:
-                    plugin_enabled = self._settings.get_setting("enabled", True)
+                    plugin_enabled = self._settings.get_setting("enabled", DEFAULTS["enabled"])
                     self._provider_manager.set_chromescreenai_persistent_mode(
                         self._chromescreenai_persistent_mode,
                         apply_to_provider=plugin_enabled,
@@ -1476,7 +1478,7 @@ class Plugin:
             elif key == "ct2_persistent_mode":
                 self._ct2_persistent_mode = bool(value)
                 if self._provider_manager:
-                    plugin_enabled = self._settings.get_setting("enabled", True)
+                    plugin_enabled = self._settings.get_setting("enabled", DEFAULTS["enabled"])
                     self._provider_manager.set_ct2_persistent_mode(
                         self._ct2_persistent_mode,
                         apply_to_provider=plugin_enabled,
@@ -1535,7 +1537,7 @@ class Plugin:
                     )
                     # Don't leave the RapidOCR worker running when the user
                     # switches providers; resume it if they switch back.
-                    plugin_enabled = self._settings.get_setting("enabled", True)
+                    plugin_enabled = self._settings.get_setting("enabled", DEFAULTS["enabled"])
                     if value != "rapidocr":
                         self._provider_manager.stop_rapidocr_worker()
                     elif plugin_enabled:
@@ -1557,7 +1559,7 @@ class Plugin:
                         ocr_provider=self._ocr_provider,
                         translation_provider=value
                     )
-                    plugin_enabled = self._settings.get_setting("enabled", True)
+                    plugin_enabled = self._settings.get_setting("enabled", DEFAULTS["enabled"])
                     if value not in ("ct2", "opusmt"):
                         self._provider_manager.stop_local_translation_workers()
                     elif value == "ct2":
@@ -1639,7 +1641,7 @@ class Plugin:
                 "target_language": self._target_language,
                 "input_language": self._input_language,
                 "input_mode": self._input_mode,
-                "enabled": self._settings.get_setting("enabled", True),
+                "enabled": self._settings.get_setting("enabled", DEFAULTS["enabled"]),
                 "use_free_providers": self._use_free_providers,
                 "ocr_provider": self._ocr_provider,
                 "translation_provider": self._translation_provider,
@@ -1652,26 +1654,26 @@ class Plugin:
                 "yandex_folder_id": self._yandex_folder_id,
                 "gigachat_api_key": self._gigachat_api_key,
                 "mymemory_email": self._mymemory_email,
-                "hold_time_translate": self._settings.get_setting("hold_time_translate", 1000),
-                "hold_time_dismiss": self._settings.get_setting("hold_time_dismiss", 500),
-                "confidence_threshold": self._settings.get_setting("confidence_threshold", 0.6),
-                "rapidocr_confidence": self._settings.get_setting("rapidocr_confidence", 0.5),
-                "rapidocr_box_thresh": self._settings.get_setting("rapidocr_box_thresh", 0.5),
-                "rapidocr_unclip_ratio": self._settings.get_setting("rapidocr_unclip_ratio", 1.6),
-                "rapidocr_persistent_mode": self._settings.get_setting("rapidocr_persistent_mode", False),
-                "chromescreenai_persistent_mode": self._settings.get_setting("chromescreenai_persistent_mode", False),
-                "ct2_persistent_mode": self._settings.get_setting("ct2_persistent_mode", False),
-                "pause_game_on_overlay": self._settings.get_setting("pause_game_on_overlay", False),
-                "quick_toggle_enabled": self._settings.get_setting("quick_toggle_enabled", False),
-                "debug_mode": self._settings.get_setting("debug_mode", False),
-                "font_scale": self._settings.get_setting("font_scale", 1.0),
-                "grouping_power": self._settings.get_setting("grouping_power", 0.25),
-                "translated_text_alignment": self._settings.get_setting("translated_text_alignment", "left"),
-                "translated_text_font_family": self._settings.get_setting("translated_text_font_family", ""),
-                "translated_text_font_style": self._settings.get_setting("translated_text_font_style", "normal"),
-                "hide_identical_translations": self._settings.get_setting("hide_identical_translations", False),
-                "allow_label_growth": self._settings.get_setting("allow_label_growth", True),
-                "custom_recognition_settings": self._settings.get_setting("custom_recognition_settings", False),
+                "hold_time_translate": self._settings.get_setting("hold_time_translate", DEFAULTS["hold_time_translate"]),
+                "hold_time_dismiss": self._settings.get_setting("hold_time_dismiss", DEFAULTS["hold_time_dismiss"]),
+                "confidence_threshold": self._settings.get_setting("confidence_threshold", DEFAULTS["confidence_threshold"]),
+                "rapidocr_confidence": self._settings.get_setting("rapidocr_confidence", DEFAULTS["rapidocr_confidence"]),
+                "rapidocr_box_thresh": self._settings.get_setting("rapidocr_box_thresh", DEFAULTS["rapidocr_box_thresh"]),
+                "rapidocr_unclip_ratio": self._settings.get_setting("rapidocr_unclip_ratio", DEFAULTS["rapidocr_unclip_ratio"]),
+                "rapidocr_persistent_mode": self._settings.get_setting("rapidocr_persistent_mode", DEFAULTS["rapidocr_persistent_mode"]),
+                "chromescreenai_persistent_mode": self._settings.get_setting("chromescreenai_persistent_mode", DEFAULTS["chromescreenai_persistent_mode"]),
+                "ct2_persistent_mode": self._settings.get_setting("ct2_persistent_mode", DEFAULTS["ct2_persistent_mode"]),
+                "pause_game_on_overlay": self._settings.get_setting("pause_game_on_overlay", DEFAULTS["pause_game_on_overlay"]),
+                "quick_toggle_enabled": self._settings.get_setting("quick_toggle_enabled", DEFAULTS["quick_toggle_enabled"]),
+                "debug_mode": self._settings.get_setting("debug_mode", DEFAULTS["debug_mode"]),
+                "font_scale": self._settings.get_setting("font_scale", DEFAULTS["font_scale"]),
+                "grouping_power": self._settings.get_setting("grouping_power", DEFAULTS["grouping_power"]),
+                "translated_text_alignment": self._settings.get_setting("translated_text_alignment", DEFAULTS["translated_text_alignment"]),
+                "translated_text_font_family": self._settings.get_setting("translated_text_font_family", DEFAULTS["translated_text_font_family"]),
+                "translated_text_font_style": self._settings.get_setting("translated_text_font_style", DEFAULTS["translated_text_font_style"]),
+                "hide_identical_translations": self._settings.get_setting("hide_identical_translations", DEFAULTS["hide_identical_translations"]),
+                "allow_label_growth": self._settings.get_setting("allow_label_growth", DEFAULTS["allow_label_growth"]),
+                "custom_recognition_settings": self._settings.get_setting("custom_recognition_settings", DEFAULTS["custom_recognition_settings"]),
                 "translation_cache_enabled": self._translation_cache_enabled,
             }
             return settings
@@ -2556,7 +2558,7 @@ class Plugin:
             }
 
     async def get_enabled_state(self):
-        return await self.get_setting("enabled", True)
+        return await self.get_setting("enabled", DEFAULTS["enabled"])
 
     async def get_input_language(self):
         return self._input_language
@@ -2952,7 +2954,7 @@ class Plugin:
             self._input_mode = load_setting("input_mode", self._input_mode)
             self._hold_time_translate = load_setting("hold_time_translate", self._hold_time_translate)
             self._hold_time_dismiss = load_setting("hold_time_dismiss", self._hold_time_dismiss)
-            if self._settings.get_setting("custom_recognition_settings", False):
+            if self._settings.get_setting("custom_recognition_settings", DEFAULTS["custom_recognition_settings"]):
                 self._confidence_threshold = load_setting("confidence_threshold", self._confidence_threshold)
             self._pause_game_on_overlay = load_setting("pause_game_on_overlay", self._pause_game_on_overlay)
             self._quick_toggle_enabled = load_setting("quick_toggle_enabled", self._quick_toggle_enabled)
@@ -2983,7 +2985,7 @@ class Plugin:
             gemini_api_key = load_api_key("gemini_api_key")
             if gemini_api_key:
                 self._gemini_api_key = gemini_api_key
-            self._gemini_model = self._settings.get_setting("gemini_model", "gemini-2.5-flash")
+            self._gemini_model = self._settings.get_setting("gemini_model", DEFAULTS["gemini_model"])
 
             yandex_api_key = load_api_key("yandex_api_key")
             if yandex_api_key:
@@ -3021,9 +3023,10 @@ class Plugin:
                 if self._ocr_provider == "googlecloud":
                     self._translation_provider = "googlecloud"
                 else:
-                    # Free Google is often blocked from Russia; MyMemory works
-                    # without a key (see the MyMemory provider for its limits).
-                    self._translation_provider = "mymemory"
+                    # The default is MyMemory: free Google is often blocked from
+                    # Russia, MyMemory works without a key (see the MyMemory
+                    # provider for its limits).
+                    self._translation_provider = DEFAULTS["translation_provider"]
                 self._settings.set_setting("translation_provider", self._translation_provider)
 
             # Set up CT2 translation models directory
@@ -3071,7 +3074,7 @@ class Plugin:
             self._provider_manager.set_gigachat_api_key(self._gigachat_api_key)
 
             # Load and apply RapidOCR-specific settings
-            if self._settings.get_setting("custom_recognition_settings", False):
+            if self._settings.get_setting("custom_recognition_settings", DEFAULTS["custom_recognition_settings"]):
                 self._rapidocr_confidence = load_setting("rapidocr_confidence", self._rapidocr_confidence)
                 self._rapidocr_box_thresh = load_setting("rapidocr_box_thresh", self._rapidocr_box_thresh)
                 self._rapidocr_unclip_ratio = load_setting("rapidocr_unclip_ratio", self._rapidocr_unclip_ratio)
@@ -3089,7 +3092,7 @@ class Plugin:
             self._provider_manager.set_rapidocr_unclip_ratio(self._rapidocr_unclip_ratio)
             # Only spin up the worker if the plugin is enabled right now;
             # the preference is always stored so re-enable can pick it up.
-            plugin_enabled_at_boot = self._settings.get_setting("enabled", True)
+            plugin_enabled_at_boot = self._settings.get_setting("enabled", DEFAULTS["enabled"])
             self._provider_manager.set_rapidocr_persistent_mode(
                 self._rapidocr_persistent_mode,
                 apply_to_provider=plugin_enabled_at_boot,
@@ -3106,7 +3109,7 @@ class Plugin:
             )
 
             # Apply debug_mode log level
-            if self._settings.get_setting("debug_mode", False):
+            if self._settings.get_setting("debug_mode", DEFAULTS["debug_mode"]):
                 logger.setLevel(logging.DEBUG)
                 logger.debug("Debug logging enabled")
 

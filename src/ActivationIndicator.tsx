@@ -1,5 +1,6 @@
 import { VFC } from "react";
 import { findModuleChild } from "@decky/ui";
+import { SETTINGS_DEFAULTS } from "./settingsDefaults";
 
 // UI Composition layers provided by Decky
 enum UIComposition {
@@ -69,7 +70,7 @@ export const ActivationIndicator: VFC<ActivationIndicatorProps> = ({ visible, te
     // The arc grows on a CSS timer of the hold length, not from the progress value Input
     // reports: that one comes from button polling in steps and would make the arc jerk.
     // Releasing early hides the whole indicator, so the two never visibly disagree.
-    const growMs = Math.max(holdMs ?? 1000, 100);
+    const growMs = Math.max(holdMs ?? SETTINGS_DEFAULTS.holdTimeTranslate, 100);
 
     return (
         <>

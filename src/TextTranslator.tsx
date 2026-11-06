@@ -3,6 +3,7 @@
 import { call } from "@decky/api";
 import { TextRegion, NetworkError, ApiKeyError, RateLimitError, ModelNotAvailableError, TranslationError, ErrorResponse } from "./TextRecognizer";
 import { logger } from "./Logger";
+import { SETTINGS_DEFAULTS } from "./settingsDefaults";
 
 // Type guard to check if response is an error
 function isErrorResponse(value: unknown): value is ErrorResponse {
@@ -16,9 +17,9 @@ export interface TranslatedRegion extends TextRegion {
 
 export class TextTranslator {
     private targetLanguage: string;
-    private inputLanguage: string = "en"; // Default to English
+    private inputLanguage: string = SETTINGS_DEFAULTS.inputLanguage;
 
-    constructor(initialLanguage: string = "ru") {
+    constructor(initialLanguage: string = SETTINGS_DEFAULTS.targetLanguage) {
         this.targetLanguage = initialLanguage;
     }
 

@@ -6,6 +6,10 @@ import logging
 import time
 from typing import List, Optional
 
+# Fields below that mirror a user setting start from the plugin-wide defaults
+# (main.py overwrites them via configure()/setters right after start).
+from settings_defaults import DEFAULTS
+
 from .base import (
     OCRProvider,
     TranslationProvider,
@@ -104,16 +108,16 @@ class ProviderManager:
         # Name of the running game, for GigaChat+ (see set_current_game).
         self._current_game = ""
         self._mymemory_email = ""
-        self._gemini_model = "gemini-2.5-flash"
-        self._gemini_target_language = "ru"
-        self._ocr_provider_preference = "chromescreenai"  # "rapidocr", "ocrspace", "googlecloud", "gemini_vision", or "chromescreenai"
-        self._translation_provider_preference = "mymemory"  # "mymemory", "freegoogle", "googlecloud", "yandex", "gigachat", "gigachat_plus", "ct2" or "opusmt"
-        self._rapidocr_confidence = 0.5  # Default RapidOCR confidence threshold (0.0-1.0)
-        self._rapidocr_box_thresh = 0.5  # Default RapidOCR box detection threshold (0.0-1.0)
-        self._rapidocr_unclip_ratio = 1.6  # Default RapidOCR box expansion ratio (1.0-3.0)
-        self._rapidocr_persistent_mode = False  # Keep worker alive between requests
-        self._chromescreenai_persistent_mode = False  # Same for Chrome Screen AI
-        self._ct2_persistent_mode = False  # Same for CT2/NLLB translation
+        self._gemini_model = DEFAULTS["gemini_model"]
+        self._gemini_target_language = DEFAULTS["target_language"]
+        self._ocr_provider_preference = DEFAULTS["ocr_provider"]  # "rapidocr", "ocrspace", "googlecloud", "gemini_vision", or "chromescreenai"
+        self._translation_provider_preference = DEFAULTS["translation_provider"]  # "mymemory", "freegoogle", "googlecloud", "yandex", "gigachat", "gigachat_plus", "ct2" or "opusmt"
+        self._rapidocr_confidence = DEFAULTS["rapidocr_confidence"]  # RapidOCR confidence threshold (0.0-1.0)
+        self._rapidocr_box_thresh = DEFAULTS["rapidocr_box_thresh"]  # RapidOCR box detection threshold (0.0-1.0)
+        self._rapidocr_unclip_ratio = DEFAULTS["rapidocr_unclip_ratio"]  # RapidOCR box expansion ratio (1.0-3.0)
+        self._rapidocr_persistent_mode = DEFAULTS["rapidocr_persistent_mode"]  # Keep worker alive between requests
+        self._chromescreenai_persistent_mode = DEFAULTS["chromescreenai_persistent_mode"]  # Same for Chrome Screen AI
+        self._ct2_persistent_mode = DEFAULTS["ct2_persistent_mode"]  # Same for CT2/NLLB translation
 
         # CT2 translation
         self._ct2_models_dir = None
@@ -185,6 +189,9 @@ class ProviderManager:
         else:
             # Backwards compatibility: derive from use_free_providers
             self._use_free_providers = use_free_providers
+            # A rule, not the default: "free providers" means the free local OCR.
+            # Taking DEFAULTS["ocr_provider"] here would pick a paid method if the
+            # default ever became one.
             self._ocr_provider_preference = "chromescreenai" if use_free_providers else "googlecloud"
 
         # Handle translation_provider setting

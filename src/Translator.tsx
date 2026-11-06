@@ -9,6 +9,7 @@ import { ImageState } from "./Overlay";
 import { OCR_DATA_FLOW, TRANSLATION_DATA_FLOW, mostExposed } from "./tabs/DataFlowBadge";
 import type { DataFlow } from "./tabs/DataFlowBadge";
 import { logger } from "./Logger";
+import { SETTINGS_DEFAULTS } from "./settingsDefaults";
 import { fetchReadiness, readinessToastTitle, readinessToastBody } from "./Readiness";
 
 // Screenshot response interface
@@ -44,15 +45,15 @@ export class GameTranslatorLogic {
     private textTranslator: TextTranslator;
     private shortcutInput: Input; // Added shortcut input handler
     private progressListeners: Array<(progressInfo: ProgressInfo) => void> = [];
-    private enabled: boolean = true; // Add enabled state
-    private confidenceThreshold: number = 0.6; // Default confidence threshold
-    private pauseGameOnOverlay: boolean = false;
-    private hideIdenticalTranslations: boolean = false;
+    private enabled: boolean = SETTINGS_DEFAULTS.enabled;
+    private confidenceThreshold: number = SETTINGS_DEFAULTS.confidenceThreshold;
+    private pauseGameOnOverlay: boolean = SETTINGS_DEFAULTS.pauseGameOnOverlay;
+    private hideIdenticalTranslations: boolean = SETTINGS_DEFAULTS.hideIdenticalTranslations;
     private currentRunId: number = 0;
 
     // Provider settings for upfront validation
-    private ocrProvider: string = "rapidocr";
-    private translationProvider: string = "mymemory";
+    private ocrProvider: string = SETTINGS_DEFAULTS.ocrProvider;
+    private translationProvider: string = SETTINGS_DEFAULTS.translationProvider;
     private hasGoogleApiKey: boolean = false;
     private hasGeminiApiKey: boolean = false;
     private hasYandexApiKey: boolean = false;
@@ -543,7 +544,7 @@ export class GameTranslatorLogic {
 
     // Method to get translation hold time
     getHoldTimeTranslate = (): number => {
-        return this.shortcutInput ? this.shortcutInput.getTranslateHoldTime() : 1000;
+        return this.shortcutInput ? this.shortcutInput.getTranslateHoldTime() : SETTINGS_DEFAULTS.holdTimeTranslate;
     }
 
     // Method to set dismiss hold time
@@ -555,7 +556,7 @@ export class GameTranslatorLogic {
 
     // Method to get dismiss hold time
     getHoldTimeDismiss = (): number => {
-        return this.shortcutInput ? this.shortcutInput.getDismissHoldTime() : 500;
+        return this.shortcutInput ? this.shortcutInput.getDismissHoldTime() : SETTINGS_DEFAULTS.holdTimeDismiss;
     }
 
     // Method to set quick toggle enabled
