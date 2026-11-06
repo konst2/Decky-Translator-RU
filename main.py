@@ -1666,7 +1666,7 @@ class Plugin:
                 "debug_mode": self._settings.get_setting("debug_mode", False),
                 "font_scale": self._settings.get_setting("font_scale", 1.0),
                 "grouping_power": self._settings.get_setting("grouping_power", 0.25),
-                "translated_text_alignment": self._settings.get_setting("translated_text_alignment", "center"),
+                "translated_text_alignment": self._settings.get_setting("translated_text_alignment", "left"),
                 "translated_text_font_family": self._settings.get_setting("translated_text_font_family", ""),
                 "translated_text_font_style": self._settings.get_setting("translated_text_font_style", "normal"),
                 "hide_identical_translations": self._settings.get_setting("hide_identical_translations", False),

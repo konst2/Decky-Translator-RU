@@ -196,7 +196,7 @@ export class ImageState {
     private translationsVisible = true; // New property to track translation visibility
     private fontScale = 1.0;
     private allowLabelGrowth = true;
-    private translatedTextAlignment: HorizontalTextAlignment = 'center';
+    private translatedTextAlignment: HorizontalTextAlignment = 'left';
     private translatedTextFontFamily = "";
     private translatedTextFontStyle: FontStyleOption = 'normal';
     private onStateChangedListeners: Array<(visible: boolean, imageData: string, regions: TranslatedRegion[], loading: boolean, processingStep: string, processingDetail: string, processingIsError: boolean, translationsVisible: boolean, fontScale: number, allowLabelGrowth: boolean, translatedTextAlignment: HorizontalTextAlignment, translatedTextFontFamily: string, translatedTextFontStyle: FontStyleOption, processingDataFlow: DataFlow | null) => void> = [];
@@ -1380,7 +1380,7 @@ export const ImageOverlay: VFC<{
     const [translationsVisible, setTranslationsVisible] = useState<boolean>(true);
     const [fontScale, setFontScale] = useState<number>(1.0);
     const [allowLabelGrowth, setAllowLabelGrowth] = useState<boolean>(true);
-    const [translatedTextAlignment, setTranslatedTextAlignment] = useState<HorizontalTextAlignment>('center');
+    const [translatedTextAlignment, setTranslatedTextAlignment] = useState<HorizontalTextAlignment>('left');
     const [translatedTextFontFamily, setTranslatedTextFontFamily] = useState<string>("");
     const [translatedTextFontStyle, setTranslatedTextFontStyle] = useState<FontStyleOption>('normal');
     const [processingDataFlow, setProcessingDataFlow] = useState<DataFlow | null>(null);

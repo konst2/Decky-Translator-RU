@@ -117,7 +117,7 @@ const initialSettings: Settings = {
     debugMode: false, // Debug mode off by default
     fontScale: 1.0,
     groupingPower: 0.25,
-    translatedTextAlignment: 'center',
+    translatedTextAlignment: 'left',
     translatedTextFontFamily: '',
     translatedTextFontStyle: 'normal',
     hideIdenticalTranslations: false,
@@ -198,7 +198,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     debugMode: serverSettings.debug_mode || false,
                     fontScale: serverSettings.font_scale ?? 1.0,
                     groupingPower: serverSettings.grouping_power ?? 0.25,
-                    translatedTextAlignment: serverSettings.translated_text_alignment ?? 'center',
+                    translatedTextAlignment: serverSettings.translated_text_alignment ?? 'left',
                     translatedTextFontFamily: serverSettings.translated_text_font_family ?? '',
                     translatedTextFontStyle: serverSettings.translated_text_font_style ?? 'normal',
                     hideIdenticalTranslations: serverSettings.hide_identical_translations ?? false,
@@ -233,7 +233,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
 
                 logic.setFontScale(serverSettings.font_scale ?? 1.0);
                 logic.setGroupingPower(serverSettings.grouping_power ?? 0.25);
-                logic.setTranslatedTextAlignment(serverSettings.translated_text_alignment ?? 'center');
+                logic.setTranslatedTextAlignment(serverSettings.translated_text_alignment ?? 'left');
                 logic.setTranslatedTextFontFamily(serverSettings.translated_text_font_family ?? '');
                 logic.setTranslatedTextFontStyle(serverSettings.translated_text_font_style ?? 'normal');
                 logic.setHideIdenticalTranslations(serverSettings.hide_identical_translations ?? false);
