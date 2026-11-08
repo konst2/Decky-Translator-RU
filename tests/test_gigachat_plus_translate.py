@@ -305,6 +305,46 @@ class GigaChatPlusGlossaryTest(unittest.TestCase):
         self.assertNotIn("Tav → Тав", user_prompt(api.chat_calls[1]))
         self.assertEqual(p.glossary_entries(), [])
 
+    def test_list_screen_adds_at_most_five_new_entries(self):
+        names = ["Kuon", "Haku", "Ukon", "Nekone", "Atuy", "Rulutieh", "Kiwru", "Anju"]
+        roster = " ".join(names)
+        api = FakeApi(chat_contents=[
+            "1. Ош\n---\nOshtor → Ош",
+            "1. список\n---\n" + "\n".join(f"{name} → {name}-ру" for name in names),
+        ])
+        p = provider()
+        with patch.object(gp, "_MAX_GLOSSARY_ENTRIES", 6), fake_http(api), \
+                self.assertLogs(gp.logger, level="INFO") as logs:
+            run(p.translate_batch(["Oshtor"], "en", "ru"))
+            run(p.translate_batch([roster], "en", "ru"))
+
+        terms = [term for term, _ in p.glossary_entries()]
+        # The active character not on the list screen survives; only the
+        # first five names of the list are taken.
+        self.assertEqual(terms, ["Oshtor", "Kuon", "Haku", "Ukon", "Nekone", "Atuy"])
+        self.assertTrue(any("dropped: Rulutieh, Kiwru, Anju" in line for line in logs.output))
+
+    def test_gender_for_existing_entries_is_not_limited(self):
+        names = ["Kuon", "Haku", "Ukon", "Nekone", "Atuy", "Rulutieh"]
+        text = " ".join(names)
+        api = FakeApi(chat_contents=[
+            # 5 new now, the sixth comes on the next screen.
+            "1. а\n---\n" + "\n".join(f"{name} → {name}-ру" for name in names[:5]),
+            "1. б\n---\nRulutieh → Rulutieh-ру\n"
+            + "\n".join(f"{name} → {name}-ру (ж)" for name in names[:5]),
+        ])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch([text], "en", "ru"))
+            run(p.translate_batch([text], "en", "ru"))
+
+        entries = dict(p.glossary_entries())
+        self.assertEqual(len(entries), 6)
+        # All five genders, not just the first: with the limit wrongly
+        # counting genders, the last ones would be the ones dropped.
+        for name in names[:5]:
+            self.assertEqual(entries[name], f"{name}-ру (ж)")
+
     def test_eviction_on_merge_is_logged(self):
         api = FakeApi(chat_contents=["1. а б в\n---\nA → А\nB → Б\nC → В"])
         p = provider()

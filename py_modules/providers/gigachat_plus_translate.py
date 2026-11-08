@@ -43,6 +43,16 @@ logger = logging.getLogger(__name__)
 # the key terms of a game, small next to the 4 000-character batch limit.
 _MAX_GLOSSARY_ENTRIES = 60
 
+# How many new glossary entries one answer may add. A narrative screen
+# introduces 0-3 new names: a reader cannot hold more at once (working
+# memory is about 4 new items), so writers do not do it. +1 for a place or
+# a term next to a new character. A list screen (a roster, the credits)
+# would bring dozens and evict the active characters that are not on it.
+# A dropped name is not lost: the model proposes it again when it shows up
+# in the text. Better to learn a name on its second appearance than to
+# throw away what the glossary has built up.
+_MAX_NEW_ENTRIES_PER_ANSWER = 5
+
 # A real name or term is short. Longer "entries" are the model retelling a
 # line instead of naming something, and would bloat every following prompt.
 _MAX_TERM_LENGTH = 60
@@ -651,6 +661,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 return
             added = 0
             gendered = 0
+            dropped: List[str] = []
             now = int(time.time())
             for term, translation in entries:
                 # The same normalization as the "is it in the text" check:
@@ -659,11 +670,21 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 key = _match_key(term)
                 existing = self._glossary.get(key)
                 if existing is None:
+                    # The limit is on new entries only: a gender added to an
+                    # existing one below does not take a place.
+                    if added >= _MAX_NEW_ENTRIES_PER_ANSWER:
+                        dropped.append(term)
+                        continue
                     self._glossary[key] = GlossaryEntry(key, term, translation, now)
                     added += 1
                     continue
                 if self._add_missing_gender(key, existing, translation):
                     gendered += 1
+            if dropped:
+                logger.info(
+                    f"GigaChat+ glossary: answer proposed more than "
+                    f"{_MAX_NEW_ENTRIES_PER_ANSWER} new entries, dropped: {', '.join(dropped)}"
+                )
             self._evict_overflow()
             if added or gendered:
                 logger.info(
