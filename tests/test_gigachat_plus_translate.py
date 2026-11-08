@@ -473,6 +473,132 @@ class GigaChatPlusSavedGlossaryTest(unittest.TestCase):
         self.assertEqual(self.saved(disco), [])
 
 
+class GigaChatPlusGlossaryFormTest(unittest.TestCase):
+    """View, delete an entry, reset: what the glossary form does."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.store = GlossaryStore(os.path.join(self._tmp.name, "glossary.db"))
+
+    def tearDown(self):
+        self.store.close()
+        self._tmp.cleanup()
+
+    def provider(self, game="Baldur's Gate 3", game_id=BG3_ID, store=True):
+        p = gp.GigaChatPlusTranslateProvider(
+            api_key=API_KEY, glossary_store=self.store if store else None
+        )
+        p.set_game(game, game_id)
+        return p
+
+    def learned(self, p, answer="1. Тав и Карлах\n---\nTav → Тав (м)\nKarlach → Карлах (ж)"):
+        api = FakeApi(chat_contents=[answer])
+        with fake_http(api):
+            run(p.translate_batch(["Tav and Karlach"], "en", "ru"))
+        return p
+
+    def terms(self, entries):
+        return [entry.term for entry in entries]
+
+    def saved_terms(self, key=BG3_KEY):
+        return self.terms(self.store.load_entries(key))
+
+    def test_current_game_glossary_is_shown(self):
+        p = self.learned(self.provider())
+
+        self.assertEqual(self.terms(p.glossary_for(BG3_ID, "en", "ru")), ["Tav", "Karlach"])
+
+    def test_saved_glossary_of_another_game_is_shown(self):
+        self.learned(self.provider())
+        # The form is opened in BG3 before its first translation: the
+        # provider still holds another game, the saved glossary is shown.
+        p = self.provider(game="Disco Elysium", game_id="632470")
+
+        self.assertEqual(self.terms(p.glossary_for(BG3_ID, "en", "ru")), ["Tav", "Karlach"])
+
+    def test_glossary_of_unsaved_current_game_is_shown_from_memory(self):
+        p = self.learned(self.provider(store=False))
+
+        self.assertEqual(self.terms(p.glossary_for(BG3_ID, "en", "ru")), ["Tav", "Karlach"])
+
+    def test_no_game_shows_nothing_and_deletes_nothing(self):
+        p = self.learned(self.provider())
+
+        self.assertEqual(p.glossary_for("", "en", "ru"), [])
+        self.assertFalse(p.delete_glossary_entry("", "en", "ru", "tav"))
+        self.assertFalse(p.reset_glossary("", "en", "ru"))
+
+    def test_language_codes_are_normalized_like_translation(self):
+        api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
+        p = self.provider()
+        with fake_http(api):
+            run(p.translate_batch(["Tav"], "zh-CN", "ru"))
+
+        self.assertEqual(self.terms(p.glossary_for(BG3_ID, "zh-CN", "ru")), ["Tav"])
+        self.assertTrue(p.delete_glossary_entry(BG3_ID, "zh-CN", "ru", "tav"))
+
+    def test_deleted_entry_is_gone_from_memory_store_and_next_prompt(self):
+        p = self.learned(self.provider())
+
+        self.assertTrue(p.delete_glossary_entry(BG3_ID, "en", "ru", "tav"))
+
+        self.assertEqual(p.glossary_entries(), [("Karlach", "Карлах (ж)")])
+        self.assertEqual(self.saved_terms(), ["Karlach"])
+        api = FakeApi(chat_contents=["1. Тав\n---"])
+        with fake_http(api):
+            run(p.translate_batch(["Karlach"], "en", "ru"))
+        self.assertNotIn("Tav →", user_prompt(api.chat_calls[0]))
+        # The translation above saved the glossary again: the entry must
+        # not come back with it.
+        self.assertEqual(self.saved_terms(), ["Karlach"])
+
+    def test_deleting_from_another_game_keeps_the_current_glossary(self):
+        self.learned(self.provider())
+        p = self.learned(
+            self.provider(game="Disco Elysium", game_id="632470"),
+            answer="1. Тав\n---\nTav → Тав из Диско",
+        )
+
+        self.assertTrue(p.delete_glossary_entry(BG3_ID, "en", "ru", "tav"))
+
+        self.assertEqual(p.glossary_entries(), [("Tav", "Тав из Диско")])
+        self.assertEqual(self.saved_terms(), ["Karlach"])
+
+    def test_deleting_a_missing_entry_reports_false(self):
+        p = self.learned(self.provider())
+
+        self.assertFalse(p.delete_glossary_entry(BG3_ID, "en", "ru", "nobody"))
+
+    def test_reset_clears_memory_and_store(self):
+        p = self.learned(self.provider())
+
+        self.assertTrue(p.reset_glossary(BG3_ID, "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [])
+        self.assertEqual(self.saved_terms(), [])
+
+    def test_reset_of_unknown_glossary_reports_false(self):
+        self.assertFalse(self.provider().reset_glossary(BG3_ID, "en", "ru"))
+
+    def test_terms_of_a_request_in_flight_during_reset_are_dropped(self):
+        api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
+        p = self.provider()
+
+        def post_and_reset(*args, **kwargs):
+            response = api.post(*args, **kwargs)
+            if args and args[0].endswith("/chat/completions"):
+                p.reset_glossary(BG3_ID, "en", "ru")
+            return response
+
+        from providers import gigachat_client as gcc
+        with patch.object(gcc.requests, "post", side_effect=post_and_reset), \
+                patch.object(gcc.requests, "get", side_effect=api.get):
+            run(p.translate_batch(["Tav"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [])
+        self.assertEqual(self.saved_terms(), [])
+
+
 class GigaChatPlusFallbackTest(unittest.TestCase):
 
     def test_refusal_with_context_retries_without_it(self):
@@ -732,6 +858,18 @@ class GigaChatPlusManagerTest(unittest.TestCase):
                 self.assertEqual(saved, [("Tav", "Тав (м)")])
             finally:
                 store.close()
+
+    def test_manager_glossary_form_reaches_the_provider(self):
+        m = self.manager()
+        m.set_current_game("Baldur's Gate 3", BG3_ID)
+        api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
+        with fake_http(api):
+            run(m.translate_text(["Tav"], "en", "ru"))
+
+        self.assertEqual([e.term for e in m.get_glossary(BG3_ID, "en", "ru")], ["Tav"])
+        self.assertTrue(m.delete_glossary_entry(BG3_ID, "en", "ru", "tav"))
+        self.assertEqual(m.get_glossary(BG3_ID, "en", "ru"), [])
+        self.assertFalse(m.reset_glossary(BG3_ID, "en", "ru"))
 
     def test_both_methods_use_the_managers_client(self):
         from providers.gigachat_translate import GigaChatTranslateProvider

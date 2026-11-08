@@ -26,7 +26,7 @@ from .yandex_translate import YandexTranslateProvider
 from .gigachat_client import GigaChatClient
 from .gigachat_translate import GigaChatTranslateProvider
 from .gigachat_plus_translate import GigaChatPlusTranslateProvider
-from .glossary_store import GlossaryStore
+from .glossary_store import GlossaryEntry, GlossaryStore
 from .ocrspace import OCRSpaceProvider
 from .free_translate import FreeTranslateProvider
 from .mymemory_translate import MyMemoryTranslateProvider
@@ -273,6 +273,33 @@ class ProviderManager:
         gigachat_plus = self._translation_providers.get(ProviderType.GIGACHAT_PLUS)
         if gigachat_plus:
             gigachat_plus.set_game(game, game_id)
+
+    # -- GigaChat+ glossary form --
+    #
+    # Through the provider, not straight to the store: the glossary of the
+    # running game is also held in the provider's memory, and an entry
+    # deleted only from the store would be saved back by the next
+    # translation. The provider is created if needed (cheap: it shares the
+    # client and opens no connections).
+
+    def get_glossary(self, game_id: str, source_lang: str, target_lang: str) -> List[GlossaryEntry]:
+        return self._gigachat_plus().glossary_for(game_id, source_lang, target_lang)
+
+    def delete_glossary_entry(
+        self, game_id: str, source_lang: str, target_lang: str, match_key: str
+    ) -> bool:
+        return self._gigachat_plus().delete_glossary_entry(
+            game_id, source_lang, target_lang, match_key
+        )
+
+    def reset_glossary(self, game_id: str, source_lang: str, target_lang: str) -> bool:
+        return self._gigachat_plus().reset_glossary(game_id, source_lang, target_lang)
+
+    def _gigachat_plus(self) -> GigaChatPlusTranslateProvider:
+        provider = self.get_translation_provider(ProviderType.GIGACHAT_PLUS)
+        if not isinstance(provider, GigaChatPlusTranslateProvider):
+            raise RuntimeError("GigaChat+ provider is not available")
+        return provider
 
     def set_gemini_model(self, model: str) -> None:
         """Update the Gemini model. Recreates the provider on next use if model changed."""

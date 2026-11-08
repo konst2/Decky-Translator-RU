@@ -31,6 +31,7 @@ from .gigachat_translate import (
     GigaChatTranslateProvider,
     _flatten,
     _language_name,
+    _normalize_language,
     _NUMBERED_LINE_RE,
     _parse_numbered,
 )
@@ -294,6 +295,89 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         """Current glossary as (term, translation), oldest first (for logs and tests)."""
         with self._glossary_lock:
             return [(entry.term, entry.translation) for entry in self._glossary.values()]
+
+    # -- glossary form: view, delete an entry, reset --
+    #
+    # The form names the game and the pair itself instead of relying on the
+    # provider's current game: opened in a new game before its first
+    # translation, it must show that game's glossary, not the previous one's.
+    # Language codes are normalized the same way translate_batch does it, or
+    # "zh-CN" from the settings would miss the glossary saved under "zh".
+
+    def glossary_for(self, game_id: str, source_lang: str, target_lang: str) -> List[GlossaryEntry]:
+        """
+        Entries of the game's glossary for the pair, least recently used first.
+
+        The glossary in memory when it is the one being used (it is exactly
+        what goes into the prompt, saved or not); otherwise the saved one.
+        """
+        key = self._form_key(game_id, source_lang, target_lang)
+        if key is None:
+            return []
+        with self._glossary_lock:
+            if self._is_current_glossary(key):
+                return list(self._glossary.values())
+        if self._glossary_store is None:
+            return []
+        return self._glossary_store.load_entries(key)
+
+    def delete_glossary_entry(
+        self, game_id: str, source_lang: str, target_lang: str, match_key: str
+    ) -> bool:
+        """Delete one entry from memory (if it is the current glossary) and from the store."""
+        key = self._form_key(game_id, source_lang, target_lang)
+        if key is None:
+            return False
+        with self._glossary_lock:
+            deleted = False
+            if self._is_current_glossary(key):
+                deleted = self._glossary.pop(match_key, None) is not None
+                # A request in flight was built with the old glossary; its
+                # new terms are dropped so as not to mix with the edit.
+                self._glossary_epoch += 1
+            # The store is changed under the same lock: a translation saving
+            # its snapshot in between would bring the entry back.
+            if self._glossary_store is not None:
+                deleted = self._glossary_store.delete_entry(key, match_key) or deleted
+        if deleted:
+            logger.info(f"GigaChat+ glossary entry deleted by the user, game {game_id}")
+        return deleted
+
+    def reset_glossary(self, game_id: str, source_lang: str, target_lang: str) -> bool:
+        """Delete the whole glossary of the game for the pair, in memory and in the store."""
+        key = self._form_key(game_id, source_lang, target_lang)
+        if key is None:
+            return False
+        with self._glossary_lock:
+            deleted = False
+            if self._is_current_glossary(key):
+                deleted = bool(self._glossary)
+                self._glossary.clear()
+                self._glossary_epoch += 1
+            if self._glossary_store is not None:
+                deleted = self._glossary_store.delete_glossary(key) or deleted
+        if deleted:
+            logger.info(f"GigaChat+ glossary reset by the user, game {game_id}")
+        return deleted
+
+    def _form_key(self, game_id: str, source_lang: str, target_lang: str) -> Optional[GlossaryKey]:
+        """Key for a form request; None without a game (nothing is saved for it)."""
+        game_id = (game_id or "").strip()
+        if not game_id:
+            return None
+        return GlossaryKey(
+            self.provider_type.value,
+            game_id,
+            _normalize_language(source_lang),
+            _normalize_language(target_lang),
+        )
+
+    def _is_current_glossary(self, key: GlossaryKey) -> bool:
+        """Whether the in-memory glossary is the one `key` names. Caller holds _glossary_lock."""
+        return (
+            key.game_id == self._game_id
+            and (key.source_lang, key.target_lang) == self._glossary_pair
+        )
 
     # -- model --
 

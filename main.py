@@ -2641,6 +2641,75 @@ class Plugin:
             logger.error(f"Error deleting translation cache entry: {e}")
             return {"success": False, "error": str(e)}
 
+    # -- GigaChat+ glossary form --
+    #
+    # The frontend sends the running game's appid and the language pair from
+    # the settings: the form shows the glossary of the game on screen even
+    # before its first translation.
+
+    async def get_glossary(self, game_id: str = "", source_lang: str = "", target_lang: str = ""):
+        try:
+            if not self._provider_manager:
+                return {"success": False, "entries": []}
+            entries = await asyncio.to_thread(
+                self._provider_manager.get_glossary, game_id, source_lang, target_lang
+            )
+            return {
+                "success": True,
+                "entries": [
+                    {"matchKey": e.match_key, "term": e.term, "translation": e.translation}
+                    for e in entries
+                ],
+            }
+        except Exception as e:
+            logger.error(f"Error getting glossary: {e}")
+            return {"success": False, "entries": [], "error": str(e)}
+
+    async def delete_glossary_entry(
+        self, game_id: str = "", source_lang: str = "", target_lang: str = "", match_key: str = ""
+    ):
+        try:
+            if not self._provider_manager:
+                return {"success": False}
+            deleted = await asyncio.to_thread(
+                self._provider_manager.delete_glossary_entry,
+                game_id, source_lang, target_lang, match_key,
+            )
+            cache_cleared = await self._clear_glossary_tier_cache() if deleted else 0
+            return {"success": True, "deleted": deleted, "cacheCleared": cache_cleared}
+        except Exception as e:
+            logger.error(f"Error deleting glossary entry: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def reset_glossary(self, game_id: str = "", source_lang: str = "", target_lang: str = ""):
+        try:
+            if not self._provider_manager:
+                return {"success": False}
+            deleted = await asyncio.to_thread(
+                self._provider_manager.reset_glossary, game_id, source_lang, target_lang
+            )
+            cache_cleared = await self._clear_glossary_tier_cache() if deleted else 0
+            return {"success": True, "deleted": deleted, "cacheCleared": cache_cleared}
+        except Exception as e:
+            logger.error(f"Error resetting glossary: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _clear_glossary_tier_cache(self) -> int:
+        """
+        Drop cached translations made with a glossary (GigaChat+ tier and up).
+
+        Otherwise lines with the deleted wrong name would keep coming from
+        the cache. Done even when caching is switched off: the old entries
+        are still in the file and would be used once it is switched on.
+        """
+        if not self._translation_cache:
+            return 0
+        removed = await asyncio.to_thread(
+            self._translation_cache.delete_from_tier, PROVIDER_TIERS["gigachat_plus"]
+        )
+        logger.info(f"Glossary changed by the user, {removed} cached translations dropped")
+        return removed
+
     async def start_hidraw_monitor(self):
         try:
             if self._hidraw_monitor is None:

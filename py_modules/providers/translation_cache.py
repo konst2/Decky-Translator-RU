@@ -197,6 +197,21 @@ class TranslationCache:
             self._conn.commit()
         return cur.rowcount
 
+    def delete_from_tier(self, min_tier):
+        """
+        Delete every entry of tier >= min_tier; returns how many.
+
+        Used when a GigaChat+ glossary entry is deleted or the glossary is
+        reset: lines translated with the wrong name are cached at its tier
+        and would keep showing it. The cache has no game column, so the
+        entries of all games go; the cache only saves some tokens, and
+        GigaChat+ fills it again.
+        """
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM translations WHERE tier >= ?", [min_tier])
+            self._conn.commit()
+        return cur.rowcount
+
     def close(self):
         with self._lock:
             self._conn.close()
