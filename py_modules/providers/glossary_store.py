@@ -46,6 +46,10 @@ class GlossaryEntry:
     term: str
     translation: str
     last_used_at: int
+    # Манера речи персонажа («грубо, коротко, на «ты»»), "" — неизвестна.
+    # Последним полем со значением по умолчанию: записи без манеры создаются
+    # как раньше, четырьмя полями.
+    speech: str = ""
 
 
 class GlossaryStore:
@@ -84,10 +88,12 @@ class GlossaryStore:
                 term         TEXT NOT NULL,
                 translation  TEXT NOT NULL,
                 last_used_at INTEGER,
+                speech       TEXT,
                 PRIMARY KEY (glossary_id, match_key)
             )
             """
         )
+        self._add_missing_columns()
         self._conn.commit()
 
     def load_entries(self, key: GlossaryKey) -> List[GlossaryEntry]:
@@ -95,7 +101,8 @@ class GlossaryStore:
         with self._lock:
             rows = self._conn.execute(
                 """
-                SELECT e.match_key, e.term, e.translation, e.last_used_at
+                SELECT e.match_key, e.term, e.translation, e.last_used_at,
+                       COALESCE(e.speech, '')
                 FROM glossary_entries e
                 JOIN glossaries g ON g.id = e.glossary_id
                 WHERE g.method = ? AND g.game_id = ?
@@ -126,7 +133,7 @@ class GlossaryStore:
             return
 
         rows = [
-            (entry.match_key, entry.term, entry.translation, entry.last_used_at)
+            (entry.match_key, entry.term, entry.translation, entry.last_used_at, entry.speech)
             for entry in entries
         ]
         with self._lock, self._conn:
@@ -137,8 +144,8 @@ class GlossaryStore:
             self._conn.executemany(
                 """
                 INSERT INTO glossary_entries
-                    (glossary_id, match_key, term, translation, last_used_at)
-                VALUES (?, ?, ?, ?, ?)
+                    (glossary_id, match_key, term, translation, last_used_at, speech)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 [(glossary_id, *row) for row in rows],
             )
@@ -205,6 +212,19 @@ class GlossaryStore:
             self._conn.close()
 
     # -- внутреннее (вызывающий держит _lock и открытую транзакцию) --
+
+    def _add_missing_columns(self) -> None:
+        """
+        Миграция базы, созданной прежней версией плагина.
+
+        CREATE TABLE IF NOT EXISTS не трогает существующую таблицу, поэтому
+        колонку, появившуюся позже, нужно добавить самим. Старые записи
+        получают NULL, при чтении он превращается в "".
+        """
+        columns = [row[1] for row in self._conn.execute("PRAGMA table_info(glossary_entries)")]
+        if "speech" not in columns:
+            self._conn.execute("ALTER TABLE glossary_entries ADD COLUMN speech TEXT")
+            logger.info("Glossary store migrated: speech column added")
 
     @staticmethod
     def _key_params(key: GlossaryKey) -> list:

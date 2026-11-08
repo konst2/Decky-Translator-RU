@@ -58,15 +58,27 @@ class GigaChatPlusPromptTest(unittest.TestCase):
         # Empty glossary: no glossary block yet.
         self.assertNotIn("Словарь игры", user_prompt(api.chat_calls[0]))
 
-    def test_formal_address_only_for_russian(self):
+    def test_address_rule_only_for_russian(self):
         api = FakeApi(chat_contents=["1. Привет\n---", "1. Hallo\n---"])
         p = provider()
         with fake_http(api):
             run(p.translate_batch(["Hello"], "en", "ru"))
             run(p.translate_batch(["Hello"], "en", "de"))
 
-        self.assertIn("на «вы»", system_prompt(api.chat_calls[0]))
-        self.assertNotIn("на «вы»", system_prompt(api.chat_calls[1]))
+        self.assertIn(gp._RUSSIAN_ADDRESS_RULE, system_prompt(api.chat_calls[0]))
+        self.assertNotIn("«ты» или «вы»", system_prompt(api.chat_calls[1]).casefold())
+
+    def test_address_is_chosen_by_relationship_not_always_formal(self):
+        # "Always «вы» to the player" leaked into dialogue between characters
+        # ("Брат, вы в порядке?"); the rule must not come back.
+        api = FakeApi(chat_contents=["1. Привет\n---"])
+        with fake_http(api):
+            run(provider().translate_batch(["Hello"], "en", "ru"))
+
+        prompt = system_prompt(api.chat_calls[0])
+        self.assertNotIn("всегда обращайся на «вы»", prompt)
+        self.assertIn("по отношениям", prompt)
+        self.assertIn("повествование, обращённые к игроку, — всегда на «вы»", prompt)
 
     def test_no_game_line_without_game(self):
         api = FakeApi(chat_contents=["1. Привет\n---"])
@@ -926,6 +938,148 @@ class GigaChatPlusGlossaryFormTest(unittest.TestCase):
 
         self.assertEqual(p.glossary_entries(), [])
         self.assertEqual(self.saved_terms(), [])
+
+
+class GigaChatPlusSpeechTest(unittest.TestCase):
+    """Speech manner notes: parsing, the update rule, the prompt block."""
+
+    def setUp(self):
+        self.p = provider()
+        # Ukon and Kuon are in the glossary from the start.
+        self.say("Ukon and Kuon", "Ukon → Укон (м)\nKuon → Куон (ж)")
+
+    def say(self, text, glossary_part):
+        api = FakeApi(chat_contents=[f"1. x\n---\n{glossary_part}"])
+        with fake_http(api):
+            run(self.p.translate_batch([text], "en", "ru"))
+        return api
+
+    def speech(self, term="Ukon"):
+        return self.p._glossary[gp._match_key(term)].speech
+
+    def test_parse_speech_lines(self):
+        text = (
+            "Ukon → Укон (м)\n"
+            "Речь: Ukon — грубо, коротко, на «ты»\n"
+            "- речь: «Куон» – игриво, с усмешкой.\n"
+            "Речь: Haku - лениво\n"
+            "Речь: Nekone без тире\n"
+            "Речь: Oshtor — " + "очень " * 20 + "\n"
+        )
+        self.assertEqual(gp._parse_speech(text), [
+            ("Ukon", "грубо, коротко, на «ты»"),
+            ("Куон", "игриво, с усмешкой"),
+            ("Haku", "лениво"),
+        ])
+
+    def test_first_note_is_taken_at_once(self):
+        self.say("Ukon: Move!", "Речь: Ukon — грубо, коротко")
+
+        self.assertEqual(self.speech(), "грубо, коротко")
+
+    def test_note_by_translated_name(self):
+        self.say("Ukon: Move!", "Речь: Укон — грубо, коротко")
+
+        self.assertEqual(self.speech(), "грубо, коротко")
+
+    def test_same_manner_in_other_words_keeps_the_note(self):
+        self.say("Ukon: Move!", "Речь: Ukon — грубо, самоуверенно")
+        self.say("Ukon: Enough talk.", "Речь: Ukon — грубо, коротко, на «ты»")
+        self.say("Ukon: Tch.", "Речь: Ukon — коротко, грубо")
+
+        self.assertEqual(self.speech(), "грубо, самоуверенно")
+
+    def test_two_different_screens_in_a_row_replace_the_note(self):
+        self.say("Ukon: Move!", "Речь: Ukon — грубо, самоуверенно")
+        self.say("Ukon: Your Highness…", "Речь: Ukon — почтительно, официально, церемонно")
+        self.assertEqual(self.speech(), "грубо, самоуверенно")
+
+        self.say("Ukon: Pray, rest easy.", "Речь: Ukon — почтительно, торжественно")
+
+        # The latest description wins.
+        self.assertEqual(self.speech(), "почтительно, торжественно")
+
+    def test_one_different_scene_does_not_replace_the_note(self):
+        self.say("Ukon: Move!", "Речь: Ukon — грубо, самоуверенно")
+        self.say("Ukon: Your Highness…", "Речь: Ukon — почтительно, официально")
+        self.say("Ukon: Tch. Kids.", "Речь: Ukon — грубо, пренебрежительно")
+        self.say("Ukon: Your Highness…", "Речь: Ukon — почтительно, официально")
+
+        self.assertEqual(self.speech(), "грубо, самоуверенно")
+
+    def test_short_words_do_not_make_notes_alike(self):
+        # "на «ты»" and "на «вы»" share "на": it must not count.
+        self.say("Ukon: Move!", "Речь: Ukon — грубо, на «ты»")
+        self.say("Ukon: Your Highness…", "Речь: Ukon — почтительно, на «вы»")
+        self.say("Ukon: Pray, rest easy.", "Речь: Ukon — церемонно, на «вы»")
+
+        self.assertEqual(self.speech(), "церемонно, на «вы»")
+
+    def test_one_answer_is_one_screen(self):
+        self.say("Ukon: Move!", "Речь: Ukon — грубо, самоуверенно")
+        self.say(
+            "Ukon: Your Highness…",
+            "Речь: Ukon — почтительно, официально\nРечь: Укон — почтительно, церемонно",
+        )
+
+        self.assertEqual(self.speech(), "грубо, самоуверенно")
+
+    def test_speaker_not_on_screen_or_unknown_is_ignored(self):
+        self.say("Kuon laughs.", "Речь: Ukon — грубо\nРечь: Nekone — вежливо")
+
+        self.assertEqual(self.speech(), "")
+        self.assertNotIn("nekone", self.p._glossary)
+
+    def test_prompt_has_notes_of_speakers_on_screen_outside_the_glossary(self):
+        self.say("Ukon and Kuon", "Речь: Ukon — грубо, коротко\nРечь: Kuon — игриво")
+
+        api = self.say("Ukon: Move!", "")
+        prompt = user_prompt(api.chat_calls[0])
+
+        glossary_block = prompt.split("\n\n")[0]
+        self.assertNotIn("грубо", glossary_block)
+        self.assertIn("Как персонажи говорили раньше (манера может меняться):\nUkon — грубо, коротко", prompt)
+        # Kuon is not on this screen: her note is not sent.
+        self.assertNotIn("игриво", prompt)
+        self.assertIn("Манера речи:", prompt)
+
+    def test_no_notes_no_block(self):
+        api = self.say("Ukon: Move!", "")
+
+        self.assertNotIn("Как персонажи говорили раньше", user_prompt(api.chat_calls[0]))
+
+    def test_gender_and_form_fixes_keep_the_note(self):
+        self.say("Ukon: Move!", "Речь: Ukon — грубо, коротко")
+        # A form fix and a gender fix of the same entry.
+        self.say("Ukon nods", "Ukon → Укона (форма)")
+        self.say("Ukon nods", "Ukon → Укона (ж)")
+
+        entry = self.p._glossary["ukon"]
+        self.assertEqual(entry.translation, "Укона (ж)")
+        self.assertEqual(entry.speech, "грубо, коротко")
+
+
+class GigaChatPlusSpeechStoreTest(unittest.TestCase):
+
+    def test_note_survives_a_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = GlossaryStore(os.path.join(tmp, "glossary.db"))
+            try:
+                p = gp.GigaChatPlusTranslateProvider(api_key=API_KEY, glossary_store=store)
+                p.set_game("Baldur's Gate 3", BG3_ID)
+                api = FakeApi(chat_contents=["1. x\n---\nKarlach → Карлах (ж)\nРечь: Karlach — бурно, по-свойски"])
+                with fake_http(api):
+                    run(p.translate_batch(["Karlach: Woo!"], "en", "ru"))
+
+                restarted = gp.GigaChatPlusTranslateProvider(api_key=API_KEY, glossary_store=store)
+                restarted.set_game("Baldur's Gate 3", BG3_ID)
+                api = FakeApi(chat_contents=["1. x\n---"])
+                with fake_http(api):
+                    run(restarted.translate_batch(["Karlach: Hey, soldier."], "en", "ru"))
+
+                self.assertIn("Karlach — бурно, по-свойски", user_prompt(api.chat_calls[0]))
+            finally:
+                store.close()
 
 
 class GigaChatPlusFallbackTest(unittest.TestCase):

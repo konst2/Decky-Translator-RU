@@ -53,6 +53,23 @@ _MAX_GLOSSARY_ENTRIES = 60
 # throw away what the glossary has built up.
 _MAX_NEW_ENTRIES_PER_ANSWER = 5
 
+# «Ты» or «вы» for Russian. History: early live runs (GigaChat-2) mixed
+# them within one game, so the prompt said "always «вы» to the player". On
+# GigaChat-3-Ultra that rule leaked into dialogue between characters: a
+# playful girl to her friend "Хаку, вы покраснели!", a sister to her
+# brother "Брат, вы в порядке?". A live comparison of rule variants showed
+# that choosing by the relationship fixes the dialogue and keeps system
+# messages and narration on «вы» from screen to screen; the explicit «вы»
+# for system text and "the same for one pair" stay as a safeguard for
+# weaker models.
+_RUSSIAN_ADDRESS_RULE = (
+    " «Ты» или «вы» выбирай по отношениям говорящего и собеседника, как в хорошей художественной "
+    "локализации: друзья, спутники, родные, ровесники, а также грубость и презрение — «ты»; слуга к "
+    "господину, к правителю, к незнакомцу, вежливый торговец или стражник — «вы». Это касается и "
+    "обращений персонажей к игроку. Системные сообщения, подсказки и повествование, обращённые к "
+    "игроку, — всегда на «вы». Держи выбранное обращение одинаковым для одной пары собеседников."
+)
+
 # The model appends this to an entry it re-lists to fix the form of the
 # translation ("Ukon → Укон (форма)" for an entry stored as "Уконом"). An
 # explicit mark, because the model also writes oblique forms by mistake:
@@ -75,6 +92,28 @@ _FORM_FIX_MAX_TAIL = 3
 # wrote oblique forms only when creating an entry. A one-off slip is
 # unlikely to repeat for an existing entry, a real fix repeats.
 _FORM_FIX_VOTES = 2
+
+# Speech manner of characters ("грубо, коротко, на «ты»"). Live runs: kept
+# inside the glossary ("translate these names exactly so") the note was
+# copied from screen to screen and never updated when a rough warrior began
+# to speak with deference; moved to a separate block "how they spoke before
+# (may change)" with the request to describe THESE lines, the change was
+# caught at once. The model then describes the manner on every screen in its
+# own words, so notes rarely match literally: a note is replaced when the
+# description shares no word with it on this many screens in a row where
+# the character speaks. Synonyms may trigger a harmless replacement
+# ("грубо, самоуверенно" -> "пренебрежительно, коротко"); a lag of two
+# screens did not spoil the translation of the new manner in live runs.
+_SPEECH_PREFIX = "речь:"
+_SPEECH_CHANGE_SCREENS = 2
+# 3-6 words are asked for; a longer "note" is the model retelling the scene.
+_MAX_SPEECH_LENGTH = 60
+# Between the name and the note; the model writes an em dash, but a plain
+# hyphen or an en dash is what it may fall back to.
+_SPEECH_DASHES = (" — ", " – ", " - ")
+# Words shorter than this ("на", "ты", "вы", "и") do not count when notes are
+# compared: "грубо, на «ты»" and "почтительно, на «вы»" must not look alike.
+_SPEECH_MIN_WORD = 3
 
 # A real name or term is short. Longer "entries" are the model retelling a
 # line instead of naming something, and would bloat every following prompt.
@@ -249,6 +288,39 @@ class ProposedEntry(NamedTuple):
     form_fix: bool
 
 
+def _parse_speech(text: str) -> List[Tuple[str, str]]:
+    """
+    Parse "Речь: <name> — <note>" lines of the glossary part: (name, note).
+
+    The name is the original or the translation (the model writes both);
+    _merge_glossary resolves it to an entry. Malformed or too long lines
+    are skipped: the note is a bonus, it never fails the translation.
+    """
+    notes: List[Tuple[str, str]] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip().lstrip(_BULLET_CHARS).strip()
+        if not line.casefold().startswith(_SPEECH_PREFIX):
+            continue
+        rest = line[len(_SPEECH_PREFIX):].strip()
+        name, note = "", ""
+        for dash in _SPEECH_DASHES:
+            if dash in rest:
+                name, _, note = rest.partition(dash)
+                break
+        name = name.strip().strip("«»\"'")
+        note = note.strip().rstrip(".").strip()
+        if not name or not note or len(note) > _MAX_SPEECH_LENGTH:
+            continue
+        notes.append((name, note))
+    return notes
+
+
+def _speech_words(note: str) -> set:
+    """Meaningful words of a speech note, for "is it the same manner" checks."""
+    letters_only = "".join(char if char.isalpha() else " " for char in note.casefold())
+    return {word for word in letters_only.split() if len(word) >= _SPEECH_MIN_WORD}
+
+
 def _split_form_fix_mark(translation: str) -> Tuple[str, bool]:
     """
     Remove the form-fix mark: "Укон (форма)" -> ("Укон", True).
@@ -366,6 +438,10 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         # _match_key(term) -> (proposed name, votes). Memory only: after a
         # restart the votes start again, which only delays a fix.
         self._form_candidates: "dict[str, Tuple[str, int]]" = {}
+        # Speech notes waiting to replace the stored one (_consider_speech):
+        # _match_key(term) -> (latest different description, screens in a
+        # row). Memory only, like the form votes.
+        self._speech_candidates: "dict[str, Tuple[str, int]]" = {}
         # The saved glossary of the current game and pair could not be read.
         # Saving is then off until the game or the pair changes: the empty
         # in-memory glossary would otherwise replace everything on disk at
@@ -411,6 +487,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             self._game_id = game_id
             self._glossary.clear()
             self._form_candidates.clear()
+            self._speech_candidates.clear()
             self._glossary_pair = None
             self._glossary_epoch += 1
 
@@ -462,6 +539,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             if self._is_current_glossary(key):
                 deleted = (self._glossary.pop(match_key, None) is not None) or deleted
                 self._form_candidates.pop(match_key, None)
+                self._speech_candidates.pop(match_key, None)
                 # A request in flight was built with the old glossary; its
                 # new terms are dropped so as not to mix with the edit.
                 self._glossary_epoch += 1
@@ -483,6 +561,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 deleted = bool(self._glossary) or deleted
                 self._glossary.clear()
                 self._form_candidates.clear()
+                self._speech_candidates.clear()
                 self._glossary_epoch += 1
         if deleted:
             logger.info(f"GigaChat+ glossary reset by the user, game {game_id}")
@@ -560,9 +639,12 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 self._save_glossary()
             game = self._game
             glossary = [(entry.term, entry.translation) for entry in self._glossary.values()]
+            speech_notes = self._speech_notes_for(texts)
             epoch = self._glossary_epoch
 
-        messages = self._context_messages(texts, source_lang, target_lang, game, glossary)
+        messages = self._context_messages(
+            texts, source_lang, target_lang, game, glossary, speech_notes
+        )
         answer = self._chat(messages)
         if answer.usable:
             split = _split_answer(answer.content)
@@ -571,7 +653,12 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 translations_text, glossary_text = split
                 parsed = _parse_numbered(translations_text, texts)
             if parsed is not None:
-                self._merge_glossary(_parse_glossary(glossary_text, texts), epoch)
+                self._merge_glossary(
+                    _parse_glossary(glossary_text, texts),
+                    epoch,
+                    speech_notes=_parse_speech(glossary_text),
+                    batch_text=_match_key(" ".join(texts)),
+                )
                 return [_strip_gender_mark(line) for line in parsed]
             logger.warning(
                 f"GigaChat+ answer did not match {len(texts)} numbered lines "
@@ -591,6 +678,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         target_lang: str,
         game: str,
         glossary: List[Tuple[str, str]],
+        speech_notes: Optional[List[Tuple[str, str]]] = None,
     ) -> List[dict]:
         target_name = _language_name(target_lang)
         system = self._system_prompt(source_lang, target_lang)
@@ -601,10 +689,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 f" этой игры на {target_name}, используй этот перевод."
             )
         if target_lang == "ru":
-            # Live runs mixed «ты» and «вы» within one game. «Вы» is the most
-            # common choice of Russian RPG localizations; fixing it keeps
-            # every screen in the same register.
-            system += " К игроку всегда обращайся на «вы»."
+            system += _RUSSIAN_ADDRESS_RULE
 
         parts = []
         if glossary:
@@ -612,6 +697,14 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             parts.append(
                 "Словарь игры — переводи эти имена и термины именно так:\n"
                 f"{glossary_lines}"
+            )
+        if speech_notes:
+            # Not inside the glossary: there the model takes a note as fixed
+            # and copies it (see _SPEECH_PREFIX).
+            speech_lines = "\n".join(f"{term} — {note}" for term, note in speech_notes)
+            parts.append(
+                "Как персонажи говорили раньше (манера может меняться):\n"
+                f"{speech_lines}"
             )
 
         lines = "\n".join(
@@ -649,6 +742,12 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             f"в другом падеже или числе), выпиши запись ещё раз в начальной форме и допиши в конце «{_FORM_FIX_MARK}», "
             f"например: Geralt → Геральт {_FORM_FIX_MARK}. Меняй только окончание, написание имени не меняй; "
             f"пол, если он есть, пиши перед «{_FORM_FIX_MARK}».\n"
+            "Манера речи: после записей словаря для каждого персонажа, который говорит в этих строках, "
+            "напиши строку «Речь: <имя как в исходном тексте> — <3–6 слов>», как он говорит именно в этих "
+            "строках (например: грубо, коротко, на «ты»). Описывай только эти строки; без сюжета и событий. "
+            "Сравни с тем, как персонаж говорил раньше: если в этих строках он говорит иначе (вежливее, "
+            "грубее, официальнее, мягче), опиши новую манеру. Например, раньше «грубо, коротко», а здесь "
+            "персонаж почтительно обращается к правителю — пиши «почтительно, официально, церемонно».\n"
             "Пример записи: Geralt → Геральт (м)\n"
             f"Если записывать нечего, после «{_GLOSSARY_SEPARATOR}» ничего не пиши. "
             "Больше ничего не добавляй.\n\n"
@@ -677,6 +776,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             logger.info("GigaChat+ language pair changed, glossary switched")
         self._glossary.clear()
         self._form_candidates.clear()
+        self._speech_candidates.clear()
         self._glossary_pair = pair
         self._glossary_epoch += 1
         self._glossary_load_failed = False
@@ -755,7 +855,13 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 touched = True
         return touched
 
-    def _merge_glossary(self, entries: List[ProposedEntry], epoch: int) -> None:
+    def _merge_glossary(
+        self,
+        entries: List[ProposedEntry],
+        epoch: int,
+        speech_notes: Tuple[Tuple[str, str], ...] = (),
+        batch_text: str = "",
+    ) -> None:
         """
         Add new entries; never overwrite an existing one, with two exceptions.
 
@@ -764,7 +870,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         prevent. Exceptions: the gender (_update_gender) and the form of the
         name, marked or confirmed by repeated answers (_consider_form).
         """
-        if not entries:
+        if not entries and not speech_notes:
             return
         with self._glossary_lock:
             if epoch != self._glossary_epoch:
@@ -798,6 +904,13 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                     continue
                 if self._update_gender(key, existing, entry.translation):
                     updated += 1
+            # After the entries: a character first named on this screen gets
+            # its entry above and can take its first speech note right away.
+            speech_voted: set = set()
+            for name, note in speech_notes:
+                key = self._speaker_key(name, batch_text)
+                if key is not None and self._consider_speech(key, note, speech_voted):
+                    updated += 1
             if dropped:
                 logger.info(
                     f"GigaChat+ glossary: answer proposed more than "
@@ -827,6 +940,78 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             logger.info(
                 f"GigaChat+ glossary full ({_MAX_GLOSSARY_ENTRIES}), evicted: {', '.join(evicted)}"
             )
+
+    def _speech_notes_for(self, texts: List[str]) -> List[Tuple[str, str]]:
+        """
+        Stored speech notes of the characters on this screen, for the prompt.
+
+        Caller holds _glossary_lock. Only the characters whose name occurs in
+        the batch: a note helps with the lines of its speaker, the others
+        would only cost tokens.
+        """
+        batch_text = _match_key(" ".join(texts))
+        return [
+            (entry.term, entry.speech)
+            for key, entry in self._glossary.items()
+            if entry.speech and key in batch_text
+        ]
+
+    def _speaker_key(self, name: str, batch_text: str) -> Optional[str]:
+        """
+        The glossary key a "Речь:" line is about, or None.
+
+        Caller holds _glossary_lock. The model names the character by the
+        original ("Ukon") or by the translation ("Укон"); both are accepted.
+        The character must be on this screen, as glossary terms must.
+        """
+        key = _match_key(name)
+        if key not in self._glossary:
+            key = None
+            wanted = name.casefold()
+            for candidate_key, entry in self._glossary.items():
+                if _split_gender(entry.translation)[0].casefold() == wanted:
+                    key = candidate_key
+                    break
+        if key is None or key not in batch_text:
+            return None
+        return key
+
+    def _consider_speech(self, key: str, note: str, voted: set) -> bool:
+        """
+        Take a speech note for an entry if the rules allow; return whether
+        the entry changed.
+
+        Caller holds _glossary_lock. The first note is taken at once. Later a
+        description that shares a word with the stored note is the same
+        manner and breaks the run of different ones; one that shares none
+        counts, and after _SPEECH_CHANGE_SCREENS such screens in a row the
+        latest description replaces the note (see _SPEECH_PREFIX). One
+        answer is one screen, even if it repeats a "Речь:" line.
+        """
+        if key in voted:
+            return False
+        voted.add(key)
+        entry = self._glossary[key]
+        if not entry.speech:
+            logger.info(f"GigaChat+ glossary: speech of {entry.term} set: {note}")
+            self._glossary[key] = replace(entry, speech=note)
+            return True
+        if _speech_words(note) & _speech_words(entry.speech):
+            self._speech_candidates.pop(key, None)
+            return False
+        _, screens = self._speech_candidates.get(key, ("", 0))
+        screens += 1
+        if screens < _SPEECH_CHANGE_SCREENS:
+            self._speech_candidates[key] = (note, screens)
+            logger.info(
+                f"GigaChat+ glossary: speech of {entry.term} differs: {note} "
+                f"({screens} of {_SPEECH_CHANGE_SCREENS})"
+            )
+            return False
+        self._speech_candidates.pop(key, None)
+        logger.info(f"GigaChat+ glossary: speech of {entry.term} changed {entry.speech} -> {note}")
+        self._glossary[key] = replace(entry, speech=note)
+        return True
 
     def _consider_form(
         self,

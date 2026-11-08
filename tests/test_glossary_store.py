@@ -7,6 +7,7 @@ GlossaryStore: словари, сохранённые по методу, игр�
 """
 
 import os
+import sqlite3
 import tempfile
 import unittest
 
@@ -112,6 +113,40 @@ class GlossaryStoreTest(unittest.TestCase):
 
         self.assertEqual(self.store.load_entries(BG3), [astarion])
 
+    def test_speech_is_saved_and_loaded(self):
+        astarion = GlossaryEntry("astarion", "Astarion", "Астарион (м)", 1, "язвительно, манерно")
+        self.store.replace_entries(BG3, "Baldur's Gate 3", [astarion])
+
+        self.assertEqual(self.store.load_entries(BG3), [astarion])
+
+    def test_old_database_gets_the_speech_column(self):
+        # База прежней версии: таблица записей без колонки speech.
+        self.store.close()
+        os.remove(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "CREATE TABLE glossaries (id INTEGER PRIMARY KEY AUTOINCREMENT, method TEXT NOT NULL, "
+            "game_id TEXT NOT NULL, game_name TEXT, source_lang TEXT NOT NULL, target_lang TEXT NOT NULL, "
+            "UNIQUE (method, game_id, source_lang, target_lang))"
+        )
+        conn.execute(
+            "CREATE TABLE glossary_entries (glossary_id INTEGER NOT NULL, match_key TEXT NOT NULL, "
+            "term TEXT NOT NULL, translation TEXT NOT NULL, last_used_at INTEGER, "
+            "PRIMARY KEY (glossary_id, match_key))"
+        )
+        conn.execute("INSERT INTO glossaries VALUES (1, 'gigachat_plus', '1086940', 'BG3', 'en', 'ru')")
+        conn.execute("INSERT INTO glossary_entries VALUES (1, 'gale', 'Gale', 'Гейл (м)', 5)")
+        conn.commit()
+        conn.close()
+
+        self.store = GlossaryStore(self.db_path)
+
+        # Старая запись читается, манера пустая; новую можно сохранить.
+        self.assertEqual(self.store.load_entries(BG3), [GlossaryEntry("gale", "Gale", "Гейл (м)", 5)])
+        karlach = GlossaryEntry("karlach", "Karlach", "Карлах (ж)", 6, "бурно, по-свойски")
+        self.store.replace_entries(BG3, "BG3", [karlach])
+        self.assertEqual(self.store.load_entries(BG3), [karlach])
+
     # -- delete --
 
     def test_delete_entry_removes_only_that_entry(self):
@@ -162,7 +197,8 @@ class GlossaryStoreTest(unittest.TestCase):
         # Запись, чей словарь давно удалён, — как будто её оставила прошлая
         # ошибка. Подчистка в delete_glossary должна убрать и её.
         self.store._conn.execute(
-            "INSERT INTO glossary_entries VALUES (999, 'ghost', 'Ghost', 'Призрак', 1)"
+            "INSERT INTO glossary_entries (glossary_id, match_key, term, translation, last_used_at) "
+            "VALUES (999, 'ghost', 'Ghost', 'Призрак', 1)"
         )
         self.store._conn.commit()
         other_game = GlossaryKey(BG3.method, "292030", BG3.source_lang, BG3.target_lang)
