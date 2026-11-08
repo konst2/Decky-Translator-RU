@@ -131,6 +131,19 @@ def _preferred_model(models: List[str]) -> Optional[str]:
     return None
 
 
+def _game_id_text(game_id) -> str:
+    """
+    The game id as text: "" when unknown.
+
+    The frontend sends Steam's appid. Its declared type is a string, but
+    Steam's other app types use numbers; a number here must not break the
+    translation (str.strip on an int raises).
+    """
+    if game_id is None:
+        return ""
+    return str(game_id).strip()
+
+
 def _strip_gender_mark(line: str) -> str:
     """
     Remove a gender mark the model appended to a translated line.
@@ -249,6 +262,11 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         # unused entry is evicted first when the glossary is full. The
         # entry's last_used_at mirrors this order, so it survives a save.
         self._glossary: "OrderedDict[str, GlossaryEntry]" = OrderedDict()
+        # The saved glossary of the current game and pair could not be read.
+        # Saving is then off until the game or the pair changes: the empty
+        # in-memory glossary would otherwise replace everything on disk at
+        # the first save.
+        self._glossary_load_failed = False
         # set_game comes from the event loop, translations from a worker
         # thread.
         self._glossary_lock = threading.Lock()
@@ -278,7 +296,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         only when a translation comes.
         """
         game = (game or "").strip()
-        game_id = (game_id or "").strip()
+        game_id = _game_id_text(game_id)
         with self._glossary_lock:
             if game == self._game and game_id == self._game_id:
                 return
@@ -329,16 +347,18 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         if key is None:
             return False
         with self._glossary_lock:
+            # The store first, under the same lock: a failed write raises
+            # before memory is touched, so memory and disk never disagree;
+            # and a translation saving its snapshot in between cannot bring
+            # the entry back.
             deleted = False
+            if self._glossary_store is not None:
+                deleted = self._glossary_store.delete_entry(key, match_key)
             if self._is_current_glossary(key):
-                deleted = self._glossary.pop(match_key, None) is not None
+                deleted = (self._glossary.pop(match_key, None) is not None) or deleted
                 # A request in flight was built with the old glossary; its
                 # new terms are dropped so as not to mix with the edit.
                 self._glossary_epoch += 1
-            # The store is changed under the same lock: a translation saving
-            # its snapshot in between would bring the entry back.
-            if self._glossary_store is not None:
-                deleted = self._glossary_store.delete_entry(key, match_key) or deleted
         if deleted:
             logger.info(f"GigaChat+ glossary entry deleted by the user, game {game_id}")
         return deleted
@@ -349,20 +369,21 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         if key is None:
             return False
         with self._glossary_lock:
+            # The store first, for the same reasons as in delete_glossary_entry.
             deleted = False
+            if self._glossary_store is not None:
+                deleted = self._glossary_store.delete_glossary(key)
             if self._is_current_glossary(key):
-                deleted = bool(self._glossary)
+                deleted = bool(self._glossary) or deleted
                 self._glossary.clear()
                 self._glossary_epoch += 1
-            if self._glossary_store is not None:
-                deleted = self._glossary_store.delete_glossary(key) or deleted
         if deleted:
             logger.info(f"GigaChat+ glossary reset by the user, game {game_id}")
         return deleted
 
     def _form_key(self, game_id: str, source_lang: str, target_lang: str) -> Optional[GlossaryKey]:
         """Key for a form request; None without a game (nothing is saved for it)."""
-        game_id = (game_id or "").strip()
+        game_id = _game_id_text(game_id)
         if not game_id:
             return None
         return GlossaryKey(
@@ -537,6 +558,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         self._glossary.clear()
         self._glossary_pair = pair
         self._glossary_epoch += 1
+        self._glossary_load_failed = False
         self._load_glossary()
 
     def _store_key(self) -> Optional[GlossaryKey]:
@@ -561,15 +583,19 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             entries = self._glossary_store.load_entries(key)
         except sqlite3.Error as e:
             # The glossary is a bonus: translate without it rather than fail.
-            logger.warning(f"GigaChat+ glossary not loaded, starting empty: {e}")
+            # Not saving protects the stored glossary (see __init__).
+            logger.warning(
+                f"GigaChat+ glossary not loaded, translating with an empty one "
+                f"and not saving it until the game or language pair changes: {e}"
+            )
+            self._glossary_load_failed = True
             return
         # The store returns the least recently used first, the same order
         # the in-memory glossary keeps.
         for entry in entries:
             self._glossary[entry.match_key] = entry
         # A glossary saved by a version with a larger limit is trimmed here.
-        while len(self._glossary) > _MAX_GLOSSARY_ENTRIES:
-            self._glossary.popitem(last=False)
+        self._evict_overflow()
         if entries:
             logger.info(f"GigaChat+ glossary loaded: {len(self._glossary)} entries")
 
@@ -583,7 +609,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         ignored: the translation itself has succeeded.
         """
         key = self._store_key()
-        if key is None:
+        if key is None or self._glossary_load_failed:
             return
         try:
             self._glossary_store.replace_entries(key, self._game, list(self._glossary.values()))
@@ -638,14 +664,30 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                     continue
                 if self._add_missing_gender(key, existing, translation):
                     gendered += 1
-            while len(self._glossary) > _MAX_GLOSSARY_ENTRIES:
-                self._glossary.popitem(last=False)
+            self._evict_overflow()
             if added or gendered:
                 logger.info(
                     f"GigaChat+ glossary: +{added}, gender added {gendered}, "
                     f"{len(self._glossary)} entries"
                 )
                 self._save_glossary()
+
+    def _evict_overflow(self) -> None:
+        """
+        Drop the least recently used entries above the limit and log them.
+
+        Caller holds _glossary_lock. The log is for the pilot: it shows
+        whether real games hit the limit, and with the glossary kept across
+        restarts an evicted name is gone for good.
+        """
+        evicted = []
+        while len(self._glossary) > _MAX_GLOSSARY_ENTRIES:
+            _, entry = self._glossary.popitem(last=False)
+            evicted.append(entry.term)
+        if evicted:
+            logger.info(
+                f"GigaChat+ glossary full ({_MAX_GLOSSARY_ENTRIES}), evicted: {', '.join(evicted)}"
+            )
 
     def _add_missing_gender(
         self, key: str, existing: GlossaryEntry, translation: str

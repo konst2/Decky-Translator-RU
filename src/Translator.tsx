@@ -395,7 +395,9 @@ export class GameTranslatorLogic {
             // shortcuts (GOG, Epic...) get their own appid from Steam too, stable while
             // the shortcut exists; the display name is not a good key, the user can
             // rename a shortcut and some titles depend on the Steam client language.
-            const appId = Router.MainRunningApp?.appid || "";
+            // String(): @decky/ui declares appid a string, but Steam's other app
+            // types use numbers; the backend expects text either way.
+            const appId = String(Router.MainRunningApp?.appid ?? "");
             logger.info('Translator', `Taking new screenshot for: ${appName} (appid ${appId})`);
             await waitForIndicatorToLeaveScreen();
             const result = await call<[string, string], ScreenshotResponse>('take_screenshot', appName, appId);

@@ -1799,7 +1799,9 @@ class Plugin:
             # into one saved glossary.
             if self._provider_manager:
                 game_name = "" if not app_name or app_name.strip().lower() == "null" else app_name.strip()
-                game_id = (app_id or "").strip()
+                # str(): the appid is declared a string, but Steam's other
+                # app types use numbers; a number must not break the capture.
+                game_id = "" if app_id is None else str(app_id).strip()
                 if game_id.lower() in ("0", "null", "undefined"):
                     game_id = ""
                 self._provider_manager.set_current_game(game_name, game_id)

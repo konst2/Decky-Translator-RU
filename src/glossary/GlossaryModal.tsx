@@ -174,7 +174,9 @@ export const openGlossaryModal = (languages: GlossaryLanguages) => {
     const app = Router.MainRunningApp;
     showModal(
         <GlossaryModal
-            gameId={app?.appid || ""}
+            // String(): тип appid объявлен строкой, но в других типах Steam это
+            // число; бэкенд ждёт текст (так же сделано в Translator.tsx).
+            gameId={String(app?.appid ?? "")}
             gameName={app?.display_name || ""}
             {...languages}
         />

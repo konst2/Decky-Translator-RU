@@ -144,7 +144,13 @@ class GlossaryStore:
             )
 
     def delete_entry(self, key: GlossaryKey, match_key: str) -> bool:
-        """Удалить одну запись; False, если такой записи не было."""
+        """
+        Удалить одну запись; False, если такой записи не было.
+
+        Если это была последняя запись, удаляется и строка словаря — как при
+        сохранении пустого списка: пустые словари не копятся, и «сбросить всё»
+        по пустому словарю не считается удалением.
+        """
         with self._lock, self._conn:
             cursor = self._conn.execute(
                 """
@@ -157,7 +163,19 @@ class GlossaryStore:
                 """,
                 [match_key, *self._key_params(key)],
             )
-        return cursor.rowcount > 0
+            deleted = cursor.rowcount > 0
+            self._conn.execute(
+                """
+                DELETE FROM glossaries
+                WHERE method = ? AND game_id = ?
+                  AND source_lang = ? AND target_lang = ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM glossary_entries WHERE glossary_id = glossaries.id
+                  )
+                """,
+                self._key_params(key),
+            )
+        return deleted
 
     def delete_glossary(self, key: GlossaryKey) -> bool:
         """

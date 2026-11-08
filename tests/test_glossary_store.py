@@ -133,6 +133,16 @@ class GlossaryStoreTest(unittest.TestCase):
 
         self.assertEqual(self.store.load_entries(other_game), [astarion])
 
+    def test_deleting_the_last_entry_removes_the_empty_glossary(self):
+        astarion = entry("Astarion", "Астарион (м)", 100)
+        self.store.replace_entries(BG3, "Baldur's Gate 3", [astarion])
+
+        self.assertTrue(self.store.delete_entry(BG3, astarion.match_key))
+
+        self.assertEqual(self.count("glossaries"), 0)
+        # Сбрасывать больше нечего: «сбросить всё» не должно считаться удалением.
+        self.assertFalse(self.store.delete_glossary(BG3))
+
     def test_delete_missing_entry_reports_false(self):
         self.assertFalse(self.store.delete_entry(BG3, "nobody"))
 

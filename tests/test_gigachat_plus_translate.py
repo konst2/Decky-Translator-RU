@@ -305,6 +305,15 @@ class GigaChatPlusGlossaryTest(unittest.TestCase):
         self.assertNotIn("Tav → Тав", user_prompt(api.chat_calls[1]))
         self.assertEqual(p.glossary_entries(), [])
 
+    def test_eviction_on_merge_is_logged(self):
+        api = FakeApi(chat_contents=["1. а б в\n---\nA → А\nB → Б\nC → В"])
+        p = provider()
+        with patch.object(gp, "_MAX_GLOSSARY_ENTRIES", 2), fake_http(api), \
+                self.assertLogs(gp.logger, level="INFO") as logs:
+            run(p.translate_batch(["a b c"], "en", "ru"))
+
+        self.assertTrue(any("glossary full (2), evicted: A" in line for line in logs.output))
+
     def test_full_glossary_evicts_oldest_unused_entry(self):
         api = FakeApi(chat_contents=[
             "1. а б\n---\nA → А\nB → Б",
@@ -453,6 +462,60 @@ class GigaChatPlusSavedGlossaryTest(unittest.TestCase):
         self.assertEqual(result, ["Тав"])
         self.assertEqual(p.glossary_entries(), [("Tav", "Тав (м)")])
 
+    def test_failed_load_does_not_let_a_save_wipe_the_stored_glossary(self):
+        api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
+        self.store.replace_entries(BG3_KEY, "Baldur's Gate 3", [
+            gp.GlossaryEntry("karlach", "Karlach", "Карлах (ж)", 1),
+            gp.GlossaryEntry("gale", "Gale", "Гейл (м)", 2),
+        ])
+        p = self.provider()
+        # Only the read fails (e.g. "database is locked"); writes work.
+        locked = sqlite3.OperationalError("database is locked")
+        with patch.object(self.store, "load_entries", side_effect=locked), fake_http(api):
+            result = run(p.translate_batch(["Tav"], "en", "ru"))
+
+        self.assertEqual(result, ["Тав"])
+        self.assertEqual(p.glossary_entries(), [("Tav", "Тав (м)")])
+        self.assertEqual(self.saved(), [("Karlach", "Карлах (ж)"), ("Gale", "Гейл (м)")])
+
+    def test_same_name_with_another_game_id_is_another_glossary(self):
+        # Two shortcuts with the same name (e.g. a Steam and a GOG copy).
+        api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)", "1. Тав\n---"])
+        p = self.provider()
+        with fake_http(api):
+            run(p.translate_batch(["Tav"], "en", "ru"))
+            p.set_game("Baldur's Gate 3", "3000000001")
+            run(p.translate_batch(["Tav"], "en", "ru"))
+
+        self.assertNotIn("Tav → Тав", user_prompt(api.chat_calls[1]))
+        self.assertEqual(p.glossary_entries(), [])
+
+    def test_loaded_glossary_is_trimmed_to_the_limit_and_eviction_is_logged(self):
+        self.store.replace_entries(BG3_KEY, "Baldur's Gate 3", [
+            gp.GlossaryEntry("a", "A", "А", 1),
+            gp.GlossaryEntry("b", "B", "Б", 2),
+            gp.GlossaryEntry("c", "C", "В", 3),
+        ])
+        api = FakeApi(chat_contents=["1. Привет\n---"])
+        p = self.provider()
+        with patch.object(gp, "_MAX_GLOSSARY_ENTRIES", 2), fake_http(api), \
+                self.assertLogs(gp.logger, level="INFO") as logs:
+            run(p.translate_batch(["Hello"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("B", "Б"), ("C", "В")])
+        self.assertTrue(any("evicted: A" in line for line in logs.output))
+
+    def test_numeric_game_id_works(self):
+        # Steam's other app types use numbers for appid; the declared string
+        # type may not hold.
+        api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
+        p = self.provider(game_id=int(BG3_ID))
+        with fake_http(api):
+            run(p.translate_batch(["Tav"], "en", "ru"))
+
+        self.assertEqual(self.saved(), [("Tav", "Тав (м)")])
+        self.assertEqual([e.term for e in p.glossary_for(int(BG3_ID), "en", "ru")], ["Tav"])
+
     def test_terms_answered_after_a_game_switch_are_not_saved_for_either_game(self):
         api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
         p = self.provider()
@@ -579,6 +642,47 @@ class GigaChatPlusGlossaryFormTest(unittest.TestCase):
 
     def test_reset_of_unknown_glossary_reports_false(self):
         self.assertFalse(self.provider().reset_glossary(BG3_ID, "en", "ru"))
+
+    def test_failed_store_delete_leaves_memory_untouched(self):
+        p = self.learned(self.provider())
+        broken = sqlite3.OperationalError("attempt to write a readonly database")
+
+        with patch.object(self.store, "delete_entry", side_effect=broken):
+            with self.assertRaises(sqlite3.OperationalError):
+                p.delete_glossary_entry(BG3_ID, "en", "ru", "tav")
+
+        # Memory and disk still agree: the entry is in both.
+        self.assertEqual(p.glossary_entries(), [("Tav", "Тав (м)"), ("Karlach", "Карлах (ж)")])
+        self.assertEqual(self.saved_terms(), ["Tav", "Karlach"])
+
+    def test_failed_store_reset_leaves_memory_untouched(self):
+        p = self.learned(self.provider())
+        broken = sqlite3.OperationalError("attempt to write a readonly database")
+
+        with patch.object(self.store, "delete_glossary", side_effect=broken):
+            with self.assertRaises(sqlite3.OperationalError):
+                p.reset_glossary(BG3_ID, "en", "ru")
+
+        self.assertEqual(len(p.glossary_entries()), 2)
+
+    def test_terms_of_a_request_in_flight_during_entry_delete_are_dropped(self):
+        p = self.learned(self.provider())
+        api = FakeApi(chat_contents=["1. Гейл\n---\nGale → Гейл (м)"])
+
+        def post_and_delete(*args, **kwargs):
+            response = api.post(*args, **kwargs)
+            if args and args[0].endswith("/chat/completions"):
+                p.delete_glossary_entry(BG3_ID, "en", "ru", "tav")
+            return response
+
+        from providers import gigachat_client as gcc
+        with patch.object(gcc.requests, "post", side_effect=post_and_delete), \
+                patch.object(gcc.requests, "get", side_effect=api.get):
+            run(p.translate_batch(["Gale"], "en", "ru"))
+
+        # The answer was built with the old glossary: its "Gale" is dropped.
+        self.assertEqual(p.glossary_entries(), [("Karlach", "Карлах (ж)")])
+        self.assertEqual(self.saved_terms(), ["Karlach"])
 
     def test_terms_of_a_request_in_flight_during_reset_are_dropped(self):
         api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
