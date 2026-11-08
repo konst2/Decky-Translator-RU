@@ -93,6 +93,7 @@ import requests
 from providers import ProviderManager, TextRegion, NetworkError, ApiKeyError, RateLimitError, TranslationUnavailableError
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
 from providers.glossary_store import GlossaryStore
+from providers.gigachat_plus_translate import name_and_gender
 from providers import readiness
 from providers.key_entry_server import KeyEntryServer, detect_local_ip
 # Значения по умолчанию — из общего с фронтендом settings_defaults.json.
@@ -2657,16 +2658,25 @@ class Plugin:
             entries = await asyncio.to_thread(
                 self._provider_manager.get_glossary, game_id, source_lang, target_lang
             )
-            return {
-                "success": True,
-                "entries": [
-                    {"matchKey": e.match_key, "term": e.term, "translation": e.translation}
-                    for e in entries
-                ],
-            }
+            return {"success": True, "entries": [self._glossary_entry_view(e) for e in entries]}
         except Exception as e:
             logger.error(f"Error getting glossary: {e}")
             return {"success": False, "entries": [], "error": str(e)}
+
+    @staticmethod
+    def _glossary_entry_view(entry) -> dict:
+        """
+        A glossary entry for the window: the name, the gender ("м", "ж" or
+        "") and the speech manner apart, so the window does not parse them.
+        """
+        name, gender = name_and_gender(entry.translation)
+        return {
+            "matchKey": entry.match_key,
+            "term": entry.term,
+            "name": name,
+            "gender": gender,
+            "speech": entry.speech,
+        }
 
     async def delete_glossary_entry(
         self, game_id: str = "", source_lang: str = "", target_lang: str = "", match_key: str = ""

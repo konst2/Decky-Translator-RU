@@ -385,6 +385,11 @@ class GigaChatPlusGlossaryTest(unittest.TestCase):
         # One vote after the switch is not enough.
         self.assertEqual(entries, {"Ukon": "Уконом"})
 
+    def test_name_and_gender_for_the_window(self):
+        self.assertEqual(gp.name_and_gender("Шэдоухарт (ж)"), ("Шэдоухарт", "ж"))
+        self.assertEqual(gp.name_and_gender("Гейл (м)"), ("Гейл", "м"))
+        self.assertEqual(gp.name_and_gender("Врата Балдура"), ("Врата Балдура", ""))
+
     def test_ending_change_rule(self):
         cases = [
             ("Уконом", "Укон", True),

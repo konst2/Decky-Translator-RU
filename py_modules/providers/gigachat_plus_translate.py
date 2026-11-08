@@ -154,6 +154,17 @@ def _split_gender(text: str) -> Tuple[str, str]:
     return value, ""
 
 
+def name_and_gender(translation: str) -> Tuple[str, str]:
+    """
+    "Шэдоухарт (ж)" -> ("Шэдоухарт", "ж"); no mark -> (translation, "").
+
+    For the glossary window: it shows the gender apart from the name, and
+    the format of the mark stays known in this module only.
+    """
+    name, mark = _split_gender(translation)
+    return name, mark.strip("()")
+
+
 def _model_generation(name: str) -> Tuple[int, ...]:
     """
     Generation number from a model name: "GigaChat-3-Ultra" -> (3,),

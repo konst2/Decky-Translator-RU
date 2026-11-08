@@ -13,11 +13,18 @@ import { call, toaster } from "@decky/api";
 import { HiTrash, HiXCircle, HiExclamationTriangle } from "react-icons/hi2";
 
 // Запись словаря в том виде, в каком её отдаёт бэкенд (get_glossary).
+// Имя, пол и манера приходят раздельно: формат знака пола («(ж)») знает только
+// бэкенд.
 interface GlossaryEntryView {
     matchKey: string;
     term: string;
-    translation: string;
+    name: string;
+    gender: "м" | "ж" | "";
+    speech: string;
 }
+
+const genderLabel = (gender: GlossaryEntryView["gender"]) =>
+    gender === "м" ? "муж." : gender === "ж" ? "жен." : "";
 
 // Языки словаря: коды уходят на бэкенд, подписи показываются в окне.
 export interface GlossaryLanguages {
@@ -147,10 +154,22 @@ const GlossaryModal: VFC<GlossaryLanguages & {
                                 focusWithinClassName="dt-rowfocus"
                                 style={{ display: "flex", gap: "10px", alignItems: "center", padding: "6px 10px", background: "rgba(255,255,255,0.04)", borderRadius: "4px", scrollMargin: "8px" }}
                             >
-                                <div style={{ flex: "1 1 auto", minWidth: 0, fontSize: "13px" }}>
-                                    <span style={{ color: "#dcdedf" }}>{entry.term}</span>
-                                    <span style={{ color: "rgba(255,255,255,0.35)" }}> → </span>
-                                    <span style={{ color: "#6fcf97" }}>{entry.translation}</span>
+                                <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: "2px" }}>
+                                    <div style={{ fontSize: "13px", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                                        <span style={{ color: "#dcdedf" }}>{entry.term}</span>
+                                        <span style={{ color: "rgba(255,255,255,0.35)" }}>→</span>
+                                        <span style={{ color: "#6fcf97" }}>{entry.name}</span>
+                                        {entry.gender && (
+                                            <span style={{ fontSize: "10px", color: "#b8bcbf", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "3px", padding: "0 4px" }}>
+                                                {genderLabel(entry.gender)}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {entry.speech && (
+                                        <div style={{ fontSize: "11px", color: "#8b929a", fontStyle: "italic" }}>
+                                            речь: {entry.speech}
+                                        </div>
+                                    )}
                                 </div>
                                 <DialogButton
                                     onClick={() => removeEntry(entry)}
