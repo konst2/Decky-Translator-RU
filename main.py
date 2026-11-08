@@ -1770,8 +1770,8 @@ class Plugin:
             logger.error(f"Error checking web reachability: {str(e)}")
             return {"error": str(e)}
 
-    async def take_screenshot(self, app_name: str = ""):
-        logger.debug(f"Taking screenshot for app: {app_name}")
+    async def take_screenshot(self, app_name: str = "", app_id: str = ""):
+        logger.debug(f"Taking screenshot for app: {app_name} (appid {app_id})")
         global _processing_lock
 
         if _processing_lock:
@@ -1788,13 +1788,20 @@ class Plugin:
         try:
             _processing_lock = True
 
-            # GigaChat+ needs the game's name: it goes into the prompt, and a
-            # new name starts a new glossary. Taken here because the frontend
-            # already sends it with every screenshot; the raw name, before
-            # it is sanitized for the file name below.
+            # GigaChat+ needs the game: the name goes into the prompt, the
+            # appid is the key of the saved glossary. Taken here because the
+            # frontend already sends them with every screenshot; the raw name,
+            # before it is sanitized for the file name below. With no game
+            # running the frontend sends "". "0", "null", "undefined" are a
+            # guard against a stringified empty value (the name check above
+            # already met "null"): such an id would merge unrelated games
+            # into one saved glossary.
             if self._provider_manager:
                 game_name = "" if not app_name or app_name.strip().lower() == "null" else app_name.strip()
-                self._provider_manager.set_current_game(game_name)
+                game_id = (app_id or "").strip()
+                if game_id.lower() in ("0", "null", "undefined"):
+                    game_id = ""
+                self._provider_manager.set_current_game(game_name, game_id)
 
             # Sanitize and default app name
             if not app_name or app_name.strip().lower() == "null":

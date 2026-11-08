@@ -391,9 +391,14 @@ export class GameTranslatorLogic {
 
             // Take screenshot FIRST while screen is clean (no overlay visible)
             const appName = Router.MainRunningApp?.display_name || "";
-            logger.info('Translator', `Taking new screenshot for: ${appName}`);
+            // Steam appid: the key of the game's saved GigaChat+ glossary. Non-Steam
+            // shortcuts (GOG, Epic...) get their own appid from Steam too, stable while
+            // the shortcut exists; the display name is not a good key, the user can
+            // rename a shortcut and some titles depend on the Steam client language.
+            const appId = Router.MainRunningApp?.appid || "";
+            logger.info('Translator', `Taking new screenshot for: ${appName} (appid ${appId})`);
             await waitForIndicatorToLeaveScreen();
-            const result = await call<[string], ScreenshotResponse>('take_screenshot', appName);
+            const result = await call<[string, string], ScreenshotResponse>('take_screenshot', appName, appId);
 
             if (isCancelled()) {
                 logger.debug('Translator', 'Translation cancelled before screenshot processed');
