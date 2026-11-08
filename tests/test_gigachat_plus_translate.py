@@ -977,6 +977,22 @@ class GigaChatPlusSpeechTest(unittest.TestCase):
             ("Haku", "лениво"),
         ])
 
+    def test_speech_line_before_the_separator_does_not_reach_the_screen(self):
+        api = FakeApi(chat_contents=["1. Двигаемся!\nРечь: Ukon — грубо, коротко\n---"])
+        with fake_http(api):
+            result = run(self.p.translate_batch(["Ukon: Move!"], "en", "ru"))
+
+        self.assertEqual(result, ["Двигаемся!"])
+        # Not lost either: taken as the note it is.
+        self.assertEqual(self.speech(), "грубо, коротко")
+
+    def test_numbered_line_starting_with_speech_word_is_a_translation(self):
+        api = FakeApi(chat_contents=["1. Речь: короткая и злая\n---"])
+        with fake_http(api):
+            result = run(self.p.translate_batch(["Speech: short and angry"], "en", "ru"))
+
+        self.assertEqual(result, ["Речь: короткая и злая"])
+
     def test_first_note_is_taken_at_once(self):
         self.say("Ukon: Move!", "Речь: Ukon — грубо, коротко")
 
@@ -1002,6 +1018,16 @@ class GigaChatPlusSpeechTest(unittest.TestCase):
         self.say("Ukon: Pray, rest easy.", "Речь: Ukon — почтительно, торжественно")
 
         # The latest description wins.
+        self.assertEqual(self.speech(), "почтительно, торжественно")
+
+    def test_echo_of_the_stored_note_does_not_break_the_run(self):
+        # Seen live: on a narration screen the model copies the stored note
+        # of a character who only is mentioned.
+        self.say("Ukon: Move!", "Речь: Ukon — грубо, самоуверенно")
+        self.say("Ukon: Your Highness…", "Речь: Ukon — почтительно, официально")
+        self.say("Ukon walks beside the palanquin.", "Речь: Ukon — Грубо, самоуверенно")
+        self.say("Ukon: Pray, rest easy.", "Речь: Ukon — почтительно, торжественно")
+
         self.assertEqual(self.speech(), "почтительно, торжественно")
 
     def test_one_different_scene_does_not_replace_the_note(self):

@@ -326,6 +326,30 @@ def _parse_speech(text: str) -> List[Tuple[str, str]]:
     return notes
 
 
+def _pull_speech_lines(translations_text: str) -> Tuple[str, str]:
+    """
+    Take unnumbered "Речь:" lines out of the translations part.
+
+    The model is asked to write them after the separator, but if one slips
+    in among the translations, the numbered parser would glue it to the
+    previous line as its wrapped continuation and it would reach the screen
+    ("Привет Речь: Ukon — грубо"). A translation always starts with its
+    number, so an unnumbered "Речь:" line is never one; a numbered line
+    that starts with "Речь:" is a game line and stays. Returns the cleaned
+    translations and the pulled lines (parsed as speech notes).
+    """
+    kept: List[str] = []
+    pulled: List[str] = []
+    for line in translations_text.splitlines():
+        unnumbered = _NUMBERED_LINE_RE.match(line) is None
+        bare = line.strip().lstrip(_BULLET_CHARS).strip()
+        if unnumbered and bare.casefold().startswith(_SPEECH_PREFIX):
+            pulled.append(line)
+        else:
+            kept.append(line)
+    return "\n".join(kept), "\n".join(pulled)
+
+
 def _speech_words(note: str) -> set:
     """Meaningful words of a speech note, for "is it the same manner" checks."""
     letters_only = "".join(char if char.isalpha() else " " for char in note.casefold())
@@ -660,14 +684,16 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         if answer.usable:
             split = _split_answer(answer.content)
             parsed = None
+            stray_speech = ""
             if split is not None:
                 translations_text, glossary_text = split
+                translations_text, stray_speech = _pull_speech_lines(translations_text)
                 parsed = _parse_numbered(translations_text, texts)
             if parsed is not None:
                 self._merge_glossary(
                     _parse_glossary(glossary_text, texts),
                     epoch,
-                    speech_notes=_parse_speech(glossary_text),
+                    speech_notes=_parse_speech(stray_speech + "\n" + glossary_text),
                     batch_text=_match_key(" ".join(texts)),
                 )
                 return [_strip_gender_mark(line) for line in parsed]
@@ -731,7 +757,12 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         # glossary" contradicted "list it again with the gender". The rules
         # now allow knowledge and make the gender correction the explicit
         # exception. The format is shown by a real-looking example: a
-        # placeholder like «оригинал → перевод» was echoed back.
+        # placeholder like «оригинал → перевод» was echoed back. The speech
+        # examples use words rare in real notes ("с прибаутками"): the model
+        # copied the example word for word ("почтительно, официально,
+        # церемонно"), and a common word from it ("коротко") showing up in
+        # many notes would make every description share a word with the
+        # stored one and block the replacement.
         parts.append(
             f"Ниже {len(texts)} строк текста из игры. Переведи каждую строку на {target_name}.\n"
             f"Ответь ровно {len(texts)} строками в формате «<номер>. <перевод>», в том же порядке.\n"
@@ -755,10 +786,10 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             f"пол, если он есть, пиши перед «{_FORM_FIX_MARK}».\n"
             "Манера речи: после записей словаря для каждого персонажа, который говорит в этих строках, "
             "напиши строку «Речь: <имя как в исходном тексте> — <3–6 слов>», как он говорит именно в этих "
-            "строках (например: грубо, коротко, на «ты»). Описывай только эти строки; без сюжета и событий. "
-            "Сравни с тем, как персонаж говорил раньше: если в этих строках он говорит иначе (вежливее, "
-            "грубее, официальнее, мягче), опиши новую манеру. Например, раньше «грубо, коротко», а здесь "
-            "персонаж почтительно обращается к правителю — пиши «почтительно, официально, церемонно».\n"
+            "строках (например: насмешливо, с прибаутками, на «ты»). Описывай только эти строки; без сюжета и "
+            "событий. Сравни с тем, как персонаж говорил раньше: если в этих строках он говорит иначе "
+            "(вежливее, грубее, официальнее, мягче), опиши новую манеру. Например, раньше «весело, с "
+            "прибаутками», а здесь персонаж в ярости — пиши «зло, отрывисто».\n"
             "Пример записи: Geralt → Геральт (м)\n"
             f"Если записывать нечего, после «{_GLOSSARY_SEPARATOR}» ничего не пиши. "
             "Больше ничего не добавляй.\n\n"
@@ -994,7 +1025,8 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
 
         Caller holds _glossary_lock. The first note is taken at once. Later a
         description that shares a word with the stored note is the same
-        manner and breaks the run of different ones; one that shares none
+        manner and breaks the run of different ones; a word-for-word copy
+        of the stored note is an echo and changes nothing; one that shares none
         counts, and after _SPEECH_CHANGE_SCREENS such screens in a row the
         latest description replaces the note (see _SPEECH_PREFIX). One
         answer is one screen, even if it repeats a "Речь:" line.
@@ -1007,6 +1039,13 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             logger.info(f"GigaChat+ glossary: speech of {entry.term} set: {note}")
             self._glossary[key] = replace(entry, speech=note)
             return True
+        if note.casefold() == entry.speech.casefold():
+            # An echo, not an observation: live runs showed the model copying
+            # the stored note word for word for a character only mentioned
+            # on the screen ("Ukon walks beside the palanquin"). Counted as
+            # "same manner", it reset the run, and narration between two
+            # lines of a changed character blocked the replacement.
+            return False
         if _speech_words(note) & _speech_words(entry.speech):
             self._speech_candidates.pop(key, None)
             return False
@@ -1080,8 +1119,9 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         self, key: str, existing: GlossaryEntry, translation: str
     ) -> bool:
         """
-        The one exception to "never overwrite": the gender of a character,
-        added or corrected, with the same translation of the name.
+        One of the two exceptions to "never overwrite" (the other is the
+        form, _consider_form): the gender of a character, added or
+        corrected, with the same translation of the name.
 
         Caller holds _glossary_lock. The gender often becomes clear only on
         a later screen (the first line has no she/he), and a first guess
