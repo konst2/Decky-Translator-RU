@@ -147,6 +147,39 @@ class GigaChatPlusGlossaryTest(unittest.TestCase):
 
         self.assertEqual(p.glossary_entries(), [("Kim Kitsuragi", "Ким Кицураги (м)")])
 
+    def test_gender_only_after_original_moves_to_translation(self):
+        api = FakeApi(chat_contents=["1. Куон улыбается\n---\nKuon (ж) → Куон"])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Kuon smiles"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("Kuon", "Куон (ж)")])
+
+    def test_translation_side_gender_wins_over_original_side(self):
+        api = FakeApi(chat_contents=["1. Куон улыбается\n---\nKuon (м) → Куон (ж)"])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Kuon smiles"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("Kuon", "Куон (ж)")])
+
+    def test_gender_mark_is_stored_in_one_form(self):
+        # "Куон(ж)" without a space is the same entry as "Куон (ж)"; a later
+        # gender for a genderless entry must still be recognized as the
+        # same name.
+        api = FakeApi(chat_contents=[
+            "1. Куон\n---\nKuon → Куон(ж)",
+            "1. Хаку\n---\nHaku → Хаку",
+            "1. Хаку кивает\n---\nHaku (м) → Хаку",
+        ])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Kuon"], "en", "ru"))
+            run(p.translate_batch(["Haku"], "en", "ru"))
+            run(p.translate_batch(["Haku nods, he agrees"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("Kuon", "Куон (ж)"), ("Haku", "Хаку (м)")])
+
     def test_typographic_apostrophe_matches_ascii_one(self):
         api = FakeApi(chat_contents=["1. Лаэзель\n---\nLae'zel → Лаэзель (ж)"])
         p = provider()
@@ -191,18 +224,170 @@ class GigaChatPlusGlossaryTest(unittest.TestCase):
 
         self.assertEqual(p.glossary_entries(), [("Shadowheart", "Шэдоухарт (ж)")])
 
-    def test_gender_does_not_replace_gender_or_translation(self):
+    def test_gender_is_corrected_with_the_same_translation(self):
         api = FakeApi(chat_contents=[
-            "1. Карлах\n---\nKarlach → Карлах (ж)\nGale → Гейл",
-            # Another gender and another translation of the name: both ignored.
-            "1. Карлах и Гейл\n---\nKarlach → Карлах (м)\nGale → Гэйл (м)",
+            "1. Карлах\n---\nKarlach → Карлах (м)",
+            "1. Карлах улыбается\n---\nKarlach → Карлах (ж)",
         ])
         p = provider()
         with fake_http(api):
-            run(p.translate_batch(["Karlach and Gale"], "en", "ru"))
-            run(p.translate_batch(["Karlach and Gale"], "en", "ru"))
+            run(p.translate_batch(["Karlach"], "en", "ru"))
+            run(p.translate_batch(["Karlach smiles, she is happy"], "en", "ru"))
 
-        self.assertEqual(p.glossary_entries(), [("Karlach", "Карлах (ж)"), ("Gale", "Гейл")])
+        self.assertEqual(p.glossary_entries(), [("Karlach", "Карлах (ж)")])
+
+    def test_another_translation_of_the_name_is_ignored_even_with_gender(self):
+        api = FakeApi(chat_contents=[
+            "1. Гейл\n---\nGale → Гейл",
+            # Another translation of the name: ignored, gender included.
+            "1. Гэйл\n---\nGale → Гэйл (м)",
+        ])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Gale"], "en", "ru"))
+            run(p.translate_batch(["Gale"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("Gale", "Гейл")])
+
+    def test_answer_without_gender_does_not_remove_it(self):
+        api = FakeApi(chat_contents=[
+            "1. Карлах\n---\nKarlach → Карлах (ж)",
+            "1. Карлах\n---\nKarlach → Карлах",
+        ])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch(["Karlach"], "en", "ru"))
+            run(p.translate_batch(["Karlach"], "en", "ru"))
+
+        self.assertEqual(p.glossary_entries(), [("Karlach", "Карлах (ж)")])
+
+    def test_prompt_asks_for_initial_form_and_allows_gender_correction(self):
+        api = FakeApi(chat_contents=["1. Привет\n---"])
+        with fake_http(api):
+            run(provider().translate_batch(["Hello"], "en", "ru"))
+
+        prompt = user_prompt(api.chat_calls[0])
+        self.assertIn("в начальной форме", prompt)
+        self.assertIn("кроме исправлений пола и формы", prompt)
+        self.assertIn("Исправление формы", prompt)
+        self.assertIn("(форма)", prompt)
+
+    def seeded(self, translation, term="Ukon"):
+        """A provider whose glossary already holds `term → translation`."""
+        api = FakeApi(chat_contents=[f"1. x\n---\n{term} → {translation}"])
+        p = provider()
+        with fake_http(api):
+            run(p.translate_batch([term], "en", "ru"))
+        return p
+
+    def answer(self, p, glossary_part, text="Ukon raises his fan"):
+        api = FakeApi(chat_contents=[f"1. x\n---\n{glossary_part}"])
+        with fake_http(api):
+            run(p.translate_batch([text], "en", "ru"))
+        return dict(p.glossary_entries())
+
+    def test_marked_form_fix_replaces_the_ending(self):
+        p = self.seeded("Уконом")
+
+        self.assertEqual(self.answer(p, "Ukon → Укон (форма)"), {"Ukon": "Укон"})
+
+    def test_form_fix_keeps_gender_and_handles_feminine_ending(self):
+        p = self.seeded("Минтару (ж)", term="Minthara")
+
+        entries = self.answer(p, "Minthara → Минтара (форма)", text="Minthara waits")
+
+        self.assertEqual(entries, {"Minthara": "Минтара (ж)"})
+
+    def test_form_fix_mark_may_come_before_the_gender(self):
+        p = self.seeded("Мунэтику", term="Munechika")
+
+        entries = self.answer(p, "Munechika → Мунэтика (форма) (ж)", text="Munechika waits")
+
+        self.assertEqual(entries, {"Munechika": "Мунэтика (ж)"})
+
+    def test_unmarked_other_form_does_not_replace_the_entry(self):
+        # The model also writes oblique forms by mistake: a good entry must
+        # not turn into "Укону" just because it was re-listed so.
+        p = self.seeded("Укон")
+
+        self.assertEqual(self.answer(p, "Ukon → Укону", text="Give the fan to Ukon"), {"Ukon": "Укон"})
+
+    def test_marked_respelling_is_rejected(self):
+        p = self.seeded("Оштор", term="Oshtor")
+
+        entries = self.answer(p, "Oshtor → Осутор (форма)", text="Oshtor smiles")
+
+        self.assertEqual(entries, {"Oshtor": "Оштор"})
+
+    def test_form_mark_on_a_new_entry_is_dropped(self):
+        p = provider()
+
+        entries = self.answer(p, "Ukon → Укон (форма)")
+
+        self.assertEqual(entries, {"Ukon": "Укон"})
+
+    def test_unmarked_form_proposed_twice_replaces_the_ending(self):
+        # Seen live: for a stored "Минтарой (ж)" the model re-listed
+        # "Минтара (ж)" without the mark.
+        p = self.seeded("Минтарой (ж)", term="Minthara")
+
+        first = self.answer(p, "Minthara → Минтара (ж)", text="Talk to Minthara")
+        second = self.answer(p, "Minthara → Минтара (ж)", text="Minthara waits")
+
+        self.assertEqual(first, {"Minthara": "Минтарой (ж)"})
+        self.assertEqual(second, {"Minthara": "Минтара (ж)"})
+
+    def test_a_different_proposal_starts_the_votes_again(self):
+        p = self.seeded("Укон")
+
+        self.answer(p, "Ukon → Укону", text="Give it to Ukon")
+        entries = self.answer(p, "Ukon → Уконе", text="Think of Ukon")
+
+        self.assertEqual(entries, {"Ukon": "Укон"})
+
+    def test_one_answer_is_one_vote(self):
+        p = self.seeded("Уконом")
+
+        entries = self.answer(p, "Ukon → Укон\nUkon → Укон")
+
+        self.assertEqual(entries, {"Ukon": "Уконом"})
+
+    def test_unmarked_respelling_never_counts(self):
+        p = self.seeded("Оштор", term="Oshtor")
+
+        self.answer(p, "Oshtor → Осутор", text="Oshtor smiles")
+        entries = self.answer(p, "Oshtor → Осутор", text="Oshtor laughs")
+
+        self.assertEqual(entries, {"Oshtor": "Оштор"})
+
+    def test_reset_forgets_pending_votes(self):
+        p = self.seeded("Уконом")
+        self.answer(p, "Ukon → Укон")
+        # Same game, same pair; the game id is empty here, so the form
+        # methods cannot reach it: the switch drops the votes the same way.
+        p.set_game("Disco Elysium")
+        p.set_game("Baldur's Gate 3")
+        self.answer(p, "Ukon → Уконом")  # a fresh entry, as the model writes it
+        entries = self.answer(p, "Ukon → Укон")
+
+        # One vote after the switch is not enough.
+        self.assertEqual(entries, {"Ukon": "Уконом"})
+
+    def test_ending_change_rule(self):
+        cases = [
+            ("Уконом", "Укон", True),
+            ("Минтару", "Минтара", True),
+            ("Ким Кицураги", "Ким Кицураги", False),   # nothing changed
+            ("Кима Кицураги", "Ким Кицураги", True),   # one word of two
+            ("Оштор", "Осутор", False),                # respelling
+            ("Осхтор", "Осётор", False),
+            ("Ию", "Ия", False),                       # stem too short to tell
+            ("Укон", "Укон Великий", False),           # another number of words
+            ("Укон", "Уконоооов", False),              # tail too long
+        ]
+        for old, new, expected in cases:
+            with self.subTest(old=old, new=new):
+                self.assertEqual(gp._is_ending_change(old, new), expected)
 
     def test_missing_separator_retries_without_context(self):
         # Without a separator any line after the translations would be glued

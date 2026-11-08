@@ -22,7 +22,7 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import replace
-from typing import List, Optional, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 
 from .base import ProviderType, RateLimitError
 from .gigachat_client import GigaChatClient, TokenQuotaError
@@ -52,6 +52,29 @@ _MAX_GLOSSARY_ENTRIES = 60
 # in the text. Better to learn a name on its second appearance than to
 # throw away what the glossary has built up.
 _MAX_NEW_ENTRIES_PER_ANSWER = 5
+
+# The model appends this to an entry it re-lists to fix the form of the
+# translation ("Ukon → Укон (форма)" for an entry stored as "Уконом"). An
+# explicit mark, because the model also writes oblique forms by mistake:
+# a single plain re-listing must not turn a good "Укон" into "Укону".
+# Without the mark a fix needs repeated answers (_FORM_FIX_VOTES).
+_FORM_FIX_MARK = "(форма)"
+
+# A form fix may change only the ending of each word: the stem must match
+# for at least this many letters, and the differing tails be this short.
+# "Уконом → Укон", "Минтару → Минтара" pass; a respelling such as
+# "Оштор → Осутор" (seen across live runs) does not, so the mark cannot
+# become a way for the name to drift.
+_FORM_FIX_MIN_STEM = 3
+_FORM_FIX_MAX_TAIL = 3
+
+# A form fix without the mark is applied when the model proposes the same
+# form in this many different answers. Live runs: the model did not use the
+# mark, but re-listed "Minthara → Минтара (ж)" for a stored "Минтарой (ж)"
+# on its own; it copied correct entries from the glossary as they were, and
+# wrote oblique forms only when creating an entry. A one-off slip is
+# unlikely to repeat for an existing entry, a real fix repeats.
+_FORM_FIX_VOTES = 2
 
 # A real name or term is short. Longer "entries" are the model retelling a
 # line instead of naming something, and would bloat every following prompt.
@@ -217,7 +240,73 @@ def _split_answer(content: str) -> Optional[Tuple[str, str]]:
     return content, ""
 
 
-def _parse_glossary(text: str, sources: List[str]) -> List[Tuple[str, str]]:
+class ProposedEntry(NamedTuple):
+    """A glossary entry as the model proposed it, after parsing."""
+
+    term: str
+    translation: str
+    # The model marked it as a fix of the form of an existing entry.
+    form_fix: bool
+
+
+def _split_form_fix_mark(translation: str) -> Tuple[str, bool]:
+    """
+    Remove the form-fix mark: "Укон (форма)" -> ("Укон", True).
+
+    The mark is looked for anywhere, not only at the end: with a gender the
+    model may write "Мунэтика (форма) (ж)" as well as "Мунэтика (ж) (форма)".
+    """
+    if _FORM_FIX_MARK not in translation:
+        return translation, False
+    cleaned = " ".join(translation.replace(_FORM_FIX_MARK, " ").split())
+    return cleaned, True
+
+
+def _is_ending_change(old: str, new: str) -> bool:
+    """
+    Whether `new` differs from `old` only in word endings (see _FORM_FIX_*).
+
+    Compared word by word, case ignored; the number of words must match and
+    at least one word must differ.
+    """
+    old_words = old.casefold().split()
+    new_words = new.casefold().split()
+    if len(old_words) != len(new_words) or old_words == new_words:
+        return False
+    for old_word, new_word in zip(old_words, new_words):
+        if old_word == new_word:
+            continue
+        stem = 0
+        for old_char, new_char in zip(old_word, new_word):
+            if old_char != new_char:
+                break
+            stem += 1
+        if stem < _FORM_FIX_MIN_STEM:
+            return False
+        if len(old_word) - stem > _FORM_FIX_MAX_TAIL or len(new_word) - stem > _FORM_FIX_MAX_TAIL:
+            return False
+    return True
+
+
+def _gendered_translation(translation: str, source_gender: str) -> str:
+    """
+    The translation in one form, "Name (ж)" or "Name"; "" if there is no name.
+
+    The gender belongs to the translation side, but the model sometimes puts
+    it after the original ("Kuon (ж) → Куон"). Dropping it there lost a
+    gender the model did give, so it is moved over. If both sides have one,
+    the translation side wins: that is where the prompt asks for it.
+    The mark is re-attached with one space, so "Куон(ж)" and "Куон (ж)" are
+    stored alike and the "same name" check of _update_gender holds.
+    """
+    name, gender = _split_gender(translation)
+    gender = gender or source_gender
+    if not name:
+        return ""
+    return f"{name} {gender}" if gender else name
+
+
+def _parse_glossary(text: str, sources: List[str]) -> List[ProposedEntry]:
     """
     Parse "term → translation" lines; anything else is skipped.
 
@@ -230,22 +319,23 @@ def _parse_glossary(text: str, sources: List[str]) -> List[Tuple[str, str]]:
     translation.
     """
     batch_text = _match_key(" ".join(sources))
-    entries: List[Tuple[str, str]] = []
+    entries: List[ProposedEntry] = []
     for raw_line in text.splitlines():
         line = raw_line.strip().lstrip(_BULLET_CHARS).strip()
         pair = _split_on_arrow(line)
         if pair is None:
             continue
         source, translation = pair
-        # The gender belongs to the translation side only.
-        source, _ = _split_gender(source)
+        translation, form_fix = _split_form_fix_mark(translation)
+        source, source_gender = _split_gender(source)
+        translation = _gendered_translation(translation, source_gender)
         if not source or not translation:
             continue
         if len(source) > _MAX_TERM_LENGTH or len(translation) > _MAX_TERM_TRANSLATION_LENGTH:
             continue
         if _match_key(source) not in batch_text:
             continue
-        entries.append((source, translation))
+        entries.append(ProposedEntry(source, translation, form_fix))
     return entries
 
 
@@ -272,6 +362,10 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         # unused entry is evicted first when the glossary is full. The
         # entry's last_used_at mirrors this order, so it survives a save.
         self._glossary: "OrderedDict[str, GlossaryEntry]" = OrderedDict()
+        # Unmarked form fixes waiting for more votes (_consider_form):
+        # _match_key(term) -> (proposed name, votes). Memory only: after a
+        # restart the votes start again, which only delays a fix.
+        self._form_candidates: "dict[str, Tuple[str, int]]" = {}
         # The saved glossary of the current game and pair could not be read.
         # Saving is then off until the game or the pair changes: the empty
         # in-memory glossary would otherwise replace everything on disk at
@@ -316,6 +410,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             self._game = game
             self._game_id = game_id
             self._glossary.clear()
+            self._form_candidates.clear()
             self._glossary_pair = None
             self._glossary_epoch += 1
 
@@ -366,6 +461,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 deleted = self._glossary_store.delete_entry(key, match_key)
             if self._is_current_glossary(key):
                 deleted = (self._glossary.pop(match_key, None) is not None) or deleted
+                self._form_candidates.pop(match_key, None)
                 # A request in flight was built with the old glossary; its
                 # new terms are dropped so as not to mix with the edit.
                 self._glossary_epoch += 1
@@ -386,6 +482,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             if self._is_current_glossary(key):
                 deleted = bool(self._glossary) or deleted
                 self._glossary.clear()
+                self._form_candidates.clear()
                 self._glossary_epoch += 1
         if deleted:
             logger.info(f"GigaChat+ glossary reset by the user, game {game_id}")
@@ -522,23 +619,36 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         )
         # The glossary rules come from live runs: the model listed ordinary
         # words (cleric → жрец), which then stuck for the whole session; put
-        # a gender on places and guessed it against "she"/"her" in the text;
-        # skipped minor characters. The format is shown by a real-looking
-        # example: a placeholder like «оригинал → перевод» was echoed back.
+        # a gender on places; skipped minor characters; wrote a name in the
+        # case of the sentence ("Ukon → Уконом"), which then stuck as "the"
+        # translation. Gender: the model sets it when it knows the character
+        # rather than from pronouns, and did not re-list an entry when the
+        # gender became clear, because "do not list entries already in the
+        # glossary" contradicted "list it again with the gender". The rules
+        # now allow knowledge and make the gender correction the explicit
+        # exception. The format is shown by a real-looking example: a
+        # placeholder like «оригинал → перевод» was echoed back.
         parts.append(
             f"Ниже {len(texts)} строк текста из игры. Переведи каждую строку на {target_name}.\n"
             f"Ответь ровно {len(texts)} строками в формате «<номер>. <перевод>», в том же порядке.\n"
             f"Затем напиши строку «{_GLOSSARY_SEPARATOR}» и под ней записи для словаря, "
-            "по одной в строке: имя или термин как в исходном тексте, стрелка «→», твой перевод.\n"
+            "по одной в строке: имя или термин как в исходном тексте, стрелка «→», твой перевод "
+            "в начальной форме — как в словаре, а не в форме из этой фразы "
+            "(Geralt → Геральт, а не Геральта).\n"
             "Что выписывать: все имена персонажей из этих строк, даже второстепенных; "
             "названия мест, фракций, божеств, особых предметов и существ этой игры.\n"
-            "Что не выписывать: обычные слова (например, cleric, sword, camp, battle, gun), "
-            "даже если они встречаются в тексте; записи, которые уже есть в словаре.\n"
-            "Пол — только для персонажей и только если он понятен из текста "
-            "(she/her — (ж), he/his — (м)): допиши его после перевода в записи словаря. "
-            "Если не понятен — не пиши. В переводах строк пол не пиши никогда. "
-            "Если у персонажа из словаря не было пола, а теперь он понятен — выпиши его ещё раз "
-            "с тем же переводом и полом.\n"
+            "Что не выписывать: обычные слова (например, cleric, sword, camp, battle, gun, goblin), "
+            "даже если они встречаются в тексте; записи, которые уже есть в словаре, "
+            "кроме исправлений пола и формы (см. ниже).\n"
+            "Пол — только для персонажей: (ж) или (м) после перевода в записи словаря. "
+            "Ставь его, если пол виден из этих строк (she/her, he/his) или ты точно знаешь "
+            "этого персонажа игры; если не уверен — не пиши. В переводах строк пол не пиши никогда.\n"
+            "Исправление пола: если у персонажа из словаря пола нет или он указан неверно, "
+            "а по этим строкам пол понятен, — выпиши запись ещё раз с тем же переводом и верным полом.\n"
+            "Исправление формы: если перевод в записи словаря не в начальной форме (имя или термин "
+            f"в другом падеже или числе), выпиши запись ещё раз в начальной форме и допиши в конце «{_FORM_FIX_MARK}», "
+            f"например: Geralt → Геральт {_FORM_FIX_MARK}. Меняй только окончание, написание имени не меняй; "
+            f"пол, если он есть, пиши перед «{_FORM_FIX_MARK}».\n"
             "Пример записи: Geralt → Геральт (м)\n"
             f"Если записывать нечего, после «{_GLOSSARY_SEPARATOR}» ничего не пиши. "
             "Больше ничего не добавляй.\n\n"
@@ -566,6 +676,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         if self._glossary:
             logger.info("GigaChat+ language pair changed, glossary switched")
         self._glossary.clear()
+        self._form_candidates.clear()
         self._glossary_pair = pair
         self._glossary_epoch += 1
         self._glossary_load_failed = False
@@ -644,14 +755,14 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 touched = True
         return touched
 
-    def _merge_glossary(self, entries: List[Tuple[str, str]], epoch: int) -> None:
+    def _merge_glossary(self, entries: List[ProposedEntry], epoch: int) -> None:
         """
-        Add new entries; never overwrite an existing one.
+        Add new entries; never overwrite an existing one, with two exceptions.
 
         The first translation of a name sticks: if the model renders it
         differently later, that is the inconsistency the glossary exists to
-        prevent. The flip side is that a wrong first entry sticks too, until
-        the glossary is reset.
+        prevent. Exceptions: the gender (_update_gender) and the form of the
+        name, marked or confirmed by repeated answers (_consider_form).
         """
         if not entries:
             return
@@ -660,35 +771,42 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 logger.info("GigaChat+ glossary was reset during the request, new terms dropped")
                 return
             added = 0
-            gendered = 0
+            # Existing entries whose gender or form was fixed.
+            updated = 0
             dropped: List[str] = []
+            # One answer is one vote for a form, even if it lists a term twice.
+            voted: set = set()
             now = int(time.time())
-            for term, translation in entries:
+            for entry in entries:
                 # The same normalization as the "is it in the text" check:
                 # "Lae'zel" and "Lae’zel" must be one entry, or the first
                 # translation would not stick.
-                key = _match_key(term)
+                key = _match_key(entry.term)
                 existing = self._glossary.get(key)
                 if existing is None:
-                    # The limit is on new entries only: a gender added to an
-                    # existing one below does not take a place.
+                    # The limit is on new entries only: a fix of an existing
+                    # one below does not take a place. A form-fix mark on a
+                    # new entry means nothing: it is added as it is.
                     if added >= _MAX_NEW_ENTRIES_PER_ANSWER:
-                        dropped.append(term)
+                        dropped.append(entry.term)
                         continue
-                    self._glossary[key] = GlossaryEntry(key, term, translation, now)
+                    self._glossary[key] = GlossaryEntry(key, entry.term, entry.translation, now)
                     added += 1
                     continue
-                if self._add_missing_gender(key, existing, translation):
-                    gendered += 1
+                if self._consider_form(key, existing, entry.translation, entry.form_fix, voted):
+                    updated += 1
+                    continue
+                if self._update_gender(key, existing, entry.translation):
+                    updated += 1
             if dropped:
                 logger.info(
                     f"GigaChat+ glossary: answer proposed more than "
                     f"{_MAX_NEW_ENTRIES_PER_ANSWER} new entries, dropped: {', '.join(dropped)}"
                 )
             self._evict_overflow()
-            if added or gendered:
+            if added or updated:
                 logger.info(
-                    f"GigaChat+ glossary: +{added}, gender added {gendered}, "
+                    f"GigaChat+ glossary: +{added}, fixed {updated}, "
                     f"{len(self._glossary)} entries"
                 )
                 self._save_glossary()
@@ -710,23 +828,79 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 f"GigaChat+ glossary full ({_MAX_GLOSSARY_ENTRIES}), evicted: {', '.join(evicted)}"
             )
 
-    def _add_missing_gender(
-        self, key: str, existing: GlossaryEntry, translation: str
+    def _consider_form(
+        self,
+        key: str,
+        existing: GlossaryEntry,
+        translation: str,
+        marked: bool,
+        voted: set,
     ) -> bool:
         """
-        The one exception to "never overwrite": a gender for a character
-        whose entry had none, with the same translation of the name.
+        Replace the form of the name ("Уконом" -> "Укон") if allowed; return
+        whether the entry changed. The gender is kept if the fix has none.
 
-        Caller holds _glossary_lock. The gender often becomes clear only on
-        a later screen (the first line has no she/he). A different
-        translation or a different gender is still ignored: the first
-        translation of a name sticks.
+        Caller holds _glossary_lock. Only an ending change is ever accepted
+        (_is_ending_change). With the form-fix mark it is applied at once;
+        without it, after _FORM_FIX_VOTES answers proposed the same form (a
+        different proposal starts the count again). Live runs showed the
+        model storing a name in the case of the sentence, and the wrong
+        entry then broke the lines on screen ("Уконом поднимает веер");
+        decision of the user, 08.11.2026. The same name with another gender
+        is left to _update_gender.
         """
         old_name, old_gender = _split_gender(existing.translation)
         new_name, new_gender = _split_gender(translation)
-        if old_gender or not new_gender:
+        if old_name.casefold() == new_name.casefold():
+            return False
+        if not _is_ending_change(old_name, new_name):
+            if marked:
+                logger.info(
+                    f"GigaChat+ glossary: form fix of {existing.term} rejected, "
+                    f"not just an ending: {old_name} -> {new_name}"
+                )
+            return False
+        if not marked:
+            if key in voted:
+                return False
+            voted.add(key)
+            candidate, votes = self._form_candidates.get(key, ("", 0))
+            votes = votes + 1 if candidate.casefold() == new_name.casefold() else 1
+            if votes < _FORM_FIX_VOTES:
+                self._form_candidates[key] = (new_name, votes)
+                logger.info(
+                    f"GigaChat+ glossary: form of {existing.term} proposed {old_name} -> {new_name} "
+                    f"({votes} of {_FORM_FIX_VOTES})"
+                )
+                return False
+        self._form_candidates.pop(key, None)
+        gender = new_gender or old_gender
+        fixed = f"{new_name} {gender}" if gender else new_name
+        logger.info(f"GigaChat+ glossary: form of {existing.term} fixed {old_name} -> {new_name}")
+        self._glossary[key] = replace(existing, translation=fixed)
+        return True
+
+    def _update_gender(
+        self, key: str, existing: GlossaryEntry, translation: str
+    ) -> bool:
+        """
+        The one exception to "never overwrite": the gender of a character,
+        added or corrected, with the same translation of the name.
+
+        Caller holds _glossary_lock. The gender often becomes clear only on
+        a later screen (the first line has no she/he), and a first guess
+        may be wrong; the prompt asks the model to re-list the entry then
+        (decision of the user, 08.11.2026). A different translation of the
+        name is still ignored: the first translation sticks. An answer
+        without a gender never removes one.
+        """
+        old_name, old_gender = _split_gender(existing.translation)
+        new_name, new_gender = _split_gender(translation)
+        if not new_gender or new_gender == old_gender:
             return False
         if old_name.casefold() != new_name.casefold():
             return False
+        if old_gender:
+            logger.info(f"GigaChat+ glossary: gender of {existing.term} changed {old_gender} -> {new_gender}")
         self._glossary[key] = replace(existing, translation=f"{old_name} {new_gender}")
         return True
