@@ -26,6 +26,7 @@ from .yandex_translate import YandexTranslateProvider
 from .gigachat_client import GigaChatClient
 from .gigachat_translate import GigaChatTranslateProvider
 from .gigachat_plus_translate import GigaChatPlusTranslateProvider
+from .glossary_store import GlossaryStore
 from .ocrspace import OCRSpaceProvider
 from .free_translate import FreeTranslateProvider
 from .mymemory_translate import MyMemoryTranslateProvider
@@ -89,8 +90,14 @@ __all__ = [
 class ProviderManager:
     """Factory and manager for OCR and Translation providers."""
 
-    def __init__(self):
-        """Initialize the provider manager."""
+    def __init__(self, glossary_store: Optional[GlossaryStore] = None):
+        """
+        Initialize the provider manager.
+
+        glossary_store: where GigaChat+ saves its glossaries between plugin
+        restarts. None keeps them in memory only (tests, a store that failed
+        to open).
+        """
         # Provider instances (created on demand)
         self._ocr_providers = {}
         self._translation_providers = {}
@@ -105,8 +112,10 @@ class ProviderManager:
         # One client for both GigaChat methods: one access token and one model
         # cache, so switching between them costs no extra OAuth.
         self._gigachat_client = GigaChatClient()
-        # Name of the running game, for GigaChat+ (see set_current_game).
+        # The running game, for GigaChat+ (see set_current_game).
         self._current_game = ""
+        self._current_game_id = ""
+        self._glossary_store = glossary_store
         self._mymemory_email = ""
         self._gemini_model = DEFAULTS["gemini_model"]
         self._gemini_target_language = DEFAULTS["target_language"]
@@ -251,17 +260,19 @@ class ProviderManager:
         # Both GigaChat methods use this client, so one call updates both.
         self._gigachat_client.set_api_key(api_key)
 
-    def set_current_game(self, game: str) -> None:
+    def set_current_game(self, game: str, game_id: str = "") -> None:
         """
-        Remember the running game's name for GigaChat+.
+        Remember the running game for GigaChat+.
 
-        GigaChat+ puts the name into the prompt and starts a new glossary when
-        it changes. Stored here too, so a provider created later gets it.
+        GigaChat+ puts the name into the prompt and switches the glossary when
+        the game changes; game_id (the Steam appid) is the key of the saved
+        glossary. Stored here too, so a provider created later gets them.
         """
         self._current_game = game
+        self._current_game_id = game_id
         gigachat_plus = self._translation_providers.get(ProviderType.GIGACHAT_PLUS)
         if gigachat_plus:
-            gigachat_plus.set_game(game)
+            gigachat_plus.set_game(game, game_id)
 
     def set_gemini_model(self, model: str) -> None:
         """Update the Gemini model. Recreates the provider on next use if model changed."""
@@ -554,8 +565,11 @@ class ProviderManager:
                     client=self._gigachat_client,
                 )
             elif provider_type == ProviderType.GIGACHAT_PLUS:
-                provider = GigaChatPlusTranslateProvider(client=self._gigachat_client)
-                provider.set_game(self._current_game)
+                provider = GigaChatPlusTranslateProvider(
+                    client=self._gigachat_client,
+                    glossary_store=self._glossary_store,
+                )
+                provider.set_game(self._current_game, self._current_game_id)
                 self._translation_providers[provider_type] = provider
             elif provider_type == ProviderType.MYMEMORY:
                 self._translation_providers[provider_type] = MyMemoryTranslateProvider(

@@ -92,6 +92,7 @@ import requests
 # Import provider system
 from providers import ProviderManager, TextRegion, NetworkError, ApiKeyError, RateLimitError, TranslationUnavailableError
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
+from providers.glossary_store import GlossaryStore
 from providers import readiness
 from providers.key_entry_server import KeyEntryServer, detect_local_ip
 # Значения по умолчанию — из общего с фронтендом settings_defaults.json.
@@ -1211,6 +1212,8 @@ class Plugin:
 
     # Translation cache
     _translation_cache: TranslationCache = None
+    # GigaChat+ glossaries saved between restarts; None = memory only.
+    _glossary_store: GlossaryStore = None
     _translation_cache_enabled: bool = DEFAULTS["translation_cache_enabled"]
 
     # OCR API configurations - user must provide their own API key
@@ -3055,8 +3058,18 @@ class Plugin:
                 logger.error(f"Failed to open translation cache, continuing without it: {e}")
                 self._translation_cache = None
 
+            # A separate file from the cache: the cache is cleared as a whole,
+            # the glossaries must not go with it.
+            try:
+                self._glossary_store = GlossaryStore(
+                    os.path.join(settingsDir, "glossary.db")
+                )
+            except Exception as e:
+                logger.error(f"Failed to open glossary store, glossaries will not be saved: {e}")
+                self._glossary_store = None
+
             # Initialize provider manager
-            self._provider_manager = ProviderManager()
+            self._provider_manager = ProviderManager(glossary_store=self._glossary_store)
             self._provider_manager.configure(
                 use_free_providers=self._use_free_providers,
                 google_api_key=google_api_key,
@@ -3164,6 +3177,10 @@ class Plugin:
             if self._translation_cache:
                 self._translation_cache.close()
                 self._translation_cache = None
+
+            if self._glossary_store:
+                self._glossary_store.close()
+                self._glossary_store = None
 
             if self._evdev_monitor:
                 self._evdev_monitor.stop()

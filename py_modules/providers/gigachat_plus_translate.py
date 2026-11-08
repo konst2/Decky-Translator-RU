@@ -10,17 +10,23 @@
 # "sensitive" line in a raw history would make GigaChat refuse every following
 # request until it dropped out.
 #
-# The glossary lives in memory: it is reset when the game or the language
-# pair changes and when the plugin restarts. The longer the session, the more
-# consistent the translation.
+# The glossary is kept per game and language pair. With a GlossaryStore and
+# a game id (the Steam appid) it is saved to disk and loaded back when the
+# game is played again, so names stay consistent across plugin restarts.
+# Without them (no store, game id unknown) it lives in memory only and is
+# lost on restart, as before.
 
 import logging
+import sqlite3
 import threading
+import time
 from collections import OrderedDict
+from dataclasses import replace
 from typing import List, Optional, Tuple
 
 from .base import ProviderType, RateLimitError
 from .gigachat_client import GigaChatClient, TokenQuotaError
+from .glossary_store import GlossaryEntry, GlossaryKey, GlossaryStore
 from .gigachat_translate import (
     GigaChatTranslateProvider,
     _flatten,
@@ -222,15 +228,26 @@ def _parse_glossary(text: str, sources: List[str]) -> List[Tuple[str, str]]:
 class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
     """GigaChat translation with the game name and a session glossary."""
 
-    def __init__(self, api_key: str = "", client: Optional[GigaChatClient] = None):
+    def __init__(
+        self,
+        api_key: str = "",
+        client: Optional[GigaChatClient] = None,
+        glossary_store: Optional[GlossaryStore] = None,
+    ):
         super().__init__(api_key=api_key, client=client)
         self._game = ""
-        # The pair the glossary was built for: terms for en→ru are useless
-        # (and misleading) for ja→ru.
+        # Steam appid of the running game: the key of the saved glossary.
+        # Empty = unknown, and the glossary is not saved.
+        self._game_id = ""
+        self._glossary_store = glossary_store
+        # The pair the glossary was built (or loaded) for: terms for en→ru
+        # are useless (and misleading) for ja→ru. None = no glossary loaded
+        # yet for the current game; the next translation loads it.
         self._glossary_pair: Optional[Tuple[str, str]] = None
-        # _match_key(term) -> (term, translation). Order is recency of use:
-        # the oldest unused entry is evicted first when the glossary is full.
-        self._glossary: "OrderedDict[str, Tuple[str, str]]" = OrderedDict()
+        # _match_key(term) -> entry. Order is recency of use: the oldest
+        # unused entry is evicted first when the glossary is full. The
+        # entry's last_used_at mirrors this order, so it survives a save.
+        self._glossary: "OrderedDict[str, GlossaryEntry]" = OrderedDict()
         # set_game comes from the event loop, translations from a worker
         # thread.
         self._glossary_lock = threading.Lock()
@@ -251,23 +268,32 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
     def provider_type(self) -> ProviderType:
         return ProviderType.GIGACHAT_PLUS
 
-    def set_game(self, game: str) -> None:
-        """Set the running game's name; a different game starts a new glossary."""
+    def set_game(self, game: str, game_id: str = "") -> None:
+        """
+        Set the running game; a different game switches the glossary.
+
+        The new game's saved glossary is loaded on its first translation,
+        not here: the glossary is per language pair, and the pair is known
+        only when a translation comes.
+        """
         game = (game or "").strip()
+        game_id = (game_id or "").strip()
         with self._glossary_lock:
-            if game == self._game:
+            if game == self._game and game_id == self._game_id:
                 return
             logger.info(
-                f"GigaChat+ game changed, glossary reset ({len(self._glossary)} entries dropped)"
+                f"GigaChat+ game changed, glossary switched ({len(self._glossary)} entries unloaded)"
             )
             self._game = game
+            self._game_id = game_id
             self._glossary.clear()
+            self._glossary_pair = None
             self._glossary_epoch += 1
 
     def glossary_entries(self) -> List[Tuple[str, str]]:
-        """Current glossary, oldest first (for logs and tests)."""
+        """Current glossary as (term, translation), oldest first (for logs and tests)."""
         with self._glossary_lock:
-            return list(self._glossary.values())
+            return [(entry.term, entry.translation) for entry in self._glossary.values()]
 
     # -- model --
 
@@ -315,10 +341,13 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         game name or a glossary entry rather than by the lines themselves.
         """
         with self._glossary_lock:
-            self._reset_glossary_if_pair_changed(source_lang, target_lang)
-            self._touch_used_entries(texts)
+            self._switch_glossary_if_pair_changed(source_lang, target_lang)
+            if self._touch_used_entries(texts):
+                # Recency decides what is evicted; without saving it, a
+                # restart would forget which names are still in use.
+                self._save_glossary()
             game = self._game
-            glossary = list(self._glossary.values())
+            glossary = [(entry.term, entry.translation) for entry in self._glossary.values()]
             epoch = self._glossary_epoch
 
         messages = self._context_messages(texts, source_lang, target_lang, game, glossary)
@@ -408,27 +437,92 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
 
     # -- glossary (callers hold _glossary_lock where noted) --
 
-    def _reset_glossary_if_pair_changed(self, source_lang: str, target_lang: str) -> None:
-        """Caller holds _glossary_lock."""
-        pair = (source_lang, target_lang)
-        if pair != self._glossary_pair:
-            if self._glossary:
-                logger.info("GigaChat+ language pair changed, glossary reset")
-            self._glossary.clear()
-            self._glossary_pair = pair
-            self._glossary_epoch += 1
+    def _switch_glossary_if_pair_changed(self, source_lang: str, target_lang: str) -> None:
+        """
+        Make the in-memory glossary the one for this game and pair.
 
-    def _touch_used_entries(self, texts: List[str]) -> None:
+        Caller holds _glossary_lock. Also runs after set_game, which resets
+        the pair to None. The old glossary is not saved here: every change
+        to it was saved when it happened.
+        """
+        pair = (source_lang, target_lang)
+        if pair == self._glossary_pair:
+            return
+        if self._glossary:
+            logger.info("GigaChat+ language pair changed, glossary switched")
+        self._glossary.clear()
+        self._glossary_pair = pair
+        self._glossary_epoch += 1
+        self._load_glossary()
+
+    def _store_key(self) -> Optional[GlossaryKey]:
+        """
+        Key of the saved glossary, or None when it is not saved.
+
+        Caller holds _glossary_lock. Without a game id there is nothing to
+        key on: a name alone may change (a renamed shortcut, a localized
+        title), and an empty one would merge all unknown games into one.
+        """
+        if self._glossary_store is None or not self._game_id or self._glossary_pair is None:
+            return None
+        source_lang, target_lang = self._glossary_pair
+        return GlossaryKey(self.provider_type.value, self._game_id, source_lang, target_lang)
+
+    def _load_glossary(self) -> None:
+        """Caller holds _glossary_lock and has cleared the glossary."""
+        key = self._store_key()
+        if key is None:
+            return
+        try:
+            entries = self._glossary_store.load_entries(key)
+        except sqlite3.Error as e:
+            # The glossary is a bonus: translate without it rather than fail.
+            logger.warning(f"GigaChat+ glossary not loaded, starting empty: {e}")
+            return
+        # The store returns the least recently used first, the same order
+        # the in-memory glossary keeps.
+        for entry in entries:
+            self._glossary[entry.match_key] = entry
+        # A glossary saved by a version with a larger limit is trimmed here.
+        while len(self._glossary) > _MAX_GLOSSARY_ENTRIES:
+            self._glossary.popitem(last=False)
+        if entries:
+            logger.info(f"GigaChat+ glossary loaded: {len(self._glossary)} entries")
+
+    def _save_glossary(self) -> None:
+        """
+        Write the whole in-memory glossary to the store.
+
+        Caller holds _glossary_lock: the write is done under it so that two
+        translations cannot save their snapshots out of order. A write is a
+        few dozen rows, a few milliseconds. A failed write is logged and
+        ignored: the translation itself has succeeded.
+        """
+        key = self._store_key()
+        if key is None:
+            return
+        try:
+            self._glossary_store.replace_entries(key, self._game, list(self._glossary.values()))
+        except sqlite3.Error as e:
+            logger.warning(f"GigaChat+ glossary not saved: {e}")
+
+    def _touch_used_entries(self, texts: List[str]) -> bool:
         """
         Move entries whose term occurs in this batch to the recent end.
 
         Caller holds _glossary_lock. A plain substring check: cheap, and a
-        rare false hit only keeps an entry a little longer.
+        rare false hit only keeps an entry a little longer. Returns whether
+        any entry was touched.
         """
         batch_text = _match_key(" ".join(texts))
+        now = int(time.time())
+        touched = False
         for key in list(self._glossary):
             if key in batch_text:
+                self._glossary[key] = replace(self._glossary[key], last_used_at=now)
                 self._glossary.move_to_end(key)
+                touched = True
+        return touched
 
     def _merge_glossary(self, entries: List[Tuple[str, str]], epoch: int) -> None:
         """
@@ -447,6 +541,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 return
             added = 0
             gendered = 0
+            now = int(time.time())
             for term, translation in entries:
                 # The same normalization as the "is it in the text" check:
                 # "Lae'zel" and "Lae’zel" must be one entry, or the first
@@ -454,7 +549,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 key = _match_key(term)
                 existing = self._glossary.get(key)
                 if existing is None:
-                    self._glossary[key] = (term, translation)
+                    self._glossary[key] = GlossaryEntry(key, term, translation, now)
                     added += 1
                     continue
                 if self._add_missing_gender(key, existing, translation):
@@ -466,9 +561,10 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                     f"GigaChat+ glossary: +{added}, gender added {gendered}, "
                     f"{len(self._glossary)} entries"
                 )
+                self._save_glossary()
 
     def _add_missing_gender(
-        self, key: str, existing: Tuple[str, str], translation: str
+        self, key: str, existing: GlossaryEntry, translation: str
     ) -> bool:
         """
         The one exception to "never overwrite": a gender for a character
@@ -479,12 +575,11 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         translation or a different gender is still ignored: the first
         translation of a name sticks.
         """
-        term, old_translation = existing
-        old_name, old_gender = _split_gender(old_translation)
+        old_name, old_gender = _split_gender(existing.translation)
         new_name, new_gender = _split_gender(translation)
         if old_gender or not new_gender:
             return False
         if old_name.casefold() != new_name.casefold():
             return False
-        self._glossary[key] = (term, f"{old_name} {new_gender}")
+        self._glossary[key] = replace(existing, translation=f"{old_name} {new_gender}")
         return True

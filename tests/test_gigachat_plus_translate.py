@@ -6,12 +6,16 @@ from there). The point is what goes into the prompt, what is taken from the
 answer into the glossary, and that a bad answer still yields a translation.
 """
 
+import os
+import sqlite3
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from providers import gigachat_plus_translate as gp
 from providers.base import ProviderType
 from providers.gigachat_client import GigaChatClient
+from providers.glossary_store import GlossaryKey, GlossaryStore
 from test_gigachat_translate import (
     API_KEY,
     REFUSAL,
@@ -315,6 +319,160 @@ class GigaChatPlusGlossaryTest(unittest.TestCase):
         self.assertEqual(p.glossary_entries(), [("A", "А"), ("C", "В")])
 
 
+BG3_ID = "1086940"
+BG3_KEY = GlossaryKey("gigachat_plus", BG3_ID, "en", "ru")
+
+
+class GigaChatPlusSavedGlossaryTest(unittest.TestCase):
+    """The glossary in a GlossaryStore: saved, loaded back, kept per game and pair."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.store = GlossaryStore(os.path.join(self._tmp.name, "glossary.db"))
+
+    def tearDown(self):
+        self.store.close()
+        self._tmp.cleanup()
+
+    def provider(self, game="Baldur's Gate 3", game_id=BG3_ID):
+        p = gp.GigaChatPlusTranslateProvider(api_key=API_KEY, glossary_store=self.store)
+        p.set_game(game, game_id)
+        return p
+
+    def saved(self, key=BG3_KEY):
+        return [(e.term, e.translation) for e in self.store.load_entries(key)]
+
+    def test_learned_entry_is_saved(self):
+        api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
+        with fake_http(api):
+            run(self.provider().translate_batch(["Tav"], "en", "ru"))
+
+        self.assertEqual(self.saved(), [("Tav", "Тав (м)")])
+
+    def test_restarted_provider_loads_and_sends_the_glossary(self):
+        api = FakeApi(chat_contents=[
+            "1. Тав\n---\nTav → Тав (м)",
+            "1. Тав спит\n---",
+        ])
+        with fake_http(api):
+            run(self.provider().translate_batch(["Tav"], "en", "ru"))
+            # A new provider = the plugin after a restart.
+            restarted = self.provider()
+            run(restarted.translate_batch(["Tav sleeps"], "en", "ru"))
+
+        self.assertIn("Tav → Тав (м)", user_prompt(api.chat_calls[1]))
+        self.assertEqual(restarted.glossary_entries(), [("Tav", "Тав (м)")])
+
+    def test_without_game_id_nothing_is_saved(self):
+        api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
+        p = self.provider(game_id="")
+        with fake_http(api):
+            run(p.translate_batch(["Tav"], "en", "ru"))
+
+        # Still works in memory, as before saving existed.
+        self.assertEqual(p.glossary_entries(), [("Tav", "Тав (м)")])
+        count = self.store._conn.execute("SELECT COUNT(*) FROM glossaries").fetchone()[0]
+        self.assertEqual(count, 0)
+
+    def test_returning_to_a_game_loads_its_glossary(self):
+        api = FakeApi(chat_contents=[
+            "1. Тав\n---\nTav → Тав (м)",
+            "1. Ким\n---\nKim → Ким (м)",
+            "1. Тав\n---",
+        ])
+        p = self.provider()
+        with fake_http(api):
+            run(p.translate_batch(["Tav"], "en", "ru"))
+            p.set_game("Disco Elysium", "632470")
+            run(p.translate_batch(["Kim"], "en", "ru"))
+            p.set_game("Baldur's Gate 3", BG3_ID)
+            run(p.translate_batch(["Tav"], "en", "ru"))
+
+        self.assertNotIn("Tav → Тав", user_prompt(api.chat_calls[1]))
+        self.assertIn("Tav → Тав (м)", user_prompt(api.chat_calls[2]))
+        self.assertNotIn("Kim → Ким", user_prompt(api.chat_calls[2]))
+        self.assertEqual(self.saved(), [("Tav", "Тав (м)")])
+        disco = GlossaryKey("gigachat_plus", "632470", "en", "ru")
+        self.assertEqual(self.saved(disco), [("Kim", "Ким (м)")])
+
+    def test_each_language_pair_has_its_own_saved_glossary(self):
+        api = FakeApi(chat_contents=[
+            "1. Тав\n---\nTav → Тав (м)",
+            "1. Тав\n---",
+            "1. Тав\n---",
+        ])
+        p = self.provider()
+        with fake_http(api):
+            run(p.translate_batch(["Tav"], "en", "ru"))
+            run(p.translate_batch(["Tav"], "en", "de"))
+            run(p.translate_batch(["Tav"], "en", "ru"))
+
+        self.assertNotIn("Tav → Тав", user_prompt(api.chat_calls[1]))
+        self.assertIn("Tav → Тав (м)", user_prompt(api.chat_calls[2]))
+
+    def test_added_gender_is_saved(self):
+        api = FakeApi(chat_contents=[
+            "1. Карлах\n---\nKarlach → Карлах",
+            "1. Карлах улыбается\n---\nKarlach → Карлах (ж)",
+        ])
+        p = self.provider()
+        with fake_http(api):
+            run(p.translate_batch(["Karlach"], "en", "ru"))
+            run(p.translate_batch(["Karlach smiles, she is happy"], "en", "ru"))
+
+        self.assertEqual(self.saved(), [("Karlach", "Карлах (ж)")])
+
+    def test_eviction_order_survives_a_restart(self):
+        api = FakeApi(chat_contents=[
+            "1. а б\n---\nA → А\nB → Б",
+            # Uses "A": after this, "B" is the least recently used.
+            "1. а\n---",
+            "1. в\n---\nC → В",
+        ])
+        with patch.object(gp, "_MAX_GLOSSARY_ENTRIES", 2), fake_http(api):
+            first = self.provider()
+            run(first.translate_batch(["a b"], "en", "ru"))
+            with patch.object(gp.time, "time", return_value=10**10):
+                run(first.translate_batch(["a"], "en", "ru"))
+            restarted = self.provider()
+            with patch.object(gp.time, "time", return_value=10**10 + 1):
+                run(restarted.translate_batch(["c"], "en", "ru"))
+
+        self.assertEqual(restarted.glossary_entries(), [("A", "А"), ("C", "В")])
+        self.assertEqual(self.saved(), [("A", "А"), ("C", "В")])
+
+    def test_store_errors_do_not_break_translation(self):
+        api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
+        broken = sqlite3.OperationalError("disk I/O error")
+        p = self.provider()
+        with patch.object(self.store, "load_entries", side_effect=broken), \
+                patch.object(self.store, "replace_entries", side_effect=broken), \
+                fake_http(api):
+            result = run(p.translate_batch(["Tav"], "en", "ru"))
+
+        self.assertEqual(result, ["Тав"])
+        self.assertEqual(p.glossary_entries(), [("Tav", "Тав (м)")])
+
+    def test_terms_answered_after_a_game_switch_are_not_saved_for_either_game(self):
+        api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
+        p = self.provider()
+
+        def post_and_switch_game(*args, **kwargs):
+            response = api.post(*args, **kwargs)
+            if args and args[0].endswith("/chat/completions"):
+                p.set_game("Disco Elysium", "632470")
+            return response
+
+        from providers import gigachat_client as gcc
+        with patch.object(gcc.requests, "post", side_effect=post_and_switch_game), \
+                patch.object(gcc.requests, "get", side_effect=api.get):
+            run(p.translate_batch(["Tav"], "en", "ru"))
+
+        self.assertEqual(self.saved(), [])
+        disco = GlossaryKey("gigachat_plus", "632470", "en", "ru")
+        self.assertEqual(self.saved(disco), [])
+
+
 class GigaChatPlusFallbackTest(unittest.TestCase):
 
     def test_refusal_with_context_retries_without_it(self):
@@ -554,6 +712,26 @@ class GigaChatPlusManagerTest(unittest.TestCase):
 
         m.set_current_game("Disco Elysium")
         self.assertEqual(plus.glossary_entries(), [])
+
+    def test_manager_passes_store_and_game_id_to_the_provider(self):
+        from providers import ProviderManager
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = GlossaryStore(os.path.join(tmp, "glossary.db"))
+            try:
+                m = ProviderManager(glossary_store=store)
+                m.configure(ocr_provider="rapidocr", translation_provider="gigachat_plus")
+                m.set_gigachat_api_key(API_KEY)
+                # Set before the provider exists: it must reach it on creation.
+                m.set_current_game("Baldur's Gate 3", BG3_ID)
+                api = FakeApi(chat_contents=["1. Тав\n---\nTav → Тав (м)"])
+                with fake_http(api):
+                    run(m.translate_text(["Tav"], "en", "ru"))
+
+                saved = [(e.term, e.translation) for e in store.load_entries(BG3_KEY)]
+                self.assertEqual(saved, [("Tav", "Тав (м)")])
+            finally:
+                store.close()
 
     def test_both_methods_use_the_managers_client(self):
         from providers.gigachat_translate import GigaChatTranslateProvider
