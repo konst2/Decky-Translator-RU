@@ -10,7 +10,7 @@ import os
 import tempfile
 import unittest
 
-from providers.translation_cache import PROVIDER_TIERS, TranslationCache
+from providers.translation_cache import CONTEXT_TIER, PROVIDER_TIERS, TranslationCache, reads_cache
 
 
 class DeleteFromTierTest(unittest.TestCase):
@@ -45,6 +45,26 @@ class DeleteFromTierTest(unittest.TestCase):
 
     def test_empty_cache_reports_zero(self):
         self.assertEqual(self.cache.delete_from_tier(PROVIDER_TIERS["gigachat_plus"]), 0)
+
+
+class ReadsCacheTest(unittest.TestCase):
+    """
+    Методы с контекстом (GigaChat+) не берут переводы из кэша: иначе модели
+    уходил обрезанный экран (реплика из кэша, а на перевод — одна строка
+    интерфейса, из которой модель выписывала кнопки в словарь) и старые
+    переводы, сделанные до исправлений словаря.
+    """
+
+    def test_context_method_does_not_read_the_cache(self):
+        self.assertEqual(PROVIDER_TIERS["gigachat_plus"], CONTEXT_TIER)
+        self.assertFalse(reads_cache(PROVIDER_TIERS["gigachat_plus"]))
+
+    def test_other_methods_read_the_cache(self):
+        for provider, tier in PROVIDER_TIERS.items():
+            if provider == "gigachat_plus":
+                continue
+            with self.subTest(provider=provider):
+                self.assertTrue(reads_cache(tier))
 
 
 if __name__ == "__main__":

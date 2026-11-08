@@ -284,6 +284,15 @@ class GigaChatPlusGlossaryTest(unittest.TestCase):
         self.assertIn("Исправление формы", prompt)
         self.assertIn("(форма)", prompt)
 
+    def test_prompt_forbids_interface_labels(self):
+        api = FakeApi(chat_contents=["1. Привет\n---"])
+        with fake_http(api):
+            run(provider().translate_batch(["Hello"], "en", "ru"))
+
+        prompt = user_prompt(api.chat_calls[0])
+        self.assertIn("Не выписывай элементы интерфейса игры", prompt)
+        self.assertIn("A Next, Y Auto Mode", prompt)
+
     def seeded(self, translation, term="Ukon"):
         """A provider whose glossary already holds `term → translation`."""
         api = FakeApi(chat_contents=[f"1. x\n---\n{term} → {translation}"])

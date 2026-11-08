@@ -19,15 +19,35 @@ PROVIDER_TIERS = {
     "yandex": 3,
     # LLM translation: same quality tier as the other paid cloud services.
     "gigachat": 3,
-    # GigaChat with game name and glossary: the most consistent method. It
-    # does not reuse tier-3 entries (made without its glossary, names could
-    # differ) and overwrites them; tier-3 methods may reuse its entries.
-    # Tier 4 is the tier of context-aware AI methods with a glossary: when
-    # the user edits a glossary, every entry of tier >= 4 is dropped
+    # GigaChat with game name and glossary: the most consistent method.
+    # Tier 4 (CONTEXT_TIER) is the tier of context-aware AI methods: they do
+    # not read the cache at all (reads_cache), only write to it, overwriting
+    # lower-tier entries; tier-3 methods may reuse their entries. When the
+    # user edits a glossary, every entry of tier >= 4 is dropped
     # (delete_from_tier). A future glossary method belongs here too.
     "gigachat_plus": 4,
     "gemini_vision": 3,
 }
+
+# Tier of the context-aware AI methods (game name, glossary, speech notes).
+CONTEXT_TIER = 4
+
+
+def reads_cache(tier):
+    """
+    Whether a method of this tier takes translations from the cache.
+
+    Context-aware methods do not, they only write to it (for the other
+    methods). Taking cached lines out of their request cut the screen: with
+    the dialogue line cached, the model got the interface bar alone and
+    listed its buttons as glossary terms, and it saw neither the speaker
+    nor the line it was meant to learn from. A cached line also predates
+    later glossary fixes (a gender added after it was translated came back
+    as "поражён" from the cache). The whole screen costs more tokens; the
+    cache saved little for these methods anyway.
+    """
+    return tier < CONTEXT_TIER
+
 
 # When exceeded, the least recently used rows are dropped
 MAX_ROWS = 50000

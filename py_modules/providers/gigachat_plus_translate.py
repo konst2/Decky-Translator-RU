@@ -762,7 +762,13 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         # copied the example word for word ("почтительно, официально,
         # церемонно"), and a common word from it ("коротко") showing up in
         # many notes would make every description share a word with the
-        # stored one and block the replacement.
+        # stored one and block the replacement. Interface labels: a visual
+        # novel's button bar ("System Y Auto Mode Backlog A Next B Hide
+        # Window RE Skip", glued differently by OCR from screen to screen)
+        # reached the model alone when the dialogue line came from the
+        # translation cache, and the model listed every button as a term;
+        # once in the glossary, it re-listed them on most screens. With the
+        # rule, live runs gave no interface entries and no re-listing.
         parts.append(
             f"Ниже {len(texts)} строк текста из игры. Переведи каждую строку на {target_name}.\n"
             f"Ответь ровно {len(texts)} строками в формате «<номер>. <перевод>», в том же порядке.\n"
@@ -775,6 +781,10 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             "Что не выписывать: обычные слова (например, cleric, sword, camp, battle, gun, goblin), "
             "даже если они встречаются в тексте; записи, которые уже есть в словаре, "
             "кроме исправлений пола и формы (см. ниже).\n"
+            "Не выписывай элементы интерфейса игры: кнопки, меню, подсказки управления и системные надписи "
+            "(например, Auto Mode, Backlog, Next, Hide Window, Skip, Save, Load, System, Options), "
+            "в том числе с буквой кнопки геймпада впереди (A Next, Y Auto Mode) и склеенные при "
+            "распознавании (AutoMode, BHide Window).\n"
             "Пол — только для персонажей: (ж) или (м) после перевода в записи словаря. "
             "Ставь его, если пол виден из этих строк (she/her, he/his) или ты точно знаешь "
             "этого персонажа игры; если не уверен — не пиши. В переводах строк пол не пиши никогда.\n"

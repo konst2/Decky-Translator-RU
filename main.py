@@ -91,7 +91,7 @@ import requests
 
 # Import provider system
 from providers import ProviderManager, TextRegion, NetworkError, ApiKeyError, RateLimitError, TranslationUnavailableError
-from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
+from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize, reads_cache
 from providers.glossary_store import GlossaryStore
 from providers.gigachat_plus_translate import name_and_gender
 from providers import readiness
@@ -2496,8 +2496,10 @@ class Plugin:
             cache_on = self._translation_cache_enabled and self._translation_cache is not None
             provider_tier = PROVIDER_TIERS.get(self._translation_provider, 0)
 
+            # Context-aware methods (GigaChat+) translate the whole screen
+            # every time: see reads_cache. They still write to the cache.
             cached = {}
-            if cache_on and texts_to_translate:
+            if cache_on and reads_cache(provider_tier) and texts_to_translate:
                 cached = await asyncio.to_thread(
                     self._translation_cache.get_many,
                     texts_to_translate, input_lang, target_lang, provider_tier,
