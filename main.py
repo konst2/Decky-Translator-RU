@@ -1212,7 +1212,8 @@ class Plugin:
 
     # Translation cache
     _translation_cache: TranslationCache = None
-    # GigaChat+ glossaries saved between restarts; None = memory only.
+    # Glossaries of context-aware AI methods (currently GigaChat+), saved
+    # between restarts; None = memory only.
     _glossary_store: GlossaryStore = None
     _translation_cache_enabled: bool = DEFAULTS["translation_cache_enabled"]
 
@@ -2641,7 +2642,7 @@ class Plugin:
             logger.error(f"Error deleting translation cache entry: {e}")
             return {"success": False, "error": str(e)}
 
-    # -- GigaChat+ glossary form --
+    # -- glossary form of context-aware AI methods (currently GigaChat+) --
     #
     # The frontend sends the running game's appid and the language pair from
     # the settings: the form shows the glossary of the game on screen even
@@ -2696,7 +2697,11 @@ class Plugin:
 
     async def _clear_glossary_tier_cache(self) -> int:
         """
-        Drop cached translations made with a glossary (GigaChat+ tier and up).
+        Drop cached translations made with a glossary.
+
+        Glossary methods have the top cache tier; currently that is the
+        GigaChat+ tier. A new glossary method must get a tier at least as
+        high, or its stale lines would survive this cleanup.
 
         Otherwise lines with the deleted wrong name would keep coming from
         the cache. Done even when caching is switched off: the old entries

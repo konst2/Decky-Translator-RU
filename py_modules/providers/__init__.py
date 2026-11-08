@@ -94,8 +94,9 @@ class ProviderManager:
         """
         Initialize the provider manager.
 
-        glossary_store: where GigaChat+ saves its glossaries between plugin
-        restarts. None keeps them in memory only (tests, a store that failed
+        glossary_store: where context-aware AI translation methods save their
+        glossaries between plugin restarts (currently only GigaChat+, the
+        pilot). None keeps them in memory only (tests, a store that failed
         to open).
         """
         # Provider instances (created on demand)
@@ -112,7 +113,7 @@ class ProviderManager:
         # One client for both GigaChat methods: one access token and one model
         # cache, so switching between them costs no extra OAuth.
         self._gigachat_client = GigaChatClient()
-        # The running game, for GigaChat+ (see set_current_game).
+        # The running game, for context-aware AI methods (see set_current_game).
         self._current_game = ""
         self._current_game_id = ""
         self._glossary_store = glossary_store
@@ -262,11 +263,13 @@ class ProviderManager:
 
     def set_current_game(self, game: str, game_id: str = "") -> None:
         """
-        Remember the running game for GigaChat+.
+        Remember the running game for context-aware AI methods.
 
-        GigaChat+ puts the name into the prompt and switches the glossary when
-        the game changes; game_id (the Steam appid) is the key of the saved
-        glossary. Stored here too, so a provider created later gets them.
+        Such a method puts the name into the prompt and switches the glossary
+        when the game changes; game_id (the Steam appid) is the key of the
+        saved glossary. Stored here too, so a provider created later gets
+        them. Currently only GigaChat+ (the pilot) receives them; a new
+        method has to be added here.
         """
         self._current_game = game
         self._current_game_id = game_id
@@ -274,13 +277,17 @@ class ProviderManager:
         if gigachat_plus:
             gigachat_plus.set_game(game, game_id)
 
-    # -- GigaChat+ glossary form --
+    # -- glossary form of context-aware AI methods --
     #
     # Through the provider, not straight to the store: the glossary of the
     # running game is also held in the provider's memory, and an entry
     # deleted only from the store would be saved back by the next
     # translation. The provider is created if needed (cheap: it shares the
     # client and opens no connections).
+    #
+    # Currently routed to GigaChat+, the pilot and the only such method.
+    # With a second one, the form has to name the method (the store key
+    # already has it) and these calls choose the provider by it.
 
     def get_glossary(self, game_id: str, source_lang: str, target_lang: str) -> List[GlossaryEntry]:
         return self._gigachat_plus().glossary_for(game_id, source_lang, target_lang)
