@@ -22,6 +22,7 @@ import { call, toaster } from "@decky/api";
 import { useSettings } from "../SettingsContext";
 import { BottomSpacer } from "./BottomSpacer";
 import { ApiKeyModal } from "./ApiKeyModal";
+import { openGlossaryModal } from "../glossary/GlossaryModal";
 import { DataFlowBadge, OCR_DATA_FLOW, TRANSLATION_DATA_FLOW } from "./DataFlowBadge";
 import { HiKey, HiEnvelope, HiLockClosed, HiInboxArrowDown, HiTrash, HiXMark, HiXCircle, HiExclamationTriangle, HiInformationCircle } from "react-icons/hi2";
 import { BsArrowRepeat, BsStars } from "react-icons/bs";
@@ -309,6 +310,9 @@ const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () => void }
         </ModalRoot>
     );
 };
+
+const languageLabel = (code: string) =>
+    languageOptions.find(option => option.data === code)?.label ?? code;
 
 const knownGeminiModels: DropdownOption[] = [
     { label: <span>2.5 Flash</span>, data: "gemini-2.5-flash" },
@@ -1565,7 +1569,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                         <>
                                             <div>- Перевод с контекстом: модель знает, какая это игра, и ведёт словарь имён и терминов</div>
                                             <div>- Чем дольше сессия, тем единообразнее имена, термины и обращения</div>
-                                            <div>- Словарь сбрасывается при смене игры, языка или перезапуске плагина</div>
+                                            <div>- Словарь сохраняется отдельно для каждой игры и пары языков и не пропадает после перезапуска</div>
+                                            <div>- Неудачную запись словаря можно удалить кнопкой «Словарь игры» ниже</div>
                                             <div>- Выбирает самую сильную доступную модель GigaChat (сейчас Ultra) — у неё свой бесплатный лимит токенов</div>
                                             <div>- Если лимит закончится, плагин об этом скажет — переключитесь на обычный GigaChat</div>
                                         </>
@@ -1641,6 +1646,26 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         </div>
                     </Field>
                 </PanelSectionRow>
+
+                {/* То же условие, что у описания GigaChat+ выше: с Gemini Vision
+                    переводит Gemini, и словарь GigaChat+ не используется. */}
+                {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'gigachat_plus' && (
+                    <PanelSectionRow>
+                        <ButtonItem
+                            layout="below"
+                            onClick={() => openGlossaryModal({
+                                sourceLang: settings.inputLanguage,
+                                targetLang: settings.targetLanguage,
+                                // Подписи готовит вкладка: список языков живёт здесь, а импорт
+                                // его из окна дал бы круговую зависимость вкладка ↔ окно.
+                                sourceLabel: languageLabel(settings.inputLanguage),
+                                targetLabel: languageLabel(settings.targetLanguage),
+                            })}
+                        >
+                            Словарь игры
+                        </ButtonItem>
+                    </PanelSectionRow>
+                )}
 
                 {(settings.translationProvider === 'ct2' || settings.translationProvider === 'opusmt') && (
                     <PanelSectionRow>
