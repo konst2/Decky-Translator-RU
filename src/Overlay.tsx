@@ -44,6 +44,25 @@ const useUIComposition: (composition: UIComposition) => void = findModuleChild(
     }
 );
 
+// Stacking level of the overlay inside Steam's main UI window ("Big Picture").
+// The overlay is a global component (routerHook.addGlobalComponent), so it shares one
+// stacking context (.BasicUI) with Steam's own layers. Measured on the Deck via CEF
+// remote debugging, November 2026 (Steam values, not ours):
+//     auto   regular Steam UI (#Main)
+//     10     Steam event overlay (PartnerEventOverlayContainer)
+//     1500   dialogs opened with showModal, ours and other plugins' (.FullModalOverlay)
+//     3900   dimming under the side menus, on-screen keyboard container
+//     6000   on-screen keyboard (#virtual keyboard)
+//     7000   button hints bar at the bottom (#Footer)
+// The overlay must be above the regular UI and below every popup. The original plugin
+// used 7002: the key entry dialog, the on-screen keyboard and the hints bar opened under
+// the screenshot -- they took input but stayed invisible until the overlay was closed.
+// 1000 leaves a margin below the dialogs in case Steam shifts them a little.
+// Not affected by this value: the side menus (QAM, Steam menu) and toasts -- they are
+// separate CEF windows (QuickAccess_*, MainMenu_*, notificationtoasts_*).
+// If a Steam popup hides under the screenshot again, re-measure these layers first.
+export const OVERLAY_Z_INDEX = 1000;
+
 // Mountable component that holds a composition state request.
 // When unmounted, the hook cleanup calls RemoveMinimumCompositionStateRequest,
 // fully releasing the request so Steam's own UI sections can get input focus.
@@ -949,7 +968,7 @@ export const TranslatedTextOverlay: VFC<{
                  display: "flex",
                  justifyContent: "center",
                  alignItems: "center",
-                 zIndex: 7002,
+                 zIndex: OVERLAY_Z_INDEX,
                  position: "fixed",
                  top: 0,
                  left: 0,
@@ -1261,7 +1280,7 @@ export const TranslatedTextOverlay: VFC<{
                             background: "rgba(0, 0, 0, 0.7)",
                             padding: '10px',
                             borderRadius: '50%',
-                            zIndex: 7003,
+                            zIndex: OVERLAY_Z_INDEX + 1,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -1303,7 +1322,7 @@ export const TranslatedTextOverlay: VFC<{
                     borderRadius: '20px',
                     maxWidth: "420px",
                     boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-                    zIndex: 7003, // Higher than the image
+                    zIndex: OVERLAY_Z_INDEX + 1, // Higher than the image
                 }}>
                     {processingIsError && (
                         <svg

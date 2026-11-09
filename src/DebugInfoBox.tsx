@@ -28,10 +28,12 @@
 //     Steam's hidden 1×1 context, and only a mount inside the overlay ends up on screen.
 //   - The box does not shift the layout under it (position: fixed) and lets taps
 //     through (pointer-events: none), so it is safe to put over what you are debugging.
-//   - zIndex 7010 is above the overlay (7002–7003). Raise it if the box is hidden.
+//   - zIndex is tied to OVERLAY_Z_INDEX: the box must stay above the overlay and its
+//     badges (OVERLAY_Z_INDEX + 1). Raise the offset if the box is hidden.
 //   - Not for release builds: remove every mount before committing.
 
 import { VFC } from "react";
+import { OVERLAY_Z_INDEX } from "./Overlay";
 
 export type DebugInfoRow = {
     label: string;
@@ -63,7 +65,7 @@ export const DebugInfoBox: VFC<{
         // whatever box it is mounted in, so it never shifts the layout being debugged
         position: "fixed",
         ...cornerPosition(corner, 8),
-        zIndex: 7010,
+        zIndex: OVERLAY_Z_INDEX + 10,
         // Must not swallow the tap that dismisses the overlay underneath
         pointerEvents: "none",
         background: "rgba(0, 0, 0, 0.75)",
