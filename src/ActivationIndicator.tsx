@@ -1,6 +1,7 @@
 import { VFC } from "react";
 import { findModuleChild } from "@decky/ui";
 import { SETTINGS_DEFAULTS } from "./settingsDefaults";
+import { INDICATOR_Z_INDEX } from "./overlayLayers";
 
 // UI Composition layers provided by Decky
 enum UIComposition {
@@ -79,7 +80,7 @@ export const ActivationIndicator: VFC<ActivationIndicatorProps> = ({ visible, te
             position: "fixed",
             bottom: "20px",
             left: "20px",
-            zIndex: 8003,
+            zIndex: INDICATOR_Z_INDEX,
             display: "flex",
             flexDirection: "row",
             alignItems: "center",

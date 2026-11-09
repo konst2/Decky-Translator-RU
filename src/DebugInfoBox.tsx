@@ -33,7 +33,7 @@
 //   - Not for release builds: remove every mount before committing.
 
 import { VFC } from "react";
-import { OVERLAY_Z_INDEX } from "./Overlay";
+import { OVERLAY_Z_INDEX } from "./overlayLayers";
 
 export type DebugInfoRow = {
     label: string;

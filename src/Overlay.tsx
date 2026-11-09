@@ -10,11 +10,12 @@ import { logger } from "./Logger";
 import { SETTINGS_DEFAULTS } from "./settingsDefaults";
 import { buildTranslatedFontFamily, ensureFontLoaded, resolveFontStyleCSS } from "./fonts";
 import type { FontStyleOption } from "./fonts";
-import { DataFlowIconGlyph } from "./tabs/DataFlowBadge";
 import type { DataFlow } from "./tabs/DataFlowBadge";
 import { InputMode } from "./Input";
 import { hotkeyShortLabel } from "./hotkeyLabels";
 import { SnapshotBadge, pickBadgeCorner } from "./SnapshotBadge";
+import { OVERLAY_Z_INDEX } from "./overlayLayers";
+import { StatusPill } from "./StatusPill";
 
 export type HorizontalTextAlignment = 'left' | 'right' | 'center' | 'justify';
 
@@ -43,25 +44,6 @@ const useUIComposition: (composition: UIComposition) => void = findModuleChild(
         }
     }
 );
-
-// Stacking level of the overlay inside Steam's main UI window ("Big Picture").
-// The overlay is a global component (routerHook.addGlobalComponent), so it shares one
-// stacking context (.BasicUI) with Steam's own layers. Measured on the Deck via CEF
-// remote debugging, November 2026 (Steam values, not ours):
-//     auto   regular Steam UI (#Main)
-//     10     Steam event overlay (PartnerEventOverlayContainer)
-//     1500   dialogs opened with showModal, ours and other plugins' (.FullModalOverlay)
-//     3900   dimming under the side menus, on-screen keyboard container
-//     6000   on-screen keyboard (#virtual keyboard)
-//     7000   button hints bar at the bottom (#Footer)
-// The overlay must be above the regular UI and below every popup. The original plugin
-// used 7002: the key entry dialog, the on-screen keyboard and the hints bar opened under
-// the screenshot -- they took input but stayed invisible until the overlay was closed.
-// 1000 leaves a margin below the dialogs in case Steam shifts them a little.
-// Not affected by this value: the side menus (QAM, Steam menu) and toasts -- they are
-// separate CEF windows (QuickAccess_*, MainMenu_*, notificationtoasts_*).
-// If a Steam popup hides under the screenshot again, re-measure these layers first.
-export const OVERLAY_Z_INDEX = 1000;
 
 // Mountable component that holds a composition state request.
 // When unmounted, the hook cleanup calls RemoveMinimumCompositionStateRequest,
@@ -944,10 +926,6 @@ export const TranslatedTextOverlay: VFC<{
     return (
         <>
         <style>{`
-            @keyframes statusSweep {
-                0% { transform: translateX(-100%); }
-                100% { transform: translateX(333%); }
-            }
             @keyframes fadeInTranslation {
                 0% { opacity: 0; }
                 100% { opacity: 1; }
@@ -1305,76 +1283,18 @@ export const TranslatedTextOverlay: VFC<{
                     )}
                 </div>
             )}
-
-            {/* Status pill: sweeping line while working, plain text for short messages */}
-            {processingStep && (
-                <div style={{
-                    display: "flex",
-                    flexDirection: "row",
-                    alignItems: "center",
-                    position: "absolute",
-                    bottom: "20px",
-                    left: "20px",
-                    overflow: "hidden",
-                    color: "#ffffff",
-                    background: "rgba(0, 0, 0, 0.7)",
-                    padding: '8px 12px',
-                    borderRadius: '20px',
-                    maxWidth: "420px",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-                    zIndex: OVERLAY_Z_INDEX + 1, // Higher than the image
-                }}>
-                    {processingIsError && (
-                        <svg
-                            width="18"
-                            height="18"
-                            viewBox="0 0 24 24"
-                            fill="#ff6b6b"
-                            style={{ flexShrink: 0, marginRight: "10px" }}
-                        >
-                            <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
-                        </svg>
-                    )}
-                    {/* Where data goes: the current stage while working, the whole run on
-                        final statuses and errors (after the error icon: the error matters more).
-                        Shape and color only, no label: a local stage can be over in a fraction
-                        of a second. */}
-                    {processingDataFlow && (
-                        <span style={{ display: "inline-flex", flexShrink: 0, marginRight: "10px" }}>
-                            <DataFlowIconGlyph flow={processingDataFlow} size={16} />
-                        </span>
-                    )}
-                    <div style={{ fontSize: "14px", whiteSpace: "pre-line", lineHeight: "1.3" }}>
-                        {processingIsError || !loading ? processingStep : `${processingStep}...`}
-                        {!processingIsError && processingDetail && (
-                            <div style={{ fontSize: "10px", opacity: 0.7 }}>{processingDetail}</div>
-                        )}
-                    </div>
-                    {loading && !processingIsError && (
-                        <>
-                            <div style={{
-                                position: "absolute",
-                                left: 0,
-                                right: 0,
-                                bottom: 0,
-                                height: "2px",
-                                background: "rgba(255, 255, 255, 0.10)",
-                            }} />
-                            <div style={{
-                                position: "absolute",
-                                bottom: 0,
-                                left: 0,
-                                width: "30%",
-                                height: "2px",
-                                borderRadius: "2px",
-                                background: "#1a9fff",
-                                animation: "statusSweep 1.3s ease-in-out infinite",
-                            }} />
-                        </>
-                    )}
-                </div>
-            )}
         </div>
+
+        {/* Sibling of #translation-overlay, not its child, so it stays above Steam's
+            layers -- why, see StatusPill.tsx */}
+        <StatusPill
+            visible={visible}
+            step={processingStep}
+            detail={processingDetail}
+            isError={processingIsError}
+            loading={loading}
+            dataFlow={processingDataFlow}
+        />
         </>
     );
 };
