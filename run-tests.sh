@@ -10,6 +10,11 @@
 # интерпретатор при прогоне тестов было бы неожиданно. Поставить один раз:
 #   pyenv install 3.11
 #
+# Вместо pyenv интерпретатор можно указать явно: TEST_PYTHON=/путь/к/python3.11.
+# Так скрипт запускается в CI — там pyenv нет, Python ставит actions/setup-python.
+# Версия всё равно проверяется: без проверки окружение от другого Python
+# молча пересоздалось бы, и тесты прошли бы не на 3.11.
+#
 # Зависимости — в отдельном окружении .venv-tests/ (в .gitignore). Ставится
 # только то, что импортируют тесты: requests и urllib3 (их импортирует пакет
 # providers), с версиями из requirements.txt. Тяжёлые onnxruntime и
@@ -19,8 +24,10 @@
 #   ./run-tests.sh                 # все тесты
 #   ./run-tests.sh -v              # остальные аргументы уходят в unittest
 #   rm -rf .venv-tests             # пересоздать окружение с нуля
+#   TEST_PYTHON=python3.11 ./run-tests.sh   # без pyenv (так делает CI)
 #
-# В CI пока не подключён: сначала смотрим, как он работает локально.
+# В CI запускается перед сборкой (.github/workflows/build.yml, задача test):
+# упавшие тесты останавливают и dev-сборку, и релиз.
 
 set -euo pipefail
 
@@ -61,6 +68,18 @@ pinned_deps() {
         || fail "requests/urllib3 pins not found in requirements.txt"
 }
 
+# Интерпретатор из TEST_PYTHON: проверить, что он есть и что это 3.11.
+use_explicit_python() {
+    local python="$1"
+    command -v "$python" >/dev/null 2>&1 || fail "TEST_PYTHON=$python: not found"
+
+    local version
+    version="$("$python" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+    [ "$version" = "$REQUIRED_PYTHON" ] \
+        || fail "TEST_PYTHON=$python is Python $version, need $REQUIRED_PYTHON"
+    echo "$python"
+}
+
 venv_python_version() {
     "$VENV_DIR/bin/python" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true
 }
@@ -92,7 +111,11 @@ prepare_venv() {
 
 main() {
     local python
-    python="$(find_python)"
+    if [ -n "${TEST_PYTHON:-}" ]; then
+        python="$(use_explicit_python "$TEST_PYTHON")"
+    else
+        python="$(find_python)"
+    fi
     prepare_venv "$python"
 
     echo "Running tests on $("$VENV_DIR/bin/python" --version)"

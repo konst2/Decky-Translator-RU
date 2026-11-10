@@ -13,7 +13,30 @@ on:
         type: string
 
 jobs:
+  # Backend unit tests (tests/). Separate job so that build waits for it:
+  # failing tests stop both the dev build and the release.
+  test:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # 3.11 on purpose: main.py and py_modules/providers/ run inside the Decky
+      # Loader process, which is Python 3.11 (unlike the 3.13 workers below).
+      - name: Setup Python 3.11
+        id: python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      # Same script as locally; TEST_PYTHON replaces pyenv, which CI does not have
+      - name: Run backend tests
+        env:
+          TEST_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: ./run-tests.sh -v
+
   build:
+    needs: test
     runs-on: ubuntu-26.04
     permissions:
       contents: write
