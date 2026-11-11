@@ -2410,12 +2410,19 @@ class Plugin:
             if self._ocr_provider == "gemini_vision":
                 self._provider_manager.set_gemini_target_language(self._target_language)
 
+            # Имя провайдера пишется в каждую строку итога: при запуске
+            # плагина оно попадает в лог один раз, а смену метода посреди игры
+            # иначе не видно. Без него по присланному логу не понять, каким OCR
+            # распознан экран, а настройки склейки и порогов зависят от OCR.
+            ocr_provider = self._provider_manager.get_ocr_provider()
+            ocr_provider_name = ocr_provider.name if ocr_provider else "?"
+
             start_time = time.time()
             text_regions = await self._provider_manager.recognize_text(
                 image_bytes,
                 language=self._input_language
             )
-            logger.info(f"OCR completed in {time.time() - start_time:.2f}s, found {len(text_regions)} regions")
+            logger.info(f"OCR completed by {ocr_provider_name} in {time.time() - start_time:.2f}s, found {len(text_regions)} regions")
 
             # Disabled temporarily
             # TODO: Work on it
