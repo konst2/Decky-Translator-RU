@@ -14,8 +14,17 @@
 #   ./build-plugin-zip.sh                 # pnpm build + zip
 #   SKIP_BUILD=1 ./build-plugin-zip.sh    # reuse existing dist/
 #   OUTPUT=/tmp/test.zip ./build-plugin-zip.sh
+#   DEBUG_BLOCK_ATTACH_LOG=0 ./build-plugin-zip.sh   # without the debug log
+#
+# Local builds write the block attach debug log (screen layouts and glue
+# decisions, see rollup.config.js) to the plugin log by default: they are
+# for testing on the Deck. That log contains screen text, so build with
+# DEBUG_BLOCK_ATTACH_LOG=0 when the zip is for someone else. CI release
+# builds do not set the variable and never include the log.
 
 set -euo pipefail
+
+export DEBUG_BLOCK_ATTACH_LOG="${DEBUG_BLOCK_ATTACH_LOG:-1}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"

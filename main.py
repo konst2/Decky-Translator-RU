@@ -1327,6 +1327,17 @@ class Plugin:
             logger.warning(f"pw-dump dimension probe failed: {e}")
             return None
 
+    # EXPERIMENT (block attach, TextRecognizer.tsx): the frontend console is only
+    # reachable through CEF remote debugging, so attach decisions are written to
+    # the plugin log to be read after playing. Contains screen text fragments,
+    # so the frontend calls it only when BLOCK_ATTACH.debugLogToBackend is on:
+    # local builds with DEBUG_BLOCK_ATTACH_LOG=1, never CI releases.
+    async def log_block_attach(self, lines):
+        if not isinstance(lines, list):
+            return
+        for line in lines:
+            logger.info(f"[block-attach] {line}")
+
     # Generic settings handlers
     async def get_setting(self, key, default=None):
         return self._settings.get_setting(key, default)
