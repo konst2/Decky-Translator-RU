@@ -1327,7 +1327,7 @@ class Plugin:
             logger.warning(f"pw-dump dimension probe failed: {e}")
             return None
 
-    # EXPERIMENT (block attach, TextRecognizer.tsx): the frontend console is only
+    # EXPERIMENT (block attach, src/glue/blockAttach.ts): the frontend console is only
     # reachable through CEF remote debugging, so attach decisions are written to
     # the plugin log to be read after playing. Contains screen text fragments,
     # so the frontend calls it only when BLOCK_ATTACH.debugLogToBackend is on:

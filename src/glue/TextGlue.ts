@@ -1,0 +1,611 @@
+import { logger } from "../Logger";
+import { SETTINGS_DEFAULTS } from "../settingsDefaults";
+import type { TextRegion } from "../TextRecognizer";
+import { BlockAttacher } from "./blockAttach";
+
+// CJK scripts (Chinese, Japanese, Korean) and fullwidth forms.
+const CJK_CHAR = /[\u3000-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/;
+
+// Scripts written without spaces between words: Chinese and Japanese.
+// Same as CJK_CHAR minus Hangul syllables: Korean separates words with
+// spaces, so its wrapped lines must be joined with a space.
+export const NO_SPACE_SCRIPT = /[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/;
+
+// Spacing between wrapped lines of one text block. The block is one phrase,
+// so lines join into a single line: with "\n" translators split it back and
+// translate each line on its own. Also used by the overlay to re-join OCR
+// lines, so both join them the same way.
+// getHorizontalSpacing is not reused: it treats quotes as punctuation and
+// would glue `"Come here."` + `She left` into `"Come here."She left`.
+export function lineWrapSeparator(prevLine: string, nextLine: string): string {
+    // A trailing hyphen is kept and glued without a space: "self-" + "aware"
+    // becomes "self-aware". A word break ("possi-" + "ble") can't be told
+    // apart without a dictionary; games rarely hyphenate, so keeping the
+    // hyphen is the safer guess.
+    if (prevLine.endsWith("-")) {
+        return "";
+    }
+    if (NO_SPACE_SCRIPT.test(prevLine.slice(-1)) || NO_SPACE_SCRIPT.test(nextLine.charAt(0))) {
+        return "";
+    }
+    return " ";
+}
+
+// Union-Find with path compression and union by rank.
+// Enables transitive merging: if A merges with B and B with C,
+// all three end up in the same group regardless of check order.
+class UnionFind {
+    private parent: number[];
+    private rank: number[];
+
+    constructor(n: number) {
+        this.parent = Array.from({ length: n }, (_, i) => i);
+        this.rank = new Array(n).fill(0);
+    }
+
+    find(x: number): number {
+        while (this.parent[x] !== x) {
+            this.parent[x] = this.parent[this.parent[x]];
+            x = this.parent[x];
+        }
+        return x;
+    }
+
+    union(x: number, y: number): void {
+        const px = this.find(x), py = this.find(y);
+        if (px === py) return;
+        if (this.rank[px] < this.rank[py]) {
+            this.parent[px] = py;
+        } else if (this.rank[px] > this.rank[py]) {
+            this.parent[py] = px;
+        } else {
+            this.parent[py] = px;
+            this.rank[px]++;
+        }
+    }
+
+    getGroups(): Map<number, number[]> {
+        const groups = new Map<number, number[]>();
+        for (let i = 0; i < this.parent.length; i++) {
+            const root = this.find(i);
+            if (!groups.has(root)) groups.set(root, []);
+            groups.get(root)!.push(i);
+        }
+        return groups;
+    }
+}
+
+function computeMedianHeight(regions: TextRegion[]): number {
+    const heights = regions
+        .map(r => r.rect.bottom - r.rect.top)
+        .filter(h => h > 0)
+        .sort((a, b) => a - b);
+
+    if (heights.length === 0) return 20;
+    return heights[Math.floor(heights.length / 2)];
+}
+
+// Glues OCR boxes into phrases and paragraphs: lines of one Screen AI block
+// (blockAttach.ts) first, then geometry for everything else.
+export class TextGlue {
+    private groupingPower: number = SETTINGS_DEFAULTS.groupingPower;
+    private blockAttacher: BlockAttacher;
+
+    // `sendAttachLog` receives the block attach debug log, see BlockAttacher.
+    constructor(sendAttachLog: (lines: string[]) => void) {
+        this.blockAttacher = new BlockAttacher(sendAttachLog);
+    }
+
+    setGroupingPower(power: number): void {
+        this.groupingPower = Math.max(0.25, Math.min(1.0, power));
+        logger.debug('TextRecognizer', `Grouping power set to ${this.groupingPower}`);
+    }
+
+    getGroupingPower(): number {
+        return this.groupingPower;
+    }
+
+    // Phase 1: group OCR boxes that sit on the same horizontal line.
+    // Checks: Y-center alignment, height compatibility, horizontal gap.
+    // All thresholds relative to median line height -- never absolute pixels.
+    private assembleLines(regions: TextRegion[], medianH: number): TextRegion[] {
+        const n = regions.length;
+        if (n <= 1) return [...regions];
+
+        const uf = new UnionFind(n);
+
+        // Sort by top edge so we can break early on large vertical gaps
+        const indexed = regions.map((r, i) => ({ r, i }));
+        indexed.sort((a, b) => a.r.rect.top - b.r.rect.top);
+
+        for (let a = 0; a < n; a++) {
+            for (let b = a + 1; b < n; b++) {
+                const ra = indexed[a].r, rb = indexed[b].r;
+
+                // If the top of b is way past the bottom of a, everything
+                // further is even lower -- stop checking
+                if (rb.rect.top - ra.rect.bottom > medianH) break;
+
+                const yCenterA = (ra.rect.top + ra.rect.bottom) / 2;
+                const yCenterB = (rb.rect.top + rb.rect.bottom) / 2;
+                if (Math.abs(yCenterA - yCenterB) > 0.5 * medianH) continue;
+
+                const hA = ra.rect.bottom - ra.rect.top;
+                const hB = rb.rect.bottom - rb.rect.top;
+                if (hA > 0 && hB > 0 && Math.max(hA, hB) / Math.min(hA, hB) > 1.5) continue;
+
+                // Horizontal gap: positive means space between boxes, negative means overlap
+                const gap = Math.max(ra.rect.left, rb.rect.left) - Math.min(ra.rect.right, rb.rect.right);
+                if (gap > 1.0 * medianH) continue;
+
+                uf.union(indexed[a].i, indexed[b].i);
+            }
+        }
+
+        const groups = Array.from(uf.getGroups().values());
+        return this.extractMergedRegions(groups, regions, "horizontal");
+    }
+
+    // Phase 2: group text lines into paragraphs.
+    // Checks: vertical gap, horizontal overlap ratio, height compatibility.
+    // groupingPower scales the vertical gap threshold.
+    private assembleParagraphs(lines: TextRegion[], medianH: number): TextRegion[] {
+        const n = lines.length;
+        if (n <= 1) return [...lines];
+
+        const power = this.groupingPower;
+        const uf = new UnionFind(n);
+
+        const indexed = lines.map((l, i) => ({ l, i }));
+        indexed.sort((a, b) => a.l.rect.top - b.l.rect.top);
+
+        for (let a = 0; a < n; a++) {
+            for (let b = a + 1; b < n; b++) {
+                const la = indexed[a].l, lb = indexed[b].l;
+
+                // Early exit on large vertical distance
+                if (lb.rect.top - la.rect.bottom > 3.0 * medianH * power) break;
+
+                // Vertical gap
+                const vertGap = Math.max(0, lb.rect.top - la.rect.bottom);
+                if (vertGap > 1.5 * medianH * power) continue;
+
+                // Horizontal overlap ratio -- how much do the two lines share horizontally?
+                const overlapLeft = Math.max(la.rect.left, lb.rect.left);
+                const overlapRight = Math.min(la.rect.right, lb.rect.right);
+                const overlapWidth = Math.max(0, overlapRight - overlapLeft);
+                const widthA = la.rect.right - la.rect.left;
+                const widthB = lb.rect.right - lb.rect.left;
+                const minWidth = Math.min(widthA, widthB);
+
+                if (minWidth > 0 && overlapWidth / minWidth < 0.3) continue;
+
+                // Height ratio (font size similarity).
+                // For multi-line regions (e.g. OCR returned a block spanning
+                // multiple visual lines), normalize by estimated line count
+                // so the comparison reflects per-line font size, not total height.
+                const hA = la.rect.bottom - la.rect.top;
+                const hB = lb.rect.bottom - lb.rect.top;
+                const estLinesA = Math.max(1, Math.round(hA / medianH));
+                const estLinesB = Math.max(1, Math.round(hB / medianH));
+                const lineHA = hA / estLinesA;
+                const lineHB = hB / estLinesB;
+                if (lineHA > 0 && lineHB > 0 && Math.max(lineHA, lineHB) / Math.min(lineHA, lineHB) > 1.4) continue;
+
+                // Alignment check: reject pairs whose left edges, right edges,
+                // AND horizontal centers are all far apart.  This allows
+                // left-aligned, right-aligned, and center-aligned text to merge
+                // while still separating unrelated UI elements.
+                const leftEdgeDist = Math.abs(la.rect.left - lb.rect.left);
+                const rightEdgeDist = Math.abs(la.rect.right - lb.rect.right);
+                const centerA = (la.rect.left + la.rect.right) / 2;
+                const centerB = (lb.rect.left + lb.rect.right) / 2;
+                const centerDist = Math.abs(centerA - centerB);
+                const edgeThresh = 2.0 * medianH;
+                const centerThresh = 1.0 * medianH;
+                if (leftEdgeDist > edgeThresh && rightEdgeDist > edgeThresh && centerDist > centerThresh) continue;
+
+                // Width ratio: a very narrow line next to a wide one is probably
+                // a stray label, not a continuation. Skip this check for the
+                // shorter of two lines when it could be a paragraph's last line
+                // (i.e. when it's the lower one)
+                const maxWidth = Math.max(widthA, widthB);
+                if (maxWidth > 0) {
+                    const widthRatio = minWidth / maxWidth;
+                    // If the narrow line is the upper one, it's unlikely a paragraph tail
+                    const narrowIsUpper = (widthA < widthB && la.rect.top < lb.rect.top) ||
+                                          (widthB < widthA && lb.rect.top < la.rect.top);
+                    if (widthRatio < 0.15 && narrowIsUpper) continue;
+                }
+
+                // Background color: different background = different UI element.
+                // Uses simple RGB distance. Threshold of 60 catches obvious
+                // differences (dark vs light, blue vs gray) while allowing
+                // minor shading variation within the same panel.
+                if (la.bgColor && lb.bgColor) {
+                    const dr = la.bgColor[0] - lb.bgColor[0];
+                    const dg = la.bgColor[1] - lb.bgColor[1];
+                    const db = la.bgColor[2] - lb.bgColor[2];
+                    const colorDist = Math.sqrt(dr * dr + dg * dg + db * db);
+                    if (colorDist > 60) continue;
+                }
+
+                uf.union(indexed[a].i, indexed[b].i);
+            }
+        }
+
+        const groups = Array.from(uf.getGroups().values());
+        const refined = this.splitOvermerged(groups, lines, medianH);
+        logger.debug('TextRecognizer', `Auto-glue: Split pass refined ${groups.length} groups into ${refined.length} groups`);
+        return this.extractMergedRegions(refined, lines, "vertical");
+    }
+
+    // Post-merge split pass: break apart over-merged groups by checking
+    // for internal gap inconsistencies and separator lines.
+    private splitOvermerged(groups: number[][], lines: TextRegion[], medianH: number): number[][] {
+        const result: number[][] = [];
+
+        for (const group of groups) {
+            // Groups of 1-2 lines can't have internal inconsistencies
+            if (group.length <= 2) {
+                result.push(group);
+                continue;
+            }
+
+            // Sort constituent lines top-to-bottom
+            const sorted = [...group].sort((a, b) => {
+                const yA = (lines[a].rect.top + lines[a].rect.bottom) / 2;
+                const yB = (lines[b].rect.top + lines[b].rect.bottom) / 2;
+                return yA - yB;
+            });
+
+            // Compute vertical gaps between consecutive lines
+            const gaps: number[] = [];
+            for (let i = 0; i < sorted.length - 1; i++) {
+                gaps.push(Math.max(0, lines[sorted[i + 1]].rect.top - lines[sorted[i]].rect.bottom));
+            }
+
+            const sortedGaps = [...gaps].sort((a, b) => a - b);
+            const medianGap = sortedGaps[Math.floor(sortedGaps.length / 2)];
+
+            // Find indices after which to split (between sorted[i] and sorted[i+1])
+            const splitAfter = new Set<number>();
+
+            for (let i = 0; i < gaps.length; i++) {
+                // Gap inconsistency: this gap is much larger than the group's typical gap,
+                // and large enough to not just be bounding box jitter
+                if (medianGap > 0 && gaps[i] > 2.5 * medianGap && gaps[i] > 0.8 * medianH) {
+                    splitAfter.add(i);
+                }
+                // When lines nearly overlap (medianGap ~ 0), any real gap stands out
+                if (medianGap <= 1 && gaps[i] > 1.2 * medianH) {
+                    splitAfter.add(i);
+                }
+
+                // Separator line: text is just dashes, equals, underscores, etc.
+                const text = lines[sorted[i]].text.trim();
+                if (/^[-=_*~.]{3,}$/.test(text)) {
+                    if (i > 0) splitAfter.add(i - 1);
+                    splitAfter.add(i);
+                }
+                if (i + 1 < sorted.length) {
+                    const nextText = lines[sorted[i + 1]].text.trim();
+                    if (/^[-=_*~.]{3,}$/.test(nextText)) {
+                        splitAfter.add(i);
+                    }
+                }
+            }
+
+            if (splitAfter.size === 0) {
+                result.push(sorted);
+                continue;
+            }
+
+            // Build sub-groups at split points
+            let subGroup: number[] = [];
+            for (let i = 0; i < sorted.length; i++) {
+                subGroup.push(sorted[i]);
+                if (splitAfter.has(i)) {
+                    if (subGroup.length > 0) result.push(subGroup);
+                    subGroup = [];
+                }
+            }
+            if (subGroup.length > 0) result.push(subGroup);
+        }
+
+        return result;
+    }
+
+    // Extract connected components from Union-Find, merge text and bounding boxes.
+    // "paragraph" is "vertical" for lines of one Screen AI block: same
+    // top-to-bottom order, but lines are joined into one phrase, not with "\n".
+    private extractMergedRegions(
+        groups: number[][],
+        regions: TextRegion[],
+        direction: "horizontal" | "vertical" | "paragraph"
+    ): TextRegion[] {
+        const merged: TextRegion[] = [];
+
+        for (const indices of groups) {
+            if (indices.length === 1) {
+                merged.push({ ...regions[indices[0]] });
+                continue;
+            }
+
+            // Sort: left-to-right for horizontal, top-to-bottom for vertical
+            const sorted = indices
+                .map(i => regions[i])
+                .sort((a, b) => {
+                    if (direction === "horizontal") return a.rect.left - b.rect.left;
+                    const yCenterA = (a.rect.top + a.rect.bottom) / 2;
+                    const yCenterB = (b.rect.top + b.rect.bottom) / 2;
+                    return yCenterA - yCenterB;
+                });
+
+            let combinedText = sorted[0].text;
+            let combinedTranslatedText = sorted[0].translatedText ?? null;
+            let combinedRect = { ...sorted[0].rect };
+            let isDialog = sorted[0].isDialog;
+            let confidenceSum = sorted[0].confidence ?? 0;
+            let confidenceCount = sorted[0].confidence !== undefined ? 1 : 0;
+            // Accumulate bgColor for averaging
+            let colorR = 0, colorG = 0, colorB = 0, colorCount = 0;
+            if (sorted[0].bgColor) {
+                colorR += sorted[0].bgColor[0];
+                colorG += sorted[0].bgColor[1];
+                colorB += sorted[0].bgColor[2];
+                colorCount++;
+            }
+
+            for (let i = 1; i < sorted.length; i++) {
+                const region = sorted[i];
+                let separator = "\n";
+                if (direction === "horizontal") {
+                    separator = this.getHorizontalSpacing(sorted[i - 1], region);
+                } else if (direction === "paragraph") {
+                    separator = lineWrapSeparator(sorted[i - 1].text, region.text);
+                }
+
+                combinedText += separator + region.text;
+                if (combinedTranslatedText !== null && region.translatedText) {
+                    combinedTranslatedText += separator + region.translatedText;
+                }
+
+                combinedRect = {
+                    left: Math.min(combinedRect.left, region.rect.left),
+                    top: Math.min(combinedRect.top, region.rect.top),
+                    right: Math.max(combinedRect.right, region.rect.right),
+                    bottom: Math.max(combinedRect.bottom, region.rect.bottom),
+                };
+
+                isDialog = isDialog || region.isDialog;
+                if (region.confidence !== undefined) {
+                    confidenceSum += region.confidence;
+                    confidenceCount++;
+                }
+                if (region.bgColor) {
+                    colorR += region.bgColor[0];
+                    colorG += region.bgColor[1];
+                    colorB += region.bgColor[2];
+                    colorCount++;
+                }
+            }
+
+            const result: TextRegion = {
+                text: combinedText,
+                rect: combinedRect,
+                isDialog,
+            };
+            if (combinedTranslatedText !== null) {
+                result.translatedText = combinedTranslatedText;
+            }
+            if (confidenceCount > 0) {
+                result.confidence = confidenceSum / confidenceCount;
+            }
+            if (colorCount > 0) {
+                result.bgColor = [
+                    Math.round(colorR / colorCount),
+                    Math.round(colorG / colorCount),
+                    Math.round(colorB / colorCount)
+                ];
+            }
+            merged.push(result);
+        }
+
+        return merged;
+    }
+
+    // Spacing for horizontal (same-line) merging
+    private getHorizontalSpacing(a: TextRegion, b: TextRegion): string {
+        // No space before closing punctuation
+        if (/^[.,!?:;)\]"'\u3002\u3001\uFF09\u300D\u300F\u3011\u3009\u300B)]/.test(b.text)) {
+            return "";
+        }
+        // No space after opening punctuation
+        if (/[(\["'\uFF08\u300C\u300E\u3010\u3008\u300A(]\s*$/.test(a.text)) {
+            return "";
+        }
+
+        if (CJK_CHAR.test(a.text.slice(-1)) || CJK_CHAR.test(b.text.charAt(0))) {
+            return "";
+        }
+
+        return " ";
+    }
+
+    // Post-merge dialog detection on complete text blocks
+    private detectDialog(region: TextRegion): boolean {
+        if (region.isDialog) return true;
+
+        const text = region.text;
+        let score = 0;
+
+        if (/"[^"]+"/g.test(text) || /[\u00AB\u00BB]/g.test(text)) score += 2;
+
+        const excl = (text.match(/!/g) || []).length;
+        const quest = (text.match(/\?/g) || []).length;
+        score += (excl + quest) * 0.5;
+
+        if (/[A-Z][^.!?]+[.!?]\s*"/.test(text) || /"[^"]+"\s*[A-Z][^.!?]+[.!?]/.test(text)) {
+            score += 2;
+        }
+
+        score += Math.min(2, text.length / 50);
+        if (text.includes('\n')) score += 1.5;
+
+        return score >= 3;
+    }
+
+    // Resolve overlapping rects in the final region list.
+    // Merged paragraphs can have union rects that extend into neighbors.
+    // For each overlapping pair: absorb the smaller if mostly contained,
+    // otherwise trim the smaller region's rect at the overlapping edge.
+    private resolveOverlaps(regions: TextRegion[]): TextRegion[] {
+        if (regions.length <= 1) return regions;
+
+        // Work on copies so we can mutate rects
+        const result = regions.map(r => ({ ...r, rect: { ...r.rect } }));
+
+        // Sort by area descending so larger (merged) regions take priority
+        const byArea = result
+            .map((r, i) => ({ i, area: (r.rect.right - r.rect.left) * (r.rect.bottom - r.rect.top) }))
+            .sort((a, b) => b.area - a.area);
+
+        const removed = new Set<number>();
+
+        for (let ai = 0; ai < byArea.length; ai++) {
+            const idxA = byArea[ai].i;
+            if (removed.has(idxA)) continue;
+            const a = result[idxA].rect;
+
+            for (let bi = ai + 1; bi < byArea.length; bi++) {
+                const idxB = byArea[bi].i;
+                if (removed.has(idxB)) continue;
+                const b = result[idxB].rect;
+
+                // Check overlap
+                const oLeft = Math.max(a.left, b.left);
+                const oTop = Math.max(a.top, b.top);
+                const oRight = Math.min(a.right, b.right);
+                const oBottom = Math.min(a.bottom, b.bottom);
+
+                if (oLeft >= oRight || oTop >= oBottom) continue;
+
+                const overlapArea = (oRight - oLeft) * (oBottom - oTop);
+                const bArea = (b.right - b.left) * (b.bottom - b.top);
+
+                // If b is mostly inside a, absorb it
+                if (bArea > 0 && overlapArea / bArea > 0.5) {
+                    removed.add(idxB);
+                    continue;
+                }
+
+                // Partial overlap: trim b at the edge that loses the least area
+                const bW = b.right - b.left;
+                const bH = b.bottom - b.top;
+                const oW = oRight - oLeft;
+                const oH = oBottom - oTop;
+
+                // For each possible trim, how much of b's area is lost?
+                // Only consider trims where the overlap is actually on that edge
+                const candidates: { edge: string; loss: number }[] = [];
+
+                // Trim b's left edge rightward (overlap is on b's left side)
+                if (oLeft === b.left || oLeft - b.left < oW) {
+                    candidates.push({ edge: 'left', loss: oW * bH });
+                }
+                // Trim b's right edge leftward (overlap is on b's right side)
+                if (oRight === b.right || b.right - oRight < oW) {
+                    candidates.push({ edge: 'right', loss: oW * bH });
+                }
+                // Trim b's top edge downward
+                if (oTop === b.top || oTop - b.top < oH) {
+                    candidates.push({ edge: 'top', loss: bW * oH });
+                }
+                // Trim b's bottom edge upward
+                if (oBottom === b.bottom || b.bottom - oBottom < oH) {
+                    candidates.push({ edge: 'bottom', loss: bW * oH });
+                }
+
+                if (candidates.length === 0) {
+                    removed.add(idxB);
+                    continue;
+                }
+
+                // Pick the trim with least area loss
+                candidates.sort((x, y) => x.loss - y.loss);
+                switch (candidates[0].edge) {
+                    case 'left': b.left = oRight; break;
+                    case 'right': b.right = oLeft; break;
+                    case 'top': b.top = oBottom; break;
+                    case 'bottom': b.bottom = oTop; break;
+                }
+
+                // If trimmed to nothing useful, remove it
+                if (b.right - b.left < 5 || b.bottom - b.top < 5) {
+                    removed.add(idxB);
+                }
+            }
+        }
+
+        return result.filter((_, i) => !removed.has(i));
+    }
+
+    applyAutoGlue(regions: TextRegion[]): TextRegion[] {
+        if (!regions || regions.length <= 1) return regions;
+
+        logger.debug('TextRecognizer', `Auto-glue: Processing ${regions.length} regions`);
+
+        // Used for reading order of the final paragraphs.
+        const medianH = computeMedianHeight(regions);
+
+        // Lines with a shared Screen AI block id are merged as is. Everything
+        // else (all regions for providers without block ids) goes through
+        // geometry. Without block ids `ungrouped` is `regions` in the same
+        // order, so other providers behave exactly as before.
+        const byId = this.blockAttacher.groupByBlockId(regions);
+        const attached = this.blockAttacher.attachToBlocks(regions, byId.groups, byId.ungroupedIndices);
+        const mergedById = this.extractMergedRegions(attached.groups, attached.regions, "paragraph");
+        const ungrouped = attached.ungroupedIndices.map(index => attached.regions[index]);
+
+        let geoParagraphs = ungrouped;
+        if (ungrouped.length > 1) {
+            // Median of the lines geometry actually groups: dialogue lines
+            // already merged by block id may use another font size.
+            const geoMedianH = computeMedianHeight(ungrouped);
+            logger.debug('TextRecognizer', `Auto-glue: Median line height = ${geoMedianH}px, grouping power = ${this.groupingPower}`);
+
+            // Phase 1: assemble word-level boxes into lines
+            const lines = this.assembleLines(ungrouped, geoMedianH);
+            logger.debug('TextRecognizer', `Auto-glue: Phase 1 produced ${lines.length} lines from ${ungrouped.length} boxes`);
+
+            // Phase 2: assemble lines into paragraphs
+            geoParagraphs = this.assembleParagraphs(lines, geoMedianH);
+            logger.debug('TextRecognizer', `Auto-glue: Phase 2 produced ${geoParagraphs.length} paragraphs from ${lines.length} lines`);
+        }
+        const paragraphs = [...mergedById, ...geoParagraphs];
+
+        // Sort into reading order: top-to-bottom, left-to-right with tolerance
+        paragraphs.sort((a, b) => {
+            const yCenterA = (a.rect.top + a.rect.bottom) / 2;
+            const yCenterB = (b.rect.top + b.rect.bottom) / 2;
+            if (Math.abs(yCenterA - yCenterB) < 0.3 * medianH) {
+                return a.rect.left - b.rect.left;
+            }
+            return yCenterA - yCenterB;
+        });
+
+        // Post-merge: dialog detection on complete blocks
+        const annotated = paragraphs.map(p => ({
+            ...p,
+            isDialog: this.detectDialog(p),
+        }));
+
+        // Final pass: resolve any overlapping rects caused by merge union rects
+        const resolved = this.resolveOverlaps(annotated);
+        if (resolved.length !== annotated.length) {
+            logger.debug('TextRecognizer', `Auto-glue: Overlap resolution reduced ${annotated.length} to ${resolved.length} regions`);
+        }
+        return resolved;
+    }
+}

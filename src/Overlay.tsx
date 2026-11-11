@@ -5,7 +5,7 @@ import { findModuleChild } from "@decky/ui";
 
 import { CSSProperties, VFC, useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { TranslatedRegion } from "./TextTranslator";
-import { NO_SPACE_SCRIPT, lineWrapSeparator } from "./TextRecognizer";
+import { NO_SPACE_SCRIPT, lineWrapSeparator } from "./glue/TextGlue";
 import { logger } from "./Logger";
 import { SETTINGS_DEFAULTS } from "./settingsDefaults";
 import { buildTranslatedFontFamily, ensureFontLoaded, resolveFontStyleCSS } from "./fonts";

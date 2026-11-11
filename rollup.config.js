@@ -7,7 +7,7 @@ const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), 
 // frontend is built, so reading package.json here would bake the previous one.
 const version = (process.env.PLUGIN_VERSION || pkg.version || "dev").trim() || "dev";
 
-// Debug log of block attach decisions (TextRecognizer.tsx). It writes screen
+// Debug log of block attach decisions (src/glue/blockAttach.ts). It writes screen
 // text into the plugin log, so it is on only when asked for explicitly:
 // build-plugin-zip.sh sets the variable for local builds, CI and a plain
 // `pnpm build` do not, and releases come out without the log.
@@ -21,7 +21,7 @@ const now = new Date();
 const buildDate = `${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
 
 // Replaces the __PLUGIN_*__ placeholders (declared in src/tabs/VersionBadge.tsx)
-// with string literals and __DEBUG_BLOCK_ATTACH_LOG__ (src/TextRecognizer.tsx)
+// with string literals and __DEBUG_BLOCK_ATTACH_LOG__ (src/glue/blockAttach.ts)
 // with a boolean; runs before the TypeScript plugin transpiles the file.
 const buildInfo = {
   name: "plugin-build-info",
