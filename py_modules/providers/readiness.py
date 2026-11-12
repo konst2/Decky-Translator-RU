@@ -29,6 +29,7 @@
 from typing import Optional
 
 from .base import ModelContract, OCRProvider, TranslationProvider
+from .capabilities import RAPIDOCR_AVAILABLE, RAPIDOCR_UNAVAILABLE_MESSAGE
 
 # Причины «не готово». Фронтенд различает их, чтобы решить, куда вести
 # пользователя: к кнопке загрузки или к выбору языков.
@@ -36,6 +37,7 @@ REASON_MODEL_MISSING = "model_missing"
 REASON_PAIR_UNSUPPORTED = "pair_unsupported"
 REASON_AUTO_UNSUPPORTED = "auto_unsupported"
 REASON_NOT_AVAILABLE = "not_available"
+REASON_ENGINE_UNAVAILABLE = "engine_unavailable"
 REASON_NOT_STARTED = "not_started"
 
 READY = {"ready": True}
@@ -119,6 +121,13 @@ def check_ocr(method: str, provider: Optional[OCRProvider], input_lang: str) -> 
     Готов ли метод распознавания. method — id из настроек (`ocr_provider`),
     provider — его объект (`ProviderManager.get_ocr_provider()`).
     """
+    # Движок не входит в сборку: это не «метод не настроен» и не «модель не
+    # скачана», поэтому причина отдельная — пользователю нужно выбрать метод.
+    if method == "rapidocr" and not RAPIDOCR_AVAILABLE:
+        return _not_ready("ocr", REASON_ENGINE_UNAVAILABLE,
+                          RAPIDOCR_UNAVAILABLE_MESSAGE,
+                          "RapidOCR не входит в эту сборку")
+
     if provider is None:
         return _not_ready("ocr", REASON_NOT_AVAILABLE, OCR_NOT_AVAILABLE_MESSAGE, NOT_AVAILABLE_DETAIL)
 

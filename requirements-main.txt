@@ -1,0 +1,12 @@
+# Packages for the Decky Loader process (Python 3.11).
+#
+# Native wheels must match that interpreter, so they are installed separately
+# from the worker set in requirements.txt (which targets Python 3.13):
+#   pip install -r requirements-main.txt -t py_modules --no-deps
+#     --python-version 3.11 --only-binary=:all: --platform manylinux_2_28_x86_64
+#
+# requests and urllib3 are pure Python and come from requirements.txt.
+# Pillow is intentionally absent: the worker set ships a cp313 build, which
+# the 3.11 process cannot import.
+
+evdev-binary==1.9.3

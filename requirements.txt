@@ -1,13 +1,39 @@
-# Python dependencies for Decky Translator RU
-# Install to py_modules folder with:
-#   pip install -r requirements.txt -t py_modules
+# Python dependencies for Decky Translator RU — the worker runtime.
+#
+# Target: the bundled Python 3.13 (bin/python313) on x86_64 Linux. Every
+# package is pinned exactly and installed with --no-deps, so a rebuild resolves
+# to the same wheels. Transitive dependencies are listed explicitly on purpose:
+# this file is the lock. CI checks the installed set against these pins and
+# every package's own dependencies against the lock.
+#
+# Install:
+#   pip install -r requirements.txt -t py_modules --no-deps
+#
+# Packages for the Decky Loader process are in requirements-main.txt.
+# The optional RapidOCR engine is in requirements-rapidocr.txt.
+#
+# Adding a package:
+#   1. Pin it here together with every dependency it needs at runtime. CI
+#      fails on a missing one; a dependency that is not needed at runtime is
+#      skipped on purpose in INTENTIONALLY_SKIPPED (build.yml), with a reason.
+#   2. Import it in the smoke test ("Smoke-test bundled Python and packages"
+#      in build.yml), so a broken wheel fails CI instead of the Deck.
+#   3. Native code here is cp313 and loads only in the worker processes.
+#      Code that runs inside the Decky process (main.py, providers) needs
+#      pure Python or a wheel for that interpreter in requirements-main.txt.
+#
+# numpy and PyYAML are not installed: ctranslate2 declares them, but imports
+# them only in its model converters. Nothing else in the worker uses them.
 
-Pillow==11.2.1
+# HTTP stack
 requests==2.32.3
 urllib3==2.4.0
-rapidocr>=3.6.0
-onnxruntime>=1.7.0
-ctranslate2>=4.5.0
-sentencepiece>=0.2.0
-protobuf>=6.33.1
-py3langid>=0.3.0
+certifi==2026.10.23
+charset-normalizer==3.5.2
+idna==3.20
+
+# Local translation and image handling
+ctranslate2==4.9.0
+sentencepiece==0.2.3
+protobuf==7.36.2
+Pillow==11.2.1

@@ -1,5 +1,5 @@
 This file lists the third-party dependencies used by Decky Translator RU and their respective licenses.
-All pip packages also include full license files in their .dist-info directories within the plugin-dependencies.tar.gz archive.
+All pip packages also include full license files in their .dist-info directories within the plugin-dependencies.tar.xz archive.
 
 RapidOCR (rapidocr-onnxruntime)
 https://github.com/RapidAI/RapidOCR

@@ -429,7 +429,7 @@ function useModelDownload(opts: {
 }): ModelDownloadState {
     const [status, setStatus] = useState<any>({
         downloaded: false, size: 0, approx_size_mb: opts.defaultApproxMb,
-        downloading: false, progress: 0, error: null,
+        downloading: false, progress: 0, error: null, supported: true,
     });
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -834,6 +834,9 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
     const nllb = useNllbModelStatus();
     const opusmt = useOpusMtModelStatus();
     const rapidocr = useRapidOCRStatus();
+    // RapidOCR — необязательный движок: его пакеты не входят в базовый архив.
+    // Пока статус не пришёл, пункт не скрываем, чтобы список не мигал.
+    const rapidocrSupported = rapidocr.status?.supported !== false;
 
     // Dropdown из Steam запоминает пункты и не перерисовывает их, пока не
     // сменится выбранный вариант: после удаления модели значок «нужна
@@ -904,17 +907,17 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
         : languageOptions;
 
     const placeholderOption = settings.inputLanguage === '' ? [selectLanguageOption] : [];
-    const inputLanguageOptions = settings.ocrProvider === 'rapidocr'
+    const inputLanguageOptions = settings.ocrProvider === 'rapidocr' && rapidocrSupported
         ? [...placeholderOption, ...filteredLanguageOptions.filter(lang => rapidocrLanguages.has(lang.data))]
         : [...placeholderOption, ...filteredLanguageOptions];
 
     // Reset input language if it's not supported by the current OCR provider
     useEffect(() => {
-        if (settings.initialized && settings.ocrProvider === 'rapidocr'
+        if (settings.initialized && settings.ocrProvider === 'rapidocr' && rapidocrSupported
             && settings.inputLanguage !== '' && !rapidocrLanguages.has(settings.inputLanguage)) {
             updateSetting('inputLanguage', '', 'Исходный язык');
         }
-    }, [settings.initialized, settings.ocrProvider]);
+    }, [settings.initialized, settings.ocrProvider, rapidocrSupported]);
 
     // When switching to CT2, if source is auto-detect, clear it so user picks a specific language
     useEffect(() => {
@@ -932,7 +935,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         label="Исходный язык"
                         description={isCT2
                             ? "Язык исходного текста (автоопределение недоступно для оффлайн-перевода)"
-                            : settings.ocrProvider === 'rapidocr'
+                            : settings.ocrProvider === 'rapidocr' && rapidocrSupported
                                 ? "Язык исходного текста для распознавания"
                                 : "Язык исходного текста (выберите автоопределение, если не уверены)"}
                         rgOptions={inputLanguageOptions}
@@ -969,7 +972,15 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             <Dropdown
                                 key={ocrListKey}
                                 rgOptions={[
-                                    { label: <ProviderOptionLabel name="Локально" variant="RapidOCR" needs={downloadNeeds(rapidocr)} note="лучшая для EN игр" />, data: "rapidocr" },
+                                    // Движок RapidOCR не входит в каждый архив.
+                                    // Если он уже выбран в настройках, оставляем
+                                    // пункт видимым с пометкой: иначе Dropdown
+                                    // показал бы пустое значение вместо причины.
+                                    ...(rapidocrSupported
+                                        ? [{ label: <ProviderOptionLabel name="Локально" variant="RapidOCR" needs={downloadNeeds(rapidocr)} note="лучшая для EN игр" />, data: "rapidocr" }]
+                                        : settings.ocrProvider === 'rapidocr'
+                                            ? [{ label: <ProviderOptionLabel name="Локально" variant="RapidOCR" note="недоступен в этой сборке" noteKind="warning" />, data: "rapidocr" }]
+                                            : []),
                                     { label: <ProviderOptionLabel name="Локально" variant="Chrome" needs={downloadNeeds(csai)} note="★ рекомендуемый" />, data: "chromescreenai" },
                                     { label: <ProviderOptionLabel name="OCR.space" note={RUSSIA_NOTE} noteKind="warning" />, data: "ocrspace" },
                                     { label: <ProviderOptionLabel name="Google Cloud" needs={keyNeeds(!!settings.googleApiKey)} note={RUSSIA_NOTE} noteKind="warning" />, data: "googlecloud" },
@@ -978,7 +989,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 selectedOption={settings.ocrProvider}
                                 onChange={(option) => {
                                     updateSetting('ocrProvider', option.data, 'Метод распознавания');
-                                    if (option.data === 'rapidocr' && settings.inputLanguage !== '' && !rapidocrLanguages.has(settings.inputLanguage)) {
+                                    if (rapidocrSupported && option.data === 'rapidocr' && settings.inputLanguage !== '' && !rapidocrLanguages.has(settings.inputLanguage)) {
                                         updateSetting('inputLanguage', '', 'Исходный язык');
                                     }
                                 }}
@@ -1045,7 +1056,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             {settings.ocrProvider === 'chromescreenai' && (
                                 <ModelActionButton state={csai} actionRef={chromescreenaiActionRef} />
                             )}
-                            {settings.ocrProvider === 'rapidocr' && (
+                            {settings.ocrProvider === 'rapidocr' && rapidocrSupported && (
                                 <ModelActionButton state={rapidocr} actionRef={rapidocrActionRef} />
                             )}
                         </Focusable>
@@ -1065,7 +1076,12 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         childrenLayout="below"
                     >
                         <div style={{ color: "#8b929a", fontSize: "12px", lineHeight: "1.6", paddingLeft: "4px", paddingTop: "4px" }}>
-                            {settings.ocrProvider === 'rapidocr' && (
+                            {settings.ocrProvider === 'rapidocr' && !rapidocrSupported && (
+                                <ProviderWarning>
+                                    RapidOCR не входит в эту сборку плагина. Выберите другой метод распознавания.
+                                </ProviderWarning>
+                            )}
+                            {settings.ocrProvider === 'rapidocr' && rapidocrSupported && (
                                 <>
                                     <div style={{ display: "inline-flex", flexDirection: "column" }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -1164,7 +1180,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                     </Field>
                 </PanelSectionRow>
 
-                {settings.ocrProvider === 'rapidocr' && (
+                {settings.ocrProvider === 'rapidocr' && rapidocrSupported && (
                     <PanelSectionRow>
                         <ToggleField
                             label="Быстрое распознавание"
@@ -1190,7 +1206,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                     </PanelSectionRow>
                 )}
 
-                {settings.ocrProvider !== 'ocrspace' && settings.ocrProvider !== 'gemini_vision' && settings.ocrProvider !== 'chromescreenai' && (
+                {settings.ocrProvider !== 'ocrspace' && settings.ocrProvider !== 'gemini_vision' && settings.ocrProvider !== 'chromescreenai'
+                    && (settings.ocrProvider !== 'rapidocr' || rapidocrSupported) && (
                     <PanelSectionRow>
                         <ToggleField
                             label="Настройка распознавания"
@@ -1210,7 +1227,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                     </PanelSectionRow>
                 )}
 
-                {settings.customRecognitionSettings && settings.ocrProvider === 'rapidocr' && (
+                {settings.customRecognitionSettings && settings.ocrProvider === 'rapidocr' && rapidocrSupported && (
                     <>
                         <PanelSectionRow>
                             <SliderField

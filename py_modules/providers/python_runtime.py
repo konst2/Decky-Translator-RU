@@ -1,6 +1,6 @@
 # providers/python_runtime.py
 # Find a Python interpreter for subprocess execution.
-# Prefers the bundled portable Python (extracted from plugin-dependencies.tar.gz)
+# Prefers the bundled portable Python (extracted from plugin-dependencies.tar.xz)
 # so the plugin works on any Linux distro regardless of system Python version.
 # Falls back to a version-checked system Python for dev installs without
 # the bundled runtime.
@@ -13,7 +13,8 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # Must match the cpython ABI of the bundled C extensions
-# (numpy, Pillow, onnxruntime, ctranslate2, sentencepiece — all cp313)
+# (Pillow, ctranslate2, sentencepiece; onnxruntime and OpenCV when RapidOCR
+# is installed — all cp313)
 REQUIRED_PYTHON = (3, 13)
 
 BUNDLED_PYTHON_RELPATH = os.path.join("bin", "python313", "python", "bin", "python3.13")

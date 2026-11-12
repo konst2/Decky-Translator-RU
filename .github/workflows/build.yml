@@ -85,29 +85,96 @@ jobs:
 
       - name: Install Python packages (Python 3.13)
         run: |
-          pip install -r requirements.txt -t dependencies_build/py_modules --no-cache-dir
+          pip install -r requirements.txt -t dependencies_build/py_modules --no-cache-dir --no-deps
 
       - name: Install cp311 packages for Decky Loader runtime
         run: |
-          pip install evdev-binary -t dependencies_build/py_modules --no-cache-dir --python-version 3.11 --only-binary=:all: --platform manylinux_2_28_x86_64 --no-deps
+          pip install -r requirements-main.txt -t dependencies_build/py_modules --no-cache-dir --python-version 3.11 --only-binary=:all: --platform manylinux_2_28_x86_64 --no-deps
+
+      - name: Verify pinned package set and dependencies
+        run: |
+          # --no-deps installs only what the lock lists, so the wheel set cannot
+          # drift on its own. The flip side: a dependency missing from the lock
+          # is silently not installed. This step checks both directions:
+          #   1. every installed package is pinned, every pin is installed, and
+          #      the versions match (typos, unpinned lines);
+          #   2. every Requires-Dist of every installed package is installed
+          #      in a satisfying version, unless it is listed below as skipped
+          #      on purpose (a forgotten transitive dependency fails here).
+          # Markers are evaluated for this runner (CPython 3.13, x86_64 Linux),
+          # the same target as the bundled worker runtime. `packaging` is
+          # installed into the runner only, not into the archive.
+          python -m pip install --quiet --no-cache-dir packaging==26.3
+          python - <<'PY'
+          from importlib.metadata import distributions
+          from pathlib import Path
+
+          from packaging.requirements import Requirement
+          from packaging.utils import canonicalize_name
+
+          # (package, dependency) -> why it is not installed.
+          INTENTIONALLY_SKIPPED = {
+              ("ctranslate2", "numpy"):
+                  "imported only by model converters, not by translation",
+              ("ctranslate2", "pyyaml"):
+                  "imported only by model converters, not by translation",
+          }
+
+          def pins(path):
+              out = {}
+              for line in Path(path).read_text(encoding="utf-8").splitlines():
+                  line = line.strip()
+                  if not line or line.startswith("#"):
+                      continue
+                  name, sep, version = line.partition("==")
+                  if not sep or not version:
+                      raise SystemExit(f"not pinned: {line!r} in {path}")
+                  out[canonicalize_name(name)] = version
+              return out
+
+          expected = pins("requirements.txt") | pins("requirements-main.txt")
+          dists = {canonicalize_name(d.metadata["Name"]): d
+                   for d in distributions(path=["dependencies_build/py_modules"])}
+          installed = {name: d.version for name, d in dists.items()}
+
+          problems = []
+          for name, version in sorted(expected.items()):
+              if installed.get(name) != version:
+                  problems.append(f"{name}: pinned {version}, installed {installed.get(name)}")
+          for name in sorted(set(installed) - set(expected)):
+              problems.append(f"{name}: installed but not pinned")
+
+          used_skips = set()
+          for name, dist in sorted(dists.items()):
+              for line in dist.requires or []:
+                  req = Requirement(line)
+                  if req.marker is not None and not req.marker.evaluate({"extra": ""}):
+                      continue  # optional extra or another platform
+                  dep = canonicalize_name(req.name)
+                  if (name, dep) in INTENTIONALLY_SKIPPED:
+                      used_skips.add((name, dep))
+                      continue
+                  have = installed.get(dep)
+                  if have is None:
+                      problems.append(f"{name} requires {req}, which is not in the lock")
+                  elif not req.specifier.contains(have, prereleases=True):
+                      problems.append(f"{name} requires {req}, but the lock has {dep}=={have}")
+
+          # A stale exception would hide the dependency if it ever came back.
+          for pair in sorted(set(INTENTIONALLY_SKIPPED) - used_skips):
+              problems.append(f"skip {pair} is no longer needed: remove it")
+
+          if problems:
+              raise SystemExit("dependency check failed:\n  " + "\n  ".join(problems))
+          print(f"pinned package set ok: {len(installed)} packages, "
+                f"{len(used_skips)} dependencies skipped on purpose")
+          PY
 
       - name: Strip unnecessary packages and test files
         run: |
           cd dependencies_build/py_modules
-          # Remove packages not needed at runtime (onnxruntime optional deps)
-          rm -rf sympy sympy-*.dist-info sympy-*.data isympy.py
-          rm -rf mpmath mpmath-*.dist-info
-          rm -rf flatbuffers flatbuffers-*.dist-info
-          rm -rf protobuf-*.dist-info
-          # tqdm is needed by rapidocr 3.x -- do NOT remove
-          # Remove full opencv-python (rapidocr pulls it in, but we only need headless)
-          rm -rf opencv_python.libs opencv_python-*.dist-info
-          # Reinstall headless to overwrite cv2/ module (full version's cv2 references wrong .libs)
-          pip install opencv-python-headless -t . --no-cache-dir --upgrade --force-reinstall --no-deps
-          # Remove rapidocr bundled models (we use our own)
-          rm -rf rapidocr/models
-          # rapidocr requires empty folder, otherwise it breaks
-          mkdir -p rapidocr/models
+          # RapidOCR (OpenCV + onnxruntime) is optional and not installed here;
+          # see requirements.txt. The provider code stays in the plugin.
           # Strip test directories, __pycache__, and .pyc files
           find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
           find . -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
@@ -115,8 +182,73 @@ jobs:
           find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
           find . -name "*.pyc" -delete 2>/dev/null || true
           find . -name "*.pyi" -delete 2>/dev/null || true
-          rm -rf numpy/_pyinstaller onnxruntime/datasets
+          rm -rf numpy/_pyinstaller
+          # The ctranslate2 extension module ships with debug info: 69 MB, of
+          # which 1.8 MB is code (about 9 MB of the compressed archive).
+          # Only this one file is stripped, and only with --strip-debug, which
+          # removes debug sections and leaves symbols alone. Running
+          # --strip-unneeded over every .so was tried and is NOT safe: with
+          # binutils 2.40 it broke numpy's OpenBLAS ("ELF load command
+          # address/offset not page-aligned"). The smoke test below imports
+          # ctranslate2, so a damaged file fails the build.
+          strip --strip-debug ctranslate2/_ext*.so
           echo "py_modules size after cleanup: $(du -sh . | cut -f1)"
+
+      - name: Drop CUDA kernels from ctranslate2
+        run: |
+          # The ctranslate2 wheel embeds GPU code for NVIDIA cards in the ELF
+          # section .nv_fatbin (~15 MB, ~11 MB of the compressed archive). The
+          # plugin always creates its translator with device="cpu" and the
+          # Steam Deck has an AMD GPU, so this code is never parsed. The bytes
+          # are overwritten with zeros in place: file size, section table and
+          # offsets stay the same, only the archive compresses better.
+          # Checked on ctranslate2 4.9.0: import, get_cuda_device_count() == 0
+          # and a CPU translation give the same result as the original library.
+          # The build fails if the section is missing or ambiguous, so a
+          # ctranslate2 upgrade with a different layout is noticed here.
+          python - dependencies_build/py_modules/ctranslate2.libs/libctranslate2*.so* <<'PY'
+          import struct
+          import sys
+
+          paths = sys.argv[1:]
+          if len(paths) != 1:
+              raise SystemExit(f"expected one libctranslate2, found: {paths}")
+          path = paths[0]
+          data = bytearray(open(path, "rb").read())
+
+          # ELF64 little-endian header: e_shoff at 0x28; e_shentsize, e_shnum,
+          # e_shstrndx at 0x3A. Wheels for x86_64 Linux are always ELF64 LE.
+          if data[:6] != b"\x7fELF\x02\x01":
+              raise SystemExit(f"{path}: not an ELF64 little-endian file")
+          section_table_offset, = struct.unpack_from("<Q", data, 0x28)
+          entry_size, entry_count, names_index = struct.unpack_from("<HHH", data, 0x3A)
+
+          def section(index):
+              # Elf64_Shdr: name, type, flags, addr, offset, size, ...
+              fields = struct.unpack_from("<IIQQQQ", data, section_table_offset + index * entry_size)
+              name_offset, section_type, _flags, _addr, offset, size = fields
+              return name_offset, section_type, offset, size
+
+          names_offset = section(names_index)[2]
+
+          def section_name(name_offset):
+              start = names_offset + name_offset
+              return bytes(data[start:data.index(b"\0", start)])
+
+          SHT_NOBITS = 8  # a section without bytes in the file
+          matches = []
+          for index in range(entry_count):
+              name_offset, section_type, offset, size = section(index)
+              if section_name(name_offset) == b".nv_fatbin" and section_type != SHT_NOBITS:
+                  matches.append((offset, size))
+          if len(matches) != 1:
+              raise SystemExit(f"{path}: expected one .nv_fatbin section, found {len(matches)}")
+
+          offset, size = matches[0]
+          data[offset:offset + size] = bytes(size)
+          open(path, "wb").write(data)
+          print(f"zeroed .nv_fatbin: {size / 1e6:.1f} MB in {path}")
+          PY
 
       - name: Download Python 3.13 portable runtime
         run: |
@@ -126,15 +258,63 @@ jobs:
           echo "a1dbc39f9c7b7d4ff3074fa18de66714c4e4400643bd657894a65803b0362a92  dependencies_build/python313/python-3.13.tar.gz" | sha256sum -c
           cd dependencies_build/python313 && tar -xzf python-3.13.tar.gz && rm python-3.13.tar.gz
 
+      - name: Trim bundled Python runtime
+        run: |
+          cd dependencies_build/python313/python
+          # bin/python3.13 is a static build, so workers never load the shared
+          # libpython; the .so and its embedding symlink are dead weight.
+          rm -f lib/libpython3.13.so.1.0 lib/libpython3.so
+          # pip, IDLE, Tk/Tcl and headers are not used by the OCR/translation
+          # workers. Keep the rest of the stdlib: asyncio/unittest/email and
+          # friends are imported by third-party packages.
+          rm -rf lib/python3.13/site-packages lib/python3.13/ensurepip \
+                 lib/python3.13/idlelib lib/python3.13/tkinter \
+                 lib/python3.13/turtledemo lib/python3.13/turtle.py \
+                 lib/python3.13/pydoc_data lib/python3.13/config-3.13-* \
+                 lib/tcl9.0 lib/tcl9 lib/tk9.0 lib/itcl4.3.5 \
+                 lib/libtcl9.0.so lib/libtcl9tk9.0.so lib/libtcl9itcl4.3.5.so \
+                 include share
+          rm -f bin/pip bin/pip3 bin/pip3.13 bin/idle3.13 bin/pydoc3.13 \
+                bin/python3.13-config lib/python3.13/lib-dynload/_tkinter*
+          echo "python313 size after trim: $(du -sh . | cut -f1)"
+
+      - name: Smoke-test bundled Python and packages
+        run: |
+          # Uses exactly the runtime and packages that go into the archive, so
+          # a broken trim or a damaged library fails the build instead of the
+          # Deck. The generated protobuf modules are imported too: their
+          # runtime version check is the first thing a protobuf upgrade breaks.
+          # ctranslate2 is asked about devices and CPU compute types: this
+          # loads the library with the zeroed CUDA section and initialises its
+          # CUDA runtime, the place where that change could fail.
+          PYTHONPATH=dependencies_build/py_modules:py_modules \
+            dependencies_build/python313/python/bin/python3.13 - <<'PY'
+          import PIL, requests, urllib3, google.protobuf
+          import ctranslate2, sentencepiece
+          import providers.chromescreenai_protos.chrome_screen_ai_pb2
+          import sentencepiece.sentencepiece_model_pb2
+          assert ctranslate2.get_cuda_device_count() == 0
+          print("ctranslate2 cpu compute types:",
+                sorted(ctranslate2.get_supported_compute_types("cpu")))
+          print("bundled runtime imports ok")
+          PY
+
       - name: Create dependencies archive
         run: |
+          # xz -9e makes the archive about a third smaller than gzip. Decky
+          # Loader (3.2.x on Python 3.11 and 3.3.x on Python 3.14) bundles
+          # lzma, so main.py unpacks it with the standard tarfile module.
+          # -T1: one thread gives one xz block, which compresses best;
+          # -9e needs ~700 MB of RAM, fine on the runner.
+          set -o pipefail
           cd dependencies_build
-          tar -czvf ../plugin-dependencies.tar.gz py_modules python313
+          tar -cf - py_modules python313 | xz -9e -T1 > ../plugin-dependencies.tar.xz
+          echo "dependencies archive: $(du -h ../plugin-dependencies.tar.xz | cut -f1)"
 
       - name: Calculate dependencies SHA256
         id: dependencies_hash
         run: |
-          HASH=$(sha256sum plugin-dependencies.tar.gz | cut -d' ' -f1)
+          HASH=$(sha256sum plugin-dependencies.tar.xz | cut -d' ' -f1)
           echo "sha256=$HASH" >> $GITHUB_OUTPUT
           echo "Dependencies SHA256: $HASH"
 
@@ -219,7 +399,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: plugin-dependencies
-          path: plugin-dependencies.tar.gz
+          path: plugin-dependencies.tar.xz
 
   release:
     if: needs.build.outputs.is_release == 'true'
@@ -249,7 +429,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             DeckyTranslatorRu.zip
-            plugin-dependencies.tar.gz
+            plugin-dependencies.tar.xz
           fail_on_unmatched_files: true
           draft: true
           generate_release_notes: true

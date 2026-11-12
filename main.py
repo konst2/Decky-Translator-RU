@@ -26,10 +26,13 @@ if PLUGIN_DIR not in sys.path:
 # Auto-extract dependencies archive if needed (for Decky Store installs)
 # This must happen BEFORE importing third-party libraries
 BIN_DIR = os.path.join(PLUGIN_DIR, "bin")
-DEPENDENCIES_ARCHIVE = os.path.join(BIN_DIR, "plugin-dependencies.tar.gz")
+# xz instead of gzip: the archive is about a third smaller. Decky Loader
+# bundles lzma (checked in 3.2.x on Python 3.11 and 3.3.x on Python 3.14).
+# Decky removes the whole plugin folder on update, so an old .tar.gz from a
+# previous version is not left behind in bin/.
+DEPENDENCIES_ARCHIVE = os.path.join(BIN_DIR, "plugin-dependencies.tar.xz")
 EXTRACTION_MARKER = os.path.join(BIN_DIR, ".dependencies-extracted")
 BIN_PY_MODULES_DIR = os.path.join(BIN_DIR, "py_modules")
-BIN_RAPIDOCR_DIR = os.path.join(BIN_DIR, "rapidocr")
 BIN_PYTHON_DIR = os.path.join(BIN_DIR, "python313")
 
 def _should_extract_dependencies():
@@ -47,8 +50,10 @@ def _should_extract_dependencies():
     if archive_mtime > marker_mtime:
         return True  # Dependencies were updated, need to re-extract
 
-    # Check if all expected directories exist (partial extraction detection)
-    if not all(os.path.exists(d) for d in [BIN_PY_MODULES_DIR, BIN_RAPIDOCR_DIR, BIN_PYTHON_DIR]):
+    # Check if all expected directories exist (partial extraction detection).
+    # Only paths the archive really contains: a directory it does not ship made
+    # this check fail on every start and re-extract 540 MB each time.
+    if not all(os.path.exists(d) for d in [BIN_PY_MODULES_DIR, BIN_PYTHON_DIR]):
         return True  # Some directories missing, need to re-extract
 
     return False  # Already extracted and up-to-date
@@ -56,7 +61,13 @@ def _should_extract_dependencies():
 if _should_extract_dependencies():
     try:
         print(f"[Decky Translator RU] Extracting dependencies from {DEPENDENCIES_ARCHIVE}...")
-        with tarfile.open(DEPENDENCIES_ARCHIVE, "r:gz") as tar:
+        # The archive always holds the complete package set. Remove the old
+        # trees first: extraction only overwrites files, so packages dropped
+        # from the build (e.g. RapidOCR) would stay on disk and keep using
+        # space, and find_spec() would still see their directories.
+        for stale_dir in (BIN_PY_MODULES_DIR, BIN_PYTHON_DIR):
+            shutil.rmtree(stale_dir, ignore_errors=True)
+        with tarfile.open(DEPENDENCIES_ARCHIVE, "r:xz") as tar:
             tar.extractall(path=BIN_DIR)
         # Create marker file to indicate successful extraction
         with open(EXTRACTION_MARKER, "w") as f:
@@ -67,11 +78,6 @@ if _should_extract_dependencies():
         # Remove marker if it exists, so we retry next time
         if os.path.exists(EXTRACTION_MARKER):
             os.remove(EXTRACTION_MARKER)
-
-# rapidocr 3 checks this dir exists at init time
-_RAPIDOCR_MODELS_PLACEHOLDER = os.path.join(BIN_PY_MODULES_DIR, "rapidocr", "models")
-if os.path.isdir(os.path.dirname(_RAPIDOCR_MODELS_PLACEHOLDER)):
-    os.makedirs(_RAPIDOCR_MODELS_PLACEHOLDER, exist_ok=True)
 
 # Add py_modules to path
 # Root py_modules always needed (contains providers/ source code)

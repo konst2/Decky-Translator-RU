@@ -71,13 +71,13 @@
 
 Плагин позволяет комбинировать различные методы распознавания текста (OCR) и перевода.
 
-Колонка «Работа в России»: ✅ — работает без дополнительных настроек, ⚠️ — может быть недоступен без обхода блокировок.
+Колонка «Работа в России»: ✅ — работает без дополнительных настроек, ⚠️ — может быть недоступен без обхода блокировок, ❌ — не входит в текущую сборку плагина.
 
 #### Распознавание текста (OCR)
 | Провайдер | Работа в России | Тип | Описание | Требования |
 |---|---|---|---|---|
 | **Chrome Screen AI** ★ | ✅ | На устройстве | Использует библиотеку screen-ai из Chromium. Лучшее качество распознавания «из коробки». Рекомендуемый вариант. | Однократная загрузка ~120 МБ |
-| **RapidOCR** | ✅ | На устройстве | Альтернативное офлайн-решение на базе моделей PP-OCRv5 (ONNX). Модель настроена на латиницу: лучший выбор для игр на английском, с другими языками справляется хуже. | Однократная загрузка ~75 МБ |
+| **RapidOCR** | ❌ Недоступен | На устройстве | Альтернативное офлайн-решение на базе моделей PP-OCRv5 (ONNX). Модель настроена на латиницу: лучший выбор для игр на английском, с другими языками справляется хуже. | Временно недоступен в этой сборке: движок исключён из архива установки |
 | **Gemini Vision** | ⚠️ | Веб | Распознавание и перевод за один вызов API. Идеально для стилизованного текста в играх. Можно выбрать модель: 2.5 Flash, 2.5 Flash Lite, 3 Flash, 3.1 Flash Lite. | Интернет + API-ключ |
 | **Google Cloud Vision** | ⚠️ | Веб | Высокая точность и скорость. Отлично подходит для сложного текста. | Интернет + API-ключ |
 | **OCR.space** | ⚠️ | Веб | Бесплатный облачный API. Хороший выбор для редких переводов. | Интернет |
@@ -202,7 +202,7 @@ GigaChat — языковая модель Сбера. Для перевода �
 - **RapidOCR (PP-OCRv5):** Модели экспортированы в ONNX. [RapidOCR](https://github.com/RapidAI/RapidOCR), [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) (Apache 2.0)
 - **NLLB-200:** [JustFrederik/nllb-200-distilled-1.3B-ct2-int8](https://huggingface.co/JustFrederik/nllb-200-distilled-1.3B-ct2-int8) (CC-BY-NC 4.0, Meta — только некоммерческое использование)
 - **Opus-MT en→ru:** конвертация в CTranslate2 [manancode/opus-mt-en-ru-ctranslate2-android](https://huggingface.co/manancode/opus-mt-en-ru-ctranslate2-android) исходной модели [Helsinki-NLP/opus-mt-en-ru](https://huggingface.co/Helsinki-NLP/opus-mt-en-ru) (CC BY 4.0). Версия закреплена, каждый файл проверяется по SHA-256.
-- **Python-пакеты (PyPI):** Pillow (MIT-CMU), requests (Apache 2.0), urllib3 (MIT), rapidocr (Apache 2.0), onnxruntime (MIT), ctranslate2 (MIT), sentencepiece (Apache 2.0), protobuf (BSD-3-Clause), py3langid. Подробнее о лицензиях — в [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
+- **Python-пакеты (PyPI):** Pillow (MIT-CMU), requests (Apache 2.0), urllib3 (MIT), rapidocr (Apache 2.0), onnxruntime (MIT), ctranslate2 (MIT), sentencepiece (Apache 2.0), protobuf (BSD-3-Clause). Подробнее о лицензиях — в [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
 - **Python Runtime:** Портативный Python 3.13 из [astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone) (PSF-2.0)
 - **Веб-шрифты:** Загружаются с CDN (Google Fonts, OpenDyslexic) по лицензии SIL Open Font License (OFL).
 

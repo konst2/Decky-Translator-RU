@@ -1,0 +1,25 @@
+# Optional RapidOCR engine. Not installed by default; see requirements.txt.
+#
+# Restore (same flags as the base lock):
+#   pip install -r requirements.txt -r requirements-rapidocr.txt -t py_modules --no-deps
+#
+# Versions are pinned to the set shipped in release 0.22.0 (built 12.11.2026):
+# this is the combination known to work on the bundled Python 3.13 runtime.
+# Pillow comes from requirements.txt, so it is not repeated here. numpy and
+# PyYAML are listed here: the base set no longer ships them. When restoring,
+# add this file to the CI pin check and smoke test, and drop the ctranslate2
+# entries from INTENTIONALLY_SKIPPED in build.yml (numpy and PyYAML are then
+# installed, and the check asks to remove the stale skips).
+
+rapidocr==3.10.0
+onnxruntime==1.31.1
+opencv-python-headless==5.0.0.93
+shapely==2.2.0
+pyclipper==1.4.0
+omegaconf==2.4.0
+packaging==26.3
+tqdm==4.70.1
+colorlog==6.12.0
+six==1.17.0
+numpy==2.5.4
+PyYAML==6.0.3

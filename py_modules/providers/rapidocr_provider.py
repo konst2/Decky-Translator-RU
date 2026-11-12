@@ -1,6 +1,29 @@
 # providers/rapidocr_provider.py
 # Local RapidOCR provider - runs entirely on device without internet
 # Uses ONNX Runtime for fast inference with PaddleOCR models
+#
+# REMOVED FROM THE BUILD, KEPT IN THE CODE (12.11.2026).
+#
+# The engine packages (rapidocr, onnxruntime, OpenCV and their dependencies)
+# are no longer installed into plugin-dependencies: they were the largest part
+# of the archive, and on the Steam Deck RapidOCR lost to Chrome Screen AI in
+# manual comparison — noticeably slower, often reads picture elements as
+# characters (a cross becomes "X"), and returns no text blocks, so the lines of
+# one dialog box are not glued into one phrase.
+#
+# The code stays as a fallback. Chrome Screen AI is a closed Chromium library
+# downloaded from Google's servers; if that package disappears or changes,
+# RapidOCR (open models, Apache 2.0) is the only local engine left. It would
+# also be the only local option for a Windows port: Screen AI is Linux-only.
+#
+# While the engine is absent, capabilities.RAPIDOCR_AVAILABLE is False: the
+# provider is not created, readiness reports "engine_unavailable", and the UI
+# hides RapidOCR (or shows "not in this build" if it is still selected).
+#
+# To bring it back: install requirements-rapidocr.txt together with
+# requirements.txt (pinned versions known to work), add it to the CI pin
+# check and smoke test in build.yml, and drop the ctranslate2 entries from
+# INTENTIONALLY_SKIPPED there.
 
 import json
 import logging

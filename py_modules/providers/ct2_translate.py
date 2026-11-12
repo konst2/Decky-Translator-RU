@@ -107,9 +107,6 @@ for _code, _nllb in NLLB_LANG_MAP.items():
     for _fam in flores_families(_nllb):
         _FAMILY_LANGS.setdefault(_fam, set()).add(_code)
 
-_LID_MIN_LETTERS = 12
-_PLUGIN_TO_LID = {"zh-CN": "zh", "zh-TW": "zh", "no": "nb"}
-
 # For user-facing "only en → ru" messages of narrow single-pair models.
 _LANG_NAMES = {"en": "английский", "ru": "русский"}
 
@@ -298,41 +295,27 @@ def _split_lines(text: str) -> List[str]:
     return merged
 
 
-def _lid_eligible(text: str) -> bool:
-    letters = sum(1 for c in text if c.isalpha())
-    if letters < _LID_MIN_LETTERS:
-        return False
-    if dominant_family(text) not in CJK_FAMILIES and len(text.split()) < 2:
-        return False
-    return True
-
-
 def _route_line(text: str, src_code: str, tgt_code: str):
+    """Decide per line by its script alone: translate (and from which
+    language) or pass through unchanged.
+
+    There is no statistical language identification: a script shared by
+    several languages is not told apart. With a German source a Latin line is
+    translated as German even when it is English; with a Russian source and a
+    German target a Latin line is passed through as "already German" even when
+    it is English. In the main use case, an English game into Russian, every
+    script is unambiguous. A statistical identifier (py3langid) used to resolve
+    these cases; it was dropped together with numpy, which only it needed.
+    """
     src_fams = flores_families(NLLB_LANG_MAP.get(src_code, ""))
     tgt_fams = flores_families(NLLB_LANG_MAP.get(tgt_code, ""))
     fam = dominant_family(text)
     if fam is None:
         return "translate", src_code
     if fam in src_fams:
-        # Latin source can't be told from English (or a Latin target)
-        if fam == "Latin" and _lid_eligible(text):
-            cands = list(dict.fromkeys(
-                [src_code, "en"] + ([tgt_code] if fam in tgt_fams else [])
-            ))
-            if len(cands) >= 2:
-                on = {c: ("translate", c) for c in cands}
-                if tgt_code in on and tgt_code != src_code:
-                    on[tgt_code] = ("passthrough", None)
-                return "lid", {"cands": cands, "on": on,
-                               "default": ("translate", src_code)}
         return "translate", src_code
     if fam in tgt_fams:
         # Already target language
-        if fam == "Latin" and tgt_code != "en" and _lid_eligible(text):
-            return "lid", {"cands": [tgt_code, "en"],
-                           "on": {"en": ("translate", "en"),
-                                  tgt_code: ("passthrough", None)},
-                           "default": ("passthrough", None)}
         return "passthrough", None
     # Latin text on a non-Latin source/target pair is almost always English
     # (Steam UI, changelogs)
@@ -341,10 +324,6 @@ def _route_line(text: str, src_code: str, tgt_code: str):
     langs = sorted(_FAMILY_LANGS.get(fam, ()))
     if len(langs) == 1:
         return "translate", langs[0]
-    if langs and _lid_eligible(text):
-        return "lid", {"cands": langs,
-                       "on": {c: ("translate", c) for c in langs},
-                       "default": ("translate", src_code)}
     return "translate", src_code
 
 
@@ -758,15 +737,10 @@ class CT2TranslateProvider(TranslationProvider):
                                        "kind": "skip", "frags": []})
                     continue
                 body, was_caps = _normalize_caps(line)
-                # Route on the lowercased body: LID misreads ALL-CAPS text
                 kind, route = _route_line(body, source_lang, target_lang)
                 if kind == "passthrough":
                     lines_meta.append({"orig": line, "sep": sep,
                                        "kind": "passthrough", "frags": []})
-                elif kind == "lid":
-                    lines_meta.append({"orig": line, "sep": sep, "kind": "lid",
-                                       "spec": route, "body": body,
-                                       "caps": was_caps, "frags": []})
                 else:
                     lines_meta.append({"orig": line, "sep": sep,
                                        "kind": "translate",
@@ -778,43 +752,6 @@ class CT2TranslateProvider(TranslationProvider):
                                        (NLLB_LANG_MAP.get(route) or src_nllb)})
             slots.append({"source": t, "kind": "translate",
                           "start": start, "end": len(lines_meta)})
-
-        pending = [lm for lm in lines_meta if lm["kind"] == "lid"]
-        if pending:
-            lid_maps = []
-            lid_cands = []
-            for lm in pending:
-                m = {}
-                for c in lm["spec"]["cands"]:
-                    m.setdefault(_PLUGIN_TO_LID.get(c, c), c)
-                lid_maps.append(m)
-                lid_cands.append(sorted(m))
-            resp = self._send_command({
-                "cmd": "lid",
-                "texts": [lm["body"] for lm in pending],
-                "candidates": lid_cands,
-            })
-            langs = resp.get("langs") if resp.get("ok") else None
-            for j, lm in enumerate(pending):
-                detected = None
-                if isinstance(langs, list) and j < len(langs) and langs[j]:
-                    detected = lid_maps[j].get(langs[j])
-                action = lm["spec"]["on"].get(detected) if detected else None
-                if action is None:
-                    action = lm["spec"]["default"]
-                kind, code = action
-                if detected:
-                    logger.debug(f"  CT2 LID {detected} -> {action}: {lm['orig'][:80]}")
-                if kind == "passthrough":
-                    lm["kind"] = "passthrough"
-                else:
-                    lm["kind"] = "translate"
-                    lm["tag"] = (None if self.SINGLE_PAIR else
-                                 (NLLB_LANG_MAP.get(code) or src_nllb))
-                    lm["frags"] = _build_frags(
-                        lm["body"], lm["caps"],
-                        self.SENTENCE_SPLIT_CHAR_LIMIT,
-                        self.SPLIT_ON_CLAUSES)
 
         # Dedupe identical fragments (repeated UI strings, names, HP/Lv labels)
         unique_fragments = []

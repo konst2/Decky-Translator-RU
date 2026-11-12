@@ -217,24 +217,32 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                 )}
                                 {settings.ocrProvider === 'rapidocr' && (
                                     <div style={{ marginLeft: '22px', marginBottom: '6px' }}>
-                                        {providerStatus?.rapidocr_downloaded && (
-                                            <div style={{ color: '#666', fontSize: '10px' }}>
-                                                Установленная модель: RapidOCR{providerStatus?.rapidocr_info?.version ? ` v${providerStatus.rapidocr_info.version}` : ''}
+                                        {providerStatus?.rapidocr_supported === false ? (
+                                            <div style={{ color: '#ffa726', fontSize: '10px' }}>
+                                                Недоступен в этой сборке — выберите другой метод
                                             </div>
+                                        ) : (
+                                            <>
+                                                {providerStatus?.rapidocr_downloaded && (
+                                                    <div style={{ color: '#666', fontSize: '10px' }}>
+                                                        Установленная модель: RapidOCR{providerStatus?.rapidocr_info?.version ? ` v${providerStatus.rapidocr_info.version}` : ''}
+                                                    </div>
+                                                )}
+                                                <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
+                                                    {providerStatus?.rapidocr_downloading ? (
+                                                        <>
+                                                            <InstallingDot />
+                                                            <span>Установка...</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <StatusDot ok={!!providerStatus?.rapidocr_downloaded} />
+                                                            <span>{providerStatus?.rapidocr_downloaded ? 'Готово' : 'Не готово (модель не установлена)'}</span>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </>
                                         )}
-                                        <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
-                                            {providerStatus?.rapidocr_downloading ? (
-                                                <>
-                                                    <InstallingDot />
-                                                    <span>Установка...</span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <StatusDot ok={!!providerStatus?.rapidocr_downloaded} />
-                                                    <span>{providerStatus?.rapidocr_downloaded ? 'Готово' : 'Не готово (модель не установлена)'}</span>
-                                                </>
-                                            )}
-                                        </div>
                                     </div>
                                 )}
                                 {settings.ocrProvider === 'chromescreenai' && (

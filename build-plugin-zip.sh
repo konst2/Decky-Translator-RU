@@ -7,7 +7,7 @@
 #     package.json  plugin.json  LICENSE  README.md
 #
 # Dependencies are NOT rebuilt: package.json keeps its remote_binary URL, so
-# Decky downloads plugin-dependencies.tar.gz from the matching GitHub release.
+# Decky downloads plugin-dependencies.tar.xz from the matching GitHub release.
 # Python provider changes live in py_modules/providers and are included here.
 #
 # Usage:

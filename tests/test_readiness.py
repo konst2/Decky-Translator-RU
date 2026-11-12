@@ -6,6 +6,7 @@
 """
 
 import unittest
+from unittest import mock
 
 from providers import readiness
 
@@ -73,12 +74,25 @@ class OcrReadinessTest(unittest.TestCase):
 
     def test_ocr_is_checked_before_translation(self):
         # Порядок как в работе: сначала распознавание, потом перевод.
-        rapidocr = local("RapidOCR", 75, downloaded=False)
+        chrome = local("Chrome Screen AI", 120, downloaded=False)
         nllb = local("NLLB", 1410, downloaded=False)
 
-        result = readiness.check_all("rapidocr", rapidocr, "ct2", nllb, "en", "ru")
+        result = readiness.check_all("chromescreenai", chrome, "ct2", nllb, "en", "ru")
 
         self.assertEqual(result["stage"], "ocr")
+
+    def test_rapidocr_engine_not_shipped(self):
+        # Движок не входит в базовый архив: причина отдельная и с советом
+        # выбрать другой метод, а не «модель не скачана» и не «метод не настроен».
+        rapidocr = local("RapidOCR", 75, downloaded=False)
+
+        with mock.patch.object(readiness, "RAPIDOCR_AVAILABLE", False):
+            result = readiness.check_ocr("rapidocr", rapidocr, "en")
+
+        self.assertFalse(result["ready"])
+        self.assertEqual(result["reason"], readiness.REASON_ENGINE_UNAVAILABLE)
+        self.assertIn("RapidOCR недоступен", result["message"])
+        self.assertIsNone(result["scroll_target"])
 
 
 class TranslationReadinessTest(unittest.TestCase):

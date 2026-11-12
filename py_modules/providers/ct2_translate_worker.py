@@ -11,7 +11,6 @@ Commands:
     {"cmd": "load", "model_dir": "/path/to/model"}
     {"cmd": "translate", "texts": ["Hello", "World"], "src_langs": ["eng_Latn", "eng_Latn"], "tgt_lang": "fra_Latn"}
         (src_lang is also accepted as a single default for all items)
-    {"cmd": "lid", "texts": ["..."], "candidates": [["de", "en"]]}
     {"cmd": "unload"}
     {"cmd": "shutdown"}
 
@@ -37,44 +36,6 @@ PERSISTENT = os.environ.get("CT2_PERSISTENT") == "1"
 
 _DASH_PREFIXES = ("-", "–", "—", "‐", "−", "‑")
 _DASH_CHARS = "".join(_DASH_PREFIXES)
-
-_LID_MIN_PROB = 0.9
-
-_lid_identifier = None
-_lid_unavailable = False
-
-
-def _get_lid():
-    global _lid_identifier, _lid_unavailable
-    if _lid_identifier is not None or _lid_unavailable:
-        return _lid_identifier
-    try:
-        from py3langid.langid import LanguageIdentifier, MODEL_FILE
-        _lid_identifier = LanguageIdentifier.from_pickled_model(
-            MODEL_FILE, norm_probs=True
-        )
-    except Exception:
-        _lid_unavailable = True
-    return _lid_identifier
-
-
-def lid_texts(texts, candidates):
-    """Classify each text within its candidate lid codes; None when unsure."""
-    identifier = _get_lid()
-    if identifier is None:
-        return {"ok": True, "langs": [None] * len(texts), "available": False}
-    langs = []
-    for text, cands in zip(texts, candidates):
-        code = None
-        try:
-            identifier.set_languages(sorted(set(cands)))
-            lang, prob = identifier.classify(text)
-            if prob >= _LID_MIN_PROB:
-                code = lang
-        except Exception:
-            code = None
-        langs.append(code)
-    return {"ok": True, "langs": langs, "available": True}
 
 
 def _has_oscillatory_repetition(tokens):
@@ -487,14 +448,6 @@ def main():
             else:
                 result = translate_texts(texts, src_langs, tgt_lang)
                 send(result)
-
-        elif command == "lid":
-            texts = cmd.get("texts", [])
-            candidates = cmd.get("candidates", [])
-            if len(candidates) != len(texts):
-                send({"ok": False, "error": "candidates length mismatch"})
-            else:
-                send(lid_texts(texts, candidates))
 
         elif command == "unload":
             unload_model()

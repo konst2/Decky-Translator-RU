@@ -15,6 +15,7 @@ export type ReadinessReason =
     | 'pair_unsupported'
     | 'auto_unsupported'
     | 'not_available'
+    | 'engine_unavailable'
     | 'not_started';
 
 export interface Readiness {
@@ -57,6 +58,7 @@ const TOAST_TITLES: Record<ReadinessReason, string> = {
     pair_unsupported: 'Метод не переводит эту пару языков',
     auto_unsupported: 'Нужен исходный язык',
     not_available: 'Метод не готов',
+    engine_unavailable: 'Метод недоступен',
     not_started: 'Плагин запускается',
 };
 

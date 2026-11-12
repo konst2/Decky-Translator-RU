@@ -20,6 +20,7 @@ from .base import (
     RateLimitError,
     TranslationUnavailableError,
 )
+from .capabilities import RAPIDOCR_AVAILABLE, RAPIDOCR_UNAVAILABLE_MESSAGE
 from .google_ocr import GoogleVisionProvider
 from .google_translate import GoogleTranslateProvider
 from .yandex_translate import YandexTranslateProvider
@@ -511,6 +512,9 @@ class ProviderManager:
 
         if provider_type not in self._ocr_providers:
             if provider_type == ProviderType.RAPIDOCR:
+                if not RAPIDOCR_AVAILABLE:
+                    logger.warning(RAPIDOCR_UNAVAILABLE_MESSAGE)
+                    return None
                 models_dir = (
                     self._rapidocr_downloader.get_target_dir()
                     if self._rapidocr_downloader else ""
@@ -716,24 +720,31 @@ class ProviderManager:
                 status["ocr_usage"] = ocr_provider.get_usage_stats()
 
         # Add RapidOCR availability info
-        rapidocr = self._ocr_providers.get(ProviderType.RAPIDOCR)
-        if rapidocr is None:
-            if self._status_rapidocr_provider is None:
-                models_dir = (
-                    self._rapidocr_downloader.get_target_dir()
-                    if self._rapidocr_downloader else ""
-                )
-                self._status_rapidocr_provider = RapidOCRProvider(
-                    min_confidence=self._rapidocr_confidence,
-                    models_dir=models_dir,
-                    downloader=self._rapidocr_downloader,
-                )
-            rapidocr = self._status_rapidocr_provider
-        rapidocr_available = rapidocr.is_available()
-        status["rapidocr_available"] = rapidocr_available
-        status["rapidocr_languages"] = rapidocr.get_supported_languages() if rapidocr_available else []
-        status["rapidocr_info"] = rapidocr.get_rapidocr_info()
-        status["rapidocr_error"] = rapidocr.get_init_error()
+        status["rapidocr_supported"] = RAPIDOCR_AVAILABLE
+        if not RAPIDOCR_AVAILABLE:
+            status["rapidocr_available"] = False
+            status["rapidocr_languages"] = []
+            status["rapidocr_info"] = {}
+            status["rapidocr_error"] = RAPIDOCR_UNAVAILABLE_MESSAGE
+        else:
+            rapidocr = self._ocr_providers.get(ProviderType.RAPIDOCR)
+            if rapidocr is None:
+                if self._status_rapidocr_provider is None:
+                    models_dir = (
+                        self._rapidocr_downloader.get_target_dir()
+                        if self._rapidocr_downloader else ""
+                    )
+                    self._status_rapidocr_provider = RapidOCRProvider(
+                        min_confidence=self._rapidocr_confidence,
+                        models_dir=models_dir,
+                        downloader=self._rapidocr_downloader,
+                    )
+                rapidocr = self._status_rapidocr_provider
+            rapidocr_available = rapidocr.is_available()
+            status["rapidocr_available"] = rapidocr_available
+            status["rapidocr_languages"] = rapidocr.get_supported_languages() if rapidocr_available else []
+            status["rapidocr_info"] = rapidocr.get_rapidocr_info()
+            status["rapidocr_error"] = rapidocr.get_init_error()
 
         status["nllb_downloaded"] = self.is_nllb_model_downloaded()
         status["opusmt_downloaded"] = self.is_opusmt_model_downloaded()
@@ -976,10 +987,16 @@ class ProviderManager:
             return {
                 "downloaded": False, "size": 0, "approx_size_mb": 75,
                 "downloading": False, "progress": 0, "error": None,
+                "supported": RAPIDOCR_AVAILABLE,
             }
-        return self._rapidocr_downloader.get_status()
+        return {
+            **self._rapidocr_downloader.get_status(),
+            "supported": RAPIDOCR_AVAILABLE,
+        }
 
     def download_rapidocr_models(self) -> bool:
+        if not RAPIDOCR_AVAILABLE:
+            return False
         if self._rapidocr_downloader:
             return self._rapidocr_downloader.start_download()
         return False
