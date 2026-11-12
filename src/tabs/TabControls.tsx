@@ -92,10 +92,13 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                     <SliderField
                         value={settings.holdTimeTranslate / 1000}
                         max={3}
-                        min={0.1}
+                        min={0}
                         step={0.1}
                         label="Время открытия"
-                        description="Сколько секунд удерживать кнопки для перевода"
+                        // The slider shows a bare "0", so the description says what 0 means
+                        description={settings.holdTimeTranslate <= 0
+                            ? "0 — перевод сразу по нажатию, без удержания"
+                            : "Сколько секунд удерживать кнопки для перевода"}
                         showValue={true}
                         onChange={(value) => {
                             const milliseconds = Math.round(value * 1000);
@@ -108,10 +111,12 @@ export const TabControls: VFC<TabControlsProps> = ({ inputDiagnostics }) => {
                     <SliderField
                         value={settings.holdTimeDismiss / 1000}
                         max={3}
-                        min={0.1}
+                        min={0}
                         step={0.1}
                         label="Время закрытия"
-                        description="Сколько секунд удерживать кнопки, чтобы закрыть оверлей"
+                        description={settings.holdTimeDismiss <= 0
+                            ? "0 — оверлей закрывается сразу по нажатию, без удержания"
+                            : "Сколько секунд удерживать кнопки, чтобы закрыть оверлей"}
                         showValue={true}
                         onChange={(value) => {
                             const milliseconds = Math.round(value * 1000);

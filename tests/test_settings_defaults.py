@@ -100,8 +100,8 @@ RULES: Dict[str, Callable[[Any], bool]] = {
     "input_language": language_code,
     "target_language": language_code,
     "input_mode": one_of(INPUT_MODES),
-    "hold_time_translate": int_between(100, 3000),   # ползунок 0.1–3 с, хранится в мс
-    "hold_time_dismiss": int_between(100, 3000),
+    "hold_time_translate": int_between(0, 3000),   # ползунок 0–3 с, хранится в мс; 0 — простое нажатие
+    "hold_time_dismiss": int_between(0, 3000),
     "ocr_provider": one_of(OCR_PROVIDERS),
     "translation_provider": one_of(TRANSLATION_PROVIDERS),
     "gemini_model": lambda value: isinstance(value, str) and value != "",
