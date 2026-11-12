@@ -645,7 +645,24 @@ export class Input {
             this.inCooldown = false;
             this.waitingForRelease = false;
             this.clearCooldownTimeoutId = null;
+            this.recheckPressAfterCooldown();
         }, this.cooldownDuration);
+    }
+
+    // A new press seen during the cooldown was dropped, and the backend reports the
+    // button state only when it changes: while the button stays held, that press would
+    // never come again. So when the cooldown ends, look at the current state once more.
+    // A short tap or a bounce is already released by now and is still ignored.
+    // Only the hotkey is re-checked, not quick toggle: re-running all of OnButtonsPressed
+    // would toggle the overlay if the right button of a combo is still held.
+    private recheckPressAfterCooldown(): void {
+        if (!this.enabled) return;
+        const hotkey = this.readHotkeyState(this.previousButtons);
+        if (!hotkey.pressed) return;
+        logger.debug('Input', `${hotkey.name} held when cooldown ended, re-checking the press`);
+        // The same hold that fired the action still has the "held" flags set,
+        // so handleButtonCombination treats it as no new press
+        this.handleButtonCombination(true);
     }
 
     onShortcutPressed(callback: (actionType: ActionType) => void): void {
