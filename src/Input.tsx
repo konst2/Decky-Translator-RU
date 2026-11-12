@@ -470,7 +470,18 @@ export class Input {
             return;
         }
 
-        // Enforce cooldown by timestamp
+        const hotkey = this.readHotkeyState(buttons);
+
+        // Release is handled BEFORE the cooldown check (B24). The backend reports a button
+        // state only when it changes, so a release dropped here never comes again: the
+        // "button is held" flags stay true and the next press looks like the same hold.
+        // A quick press-and-release right after an action lands inside the cooldown,
+        // and with a zero hold time that is the usual case, not a rare one.
+        if (!hotkey.pressed) {
+            this.handleHotkeyReleased(hotkey.name);
+        }
+
+        // Cooldown applies only to new presses: releases are already handled above
         if (this.inCooldown) {
             const since = Date.now() - this.lastActionTime;
             if (since < this.cooldownDuration) {
@@ -526,89 +537,59 @@ export class Input {
             }
         }
 
-        // Determine button state based on input mode
-        let buttonPressed = false;
-        let buttonName = '';
-
-        switch (this.inputMode) {
-            case InputMode.L4_BUTTON:
-                buttonPressed = buttons.includes(Button.L4);
-                buttonName = 'L4';
-                break;
-
-            case InputMode.R4_BUTTON:
-                buttonPressed = buttons.includes(Button.R4);
-                buttonName = 'R4';
-                break;
-
-            case InputMode.L5_BUTTON:
-                buttonPressed = buttons.includes(Button.L5);
-                buttonName = 'L5';
-                break;
-
-            case InputMode.R5_BUTTON:
-                buttonPressed = buttons.includes(Button.R5);
-                buttonName = 'R5';
-                break;
-
-            case InputMode.L4_R4_COMBO:
-                const l4Pressed = buttons.includes(Button.L4);
-                const r4Pressed = buttons.includes(Button.R4);
-                buttonPressed = l4Pressed && r4Pressed;
-                buttonName = 'L4+R4';
-                break;
-
-            case InputMode.L5_R5_COMBO:
-                const l5Pressed = buttons.includes(Button.L5);
-                const r5Pressed = buttons.includes(Button.R5);
-                buttonPressed = l5Pressed && r5Pressed;
-                buttonName = 'L5+R5';
-                break;
-
-            case InputMode.L3_BUTTON:
-                buttonPressed = buttons.includes(Button.L3);
-                buttonName = 'L3';
-                break;
-
-            case InputMode.R3_BUTTON:
-                buttonPressed = buttons.includes(Button.R3);
-                buttonName = 'R3';
-                break;
-
-            case InputMode.L3_R3_COMBO:
-                const l3Pressed = buttons.includes(Button.L3);
-                const r3Pressed = buttons.includes(Button.R3);
-                buttonPressed = l3Pressed && r3Pressed;
-                buttonName = 'L3+R3';
-                break;
-
-            case InputMode.TOUCHPAD_COMBO:
-                const leftTouchpadPressed = buttons.includes(Button.LEFT_TOUCHPAD_TOUCH);
-                const rightTouchpadPressed = buttons.includes(Button.RIGHT_TOUCHPAD_TOUCH);
-                buttonPressed = leftTouchpadPressed && rightTouchpadPressed;
-                buttonName = 'LPAD+RPAD';
-                break;
-        }
-
         if (this.waitingForRelease) {
-            logger.debug('Input', 'waitingForRelease, checking release');
-
-            if (!buttonPressed) {
-                logger.debug('Input', `${buttonName} released, clearing waitingForRelease`);
-                this.waitingForRelease = false;
-                // Without this, the next press is ignored
-                this.leftTouchpadTouched = false;
-                this.rightTouchpadTouched = false;
-                this.stopProgressAnimation();
-                return;
-            } else {
-                this.stopProgressAnimation();
-                return;
-            }
+            // Still held after the action: the release is handled above, a held button does nothing
+            logger.debug('Input', `waitingForRelease, ${hotkey.name} still held`);
+            this.stopProgressAnimation();
+            return;
         }
 
         // Handle button press
-        this.handleButtonCombination(buttonPressed);
+        this.handleButtonCombination(hotkey.pressed);
+    }
+
+    // Whether the hotkey of the current input mode is pressed in this button state
+    private readHotkeyState(buttons: Button[]): { pressed: boolean; name: string } {
+        switch (this.inputMode) {
+            case InputMode.L4_BUTTON:
+                return { pressed: buttons.includes(Button.L4), name: 'L4' };
+            case InputMode.R4_BUTTON:
+                return { pressed: buttons.includes(Button.R4), name: 'R4' };
+            case InputMode.L5_BUTTON:
+                return { pressed: buttons.includes(Button.L5), name: 'L5' };
+            case InputMode.R5_BUTTON:
+                return { pressed: buttons.includes(Button.R5), name: 'R5' };
+            case InputMode.L4_R4_COMBO:
+                return { pressed: buttons.includes(Button.L4) && buttons.includes(Button.R4), name: 'L4+R4' };
+            case InputMode.L5_R5_COMBO:
+                return { pressed: buttons.includes(Button.L5) && buttons.includes(Button.R5), name: 'L5+R5' };
+            case InputMode.L3_BUTTON:
+                return { pressed: buttons.includes(Button.L3), name: 'L3' };
+            case InputMode.R3_BUTTON:
+                return { pressed: buttons.includes(Button.R3), name: 'R3' };
+            case InputMode.L3_R3_COMBO:
+                return { pressed: buttons.includes(Button.L3) && buttons.includes(Button.R3), name: 'L3+R3' };
+            case InputMode.TOUCHPAD_COMBO: {
+                const bothPads = buttons.includes(Button.LEFT_TOUCHPAD_TOUCH)
+                    && buttons.includes(Button.RIGHT_TOUCHPAD_TOUCH);
+                return { pressed: bothPads, name: 'LPAD+RPAD' };
+            }
+        }
+        return { pressed: false, name: '' };
+    }
+
+    // Hotkey is not pressed: forget the hold, so the next press starts a new one
+    private handleHotkeyReleased(hotkeyName: string): void {
+        const wasHeld = this.leftTouchpadTouched || this.rightTouchpadTouched;
+        if (!wasHeld && !this.waitingForRelease) {
+            return; // nothing was held, e.g. some other button changed
+        }
+        logger.debug('Input', `${hotkeyName} released, waitingForRelease=${this.waitingForRelease}`);
+        this.waitingForRelease = false;
+        this.leftTouchpadTouched = false;
+        this.rightTouchpadTouched = false;
+        // Also cancels a hold timer that has not fired yet: released too early, no action
+        this.stopProgressAnimation();
     }
 
     // Handle button press (works for all input modes)
@@ -619,38 +600,25 @@ export class Input {
         logger.debug('Input', `handleButtonCombination: buttonPressed=${buttonPressed}, wasButtonPressed=${wasButtonPressed}, touchStartTime=${this.touchStartTime !== null}`);
 
         if (buttonPressed && !wasButtonPressed && !this.inCooldown && !this.waitingForRelease) {
-            logger.info('Input', `${modeName} pressed, starting hold timer. overlayVisible=${this.overlayVisible}`);
-            if (this.touchStartTime === null) {
+            const holdTime = this.overlayVisible ? this.dismissHoldTime : this.translateHoldTime;
+            if (holdTime <= 0) {
+                // Zero hold time = plain press. Fire right away and skip the hold indicator:
+                // started here, it would flash for a frame and could get into the screenshot.
+                logger.info('Input', `${modeName} pressed, hold time is 0, acting at once. overlayVisible=${this.overlayVisible}`);
+                this.triggerAction();
+            } else if (this.touchStartTime === null) {
+                logger.info('Input', `${modeName} pressed, starting hold timer. overlayVisible=${this.overlayVisible}`);
                 this.touchStartTime = Date.now();
                 this.updateProgressAnimation();
-                const holdTime = this.overlayVisible ? this.dismissHoldTime : this.translateHoldTime;
                 logger.debug('Input', `Starting timeout for ${holdTime}ms`);
                 this.timeoutId = setTimeout(() => {
                     logger.debug('Input', `${modeName} timeout fired, leftTouched=${this.leftTouchpadTouched}, rightTouched=${this.rightTouchpadTouched}`);
                     if (this.leftTouchpadTouched && this.rightTouchpadTouched) {
-                        this.inCooldown = true;
-                        this.lastActionTime = Date.now();
-                        const actionType = this.overlayVisible ? ActionType.DISMISS : ActionType.TRANSLATE;
-                        logger.info('Input', `Action triggered: ${ActionType[actionType]}`);
-                        // Hide the hold indicator before running the action: translate takes
-                        // a screenshot, and the indicator must already be leaving the screen
-                        this.stopProgressAnimation();
-                        this.onButtonsPressedListeners.forEach(cb => cb(actionType));
-                        this.waitingForRelease = true;
-                        if (this.clearCooldownTimeoutId) clearTimeout(this.clearCooldownTimeoutId);
-                        this.clearCooldownTimeoutId = setTimeout(() => {
-                            logger.debug('Input', 'Cooldown and waiting ended');
-                            this.inCooldown = false;
-                            this.waitingForRelease = false;
-                            this.clearCooldownTimeoutId = null;
-                        }, this.cooldownDuration);
+                        this.triggerAction();
                     }
                     this.timeoutId = null;
                 }, holdTime);
             }
-        } else if (!buttonPressed && wasButtonPressed) {
-            logger.debug('Input', `${modeName} released, stopping progress`);
-            this.stopProgressAnimation();
         } else {
             logger.debug('Input', `${modeName} no action: buttonPressed=${buttonPressed}, wasButtonPressed=${wasButtonPressed}, inCooldown=${this.inCooldown}, waitingForRelease=${this.waitingForRelease}`);
         }
@@ -658,6 +626,26 @@ export class Input {
         // Update state (reusing touchpad vars for button state)
         this.leftTouchpadTouched = buttonPressed;
         this.rightTouchpadTouched = buttonPressed;
+    }
+
+    // Translate or dismiss (by overlay state), then wait for the release before the next press
+    private triggerAction(): void {
+        this.inCooldown = true;
+        this.lastActionTime = Date.now();
+        const actionType = this.overlayVisible ? ActionType.DISMISS : ActionType.TRANSLATE;
+        logger.info('Input', `Action triggered: ${ActionType[actionType]}`);
+        // Hide the hold indicator before running the action: translate takes
+        // a screenshot, and the indicator must already be leaving the screen
+        this.stopProgressAnimation();
+        this.onButtonsPressedListeners.forEach(cb => cb(actionType));
+        this.waitingForRelease = true;
+        if (this.clearCooldownTimeoutId) clearTimeout(this.clearCooldownTimeoutId);
+        this.clearCooldownTimeoutId = setTimeout(() => {
+            logger.debug('Input', 'Cooldown and waiting ended');
+            this.inCooldown = false;
+            this.waitingForRelease = false;
+            this.clearCooldownTimeoutId = null;
+        }, this.cooldownDuration);
     }
 
     onShortcutPressed(callback: (actionType: ActionType) => void): void {
