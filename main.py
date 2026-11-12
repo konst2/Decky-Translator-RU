@@ -28,9 +28,14 @@ if PLUGIN_DIR not in sys.path:
 BIN_DIR = os.path.join(PLUGIN_DIR, "bin")
 # xz instead of gzip: the archive is about a third smaller. Decky Loader
 # bundles lzma (checked in 3.2.x on Python 3.11 and 3.3.x on Python 3.14).
-# Decky removes the whole plugin folder on update, so an old .tar.gz from a
-# previous version is not left behind in bin/.
 DEPENDENCIES_ARCHIVE = os.path.join(BIN_DIR, "plugin-dependencies.tar.xz")
+# Archives of earlier plugin versions. A store update removes the old plugin
+# folder first, but a manual install (zip file or URL) unpacks over it: Decky
+# decides "already installed" by the name passed in before it reads
+# plugin.json from the zip, and for manual installs that name does not match.
+# So the old archive stays in bin/ (~190 MB for the last .tar.gz) and nothing
+# reads it any more.
+LEGACY_DEPENDENCY_ARCHIVES = [os.path.join(BIN_DIR, "plugin-dependencies.tar.gz")]
 EXTRACTION_MARKER = os.path.join(BIN_DIR, ".dependencies-extracted")
 BIN_PY_MODULES_DIR = os.path.join(BIN_DIR, "py_modules")
 BIN_PYTHON_DIR = os.path.join(BIN_DIR, "python313")
@@ -78,6 +83,30 @@ if _should_extract_dependencies():
         # Remove marker if it exists, so we retry next time
         if os.path.exists(EXTRACTION_MARKER):
             os.remove(EXTRACTION_MARKER)
+
+
+def _remove_legacy_dependency_archives():
+    """Delete archives of earlier versions once the current one is in place.
+
+    Runs on every start, not only after an extraction: on installs that were
+    already extracted before this cleanup existed, extraction does not run
+    again, and the old archive would stay forever. Guarded by the current
+    archive: without it bin/ is in an unknown state, so nothing is deleted.
+    A failure only costs disk space, so it is reported and otherwise ignored.
+    """
+    if not os.path.exists(DEPENDENCIES_ARCHIVE):
+        return
+    for legacy_archive in LEGACY_DEPENDENCY_ARCHIVES:
+        if not os.path.exists(legacy_archive):
+            continue
+        try:
+            os.remove(legacy_archive)
+            print(f"[Decky Translator RU] Removed old dependencies archive {legacy_archive}")
+        except OSError as e:
+            print(f"[Decky Translator RU] Could not remove old dependencies archive {legacy_archive}: {e}")
+
+
+_remove_legacy_dependency_archives()
 
 # Add py_modules to path
 # Root py_modules always needed (contains providers/ source code)
