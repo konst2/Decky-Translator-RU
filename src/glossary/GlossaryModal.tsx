@@ -296,8 +296,8 @@ const GlossaryModal: VFC<GlossaryLanguages & {
                 {sorted.length > 0 && (
                     // На Деке нет подсказок при наведении: что значат значки, сказано здесь.
                     <div style={{ ...HINT_STYLE, marginBottom: "8px", flexShrink: 0, display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}>
-                        <HiTrash /> удалить — модель предложит запись заново;
-                        <HiNoSymbol style={{ marginLeft: "4px" }} /> запретить — не имя (например, кнопка), больше не добавится
+                        <HiTrash /> удалить (неудачный вариант);
+                        <HiNoSymbol style={{ marginLeft: "4px" }} /> запретить (мусор)
                     </div>
                 )}
                 <style>{`.dt-rowfocus { background: rgba(103,160,255,0.22) !important; }`}</style>
