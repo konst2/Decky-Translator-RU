@@ -2716,16 +2716,42 @@ class Plugin:
     # before its first translation.
 
     async def get_glossary(self, game_id: str = "", source_lang: str = "", target_lang: str = ""):
+        """
+        The glossary for the window: its entries, its black list ("rejected",
+        most recent first) and the capacity for the "35 of 60" counter.
+        nearlyFullAbove: above this many entries old ones are being evicted.
+        """
         try:
             if not self._provider_manager:
-                return {"success": False, "entries": []}
-            entries = await asyncio.to_thread(
-                self._provider_manager.get_glossary, game_id, source_lang, target_lang
+                return {"success": False, "entries": [], "rejected": []}
+            manager = self._provider_manager
+            entries = await asyncio.to_thread(manager.get_glossary, game_id, source_lang, target_lang)
+            rejected = await asyncio.to_thread(
+                manager.get_rejected_terms, game_id, source_lang, target_lang
             )
-            return {"success": True, "entries": [self._glossary_entry_view(e) for e in entries]}
+            capacity, nearly_full_above = manager.get_glossary_capacity()
+            return {
+                "success": True,
+                "entries": [self._glossary_entry_view(e) for e in entries],
+                "rejected": [self._rejected_term_view(r) for r in rejected],
+                "capacity": capacity,
+                "nearlyFullAbove": nearly_full_above,
+            }
         except Exception as e:
             logger.error(f"Error getting glossary: {e}")
-            return {"success": False, "entries": [], "error": str(e)}
+            return {"success": False, "entries": [], "rejected": [], "error": str(e)}
+
+    @staticmethod
+    def _rejected_term_view(item) -> dict:
+        """A black list entry for the window; reason is "user" or "cleanup"."""
+        name, gender = name_and_gender(item.translation)
+        return {
+            "matchKey": item.match_key,
+            "term": item.term,
+            "name": name,
+            "gender": gender,
+            "reason": item.reason,
+        }
 
     @staticmethod
     def _glossary_entry_view(entry) -> dict:
@@ -2756,6 +2782,44 @@ class Plugin:
             return {"success": True, "deleted": deleted, "cacheCleared": cache_cleared}
         except Exception as e:
             logger.error(f"Error deleting glossary entry: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def forbid_glossary_entry(
+        self, game_id: str = "", source_lang: str = "", target_lang: str = "", match_key: str = ""
+    ):
+        """Delete an entry and put its term on the black list: the model will not add it back."""
+        try:
+            if not self._provider_manager:
+                return {"success": False}
+            forbidden = await asyncio.to_thread(
+                self._provider_manager.forbid_glossary_entry,
+                game_id, source_lang, target_lang, match_key,
+            )
+            # The entry is gone from the glossary, as with a plain delete.
+            cache_cleared = await self._clear_glossary_tier_cache() if forbidden else 0
+            return {"success": True, "forbidden": forbidden, "cacheCleared": cache_cleared}
+        except Exception as e:
+            logger.error(f"Error forbidding glossary entry: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def allow_rejected_term(
+        self, game_id: str = "", source_lang: str = "", target_lang: str = "", match_key: str = ""
+    ):
+        """
+        Take a term off the black list. The translation cache is not touched:
+        the glossary itself does not change until the model proposes the
+        term again.
+        """
+        try:
+            if not self._provider_manager:
+                return {"success": False}
+            allowed = await asyncio.to_thread(
+                self._provider_manager.allow_rejected_term,
+                game_id, source_lang, target_lang, match_key,
+            )
+            return {"success": True, "allowed": allowed}
+        except Exception as e:
+            logger.error(f"Error allowing rejected term: {e}")
             return {"success": False, "error": str(e)}
 
     async def reset_glossary(self, game_id: str = "", source_lang: str = "", target_lang: str = ""):

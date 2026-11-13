@@ -741,6 +741,16 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             self._glossary_pair = None
             self._glossary_epoch += 1
 
+    @staticmethod
+    def glossary_capacity() -> Tuple[int, int]:
+        """
+        (capacity, nearly full above) for the glossary window: "35 of 60",
+        and a hint that old entries are being evicted once the count is
+        above the second number — the same point at which the cleanup
+        starts running more often (_CLEANUP_FULL_SHARE).
+        """
+        return _MAX_GLOSSARY_ENTRIES, int(_MAX_GLOSSARY_ENTRIES * _CLEANUP_FULL_SHARE)
+
     def glossary_entries(self) -> List[Tuple[str, str]]:
         """Current glossary as (term, translation), oldest first (for logs and tests)."""
         with self._glossary_lock:

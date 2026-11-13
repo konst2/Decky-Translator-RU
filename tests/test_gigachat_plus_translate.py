@@ -1417,6 +1417,21 @@ class GigaChatPlusManagerTest(unittest.TestCase):
         self.assertEqual(m.get_glossary(BG3_ID, "en", "ru"), [])
         self.assertFalse(m.reset_glossary(BG3_ID, "en", "ru"))
 
+    def test_manager_black_list_reaches_the_provider(self):
+        m = self.manager()
+        m.set_current_game("Utawarerumono", BG3_ID)
+        api = FakeApi(chat_contents=["1. Хаку Галерея\n---\nHaku → Хаку (м)\nGallery → Галерея"])
+        with fake_http(api):
+            run(m.translate_text(["Haku Gallery"], "en", "ru"))
+
+        self.assertTrue(m.forbid_glossary_entry(BG3_ID, "en", "ru", "gallery"))
+        self.assertEqual([e.term for e in m.get_glossary(BG3_ID, "en", "ru")], ["Haku"])
+        self.assertEqual([r.term for r in m.get_rejected_terms(BG3_ID, "en", "ru")], ["Gallery"])
+        self.assertTrue(m.allow_rejected_term(BG3_ID, "en", "ru", "gallery"))
+        self.assertEqual(m.get_rejected_terms(BG3_ID, "en", "ru"), [])
+        # The window's "35 of 60" and its "nearly full" hint.
+        self.assertEqual(m.get_glossary_capacity(), (gp._MAX_GLOSSARY_ENTRIES, 40))
+
     def test_both_methods_use_the_managers_client(self):
         from providers.gigachat_translate import GigaChatTranslateProvider
 

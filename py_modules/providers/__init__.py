@@ -4,7 +4,7 @@
 import hashlib
 import logging
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 # Fields below that mirror a user setting start from the plugin-wide defaults
 # (main.py overwrites them via configure()/setters right after start).
@@ -28,7 +28,7 @@ from .yandex_translate import YandexTranslateProvider
 from .gigachat_client import GigaChatClient
 from .gigachat_translate import GigaChatTranslateProvider
 from .gigachat_plus_translate import GigaChatPlusTranslateProvider
-from .glossary_store import GlossaryEntry, GlossaryStore
+from .glossary_store import GlossaryEntry, GlossaryStore, RejectedTerm
 from .ocrspace import OCRSpaceProvider
 from .free_translate import FreeTranslateProvider
 from .mymemory_translate import MyMemoryTranslateProvider
@@ -304,6 +304,26 @@ class ProviderManager:
 
     def reset_glossary(self, game_id: str, source_lang: str, target_lang: str) -> bool:
         return self._gigachat_plus().reset_glossary(game_id, source_lang, target_lang)
+
+    def get_glossary_capacity(self) -> Tuple[int, int]:
+        return self._gigachat_plus().glossary_capacity()
+
+    def get_rejected_terms(self, game_id: str, source_lang: str, target_lang: str) -> List[RejectedTerm]:
+        return self._gigachat_plus().rejected_for(game_id, source_lang, target_lang)
+
+    def forbid_glossary_entry(
+        self, game_id: str, source_lang: str, target_lang: str, match_key: str
+    ) -> bool:
+        return self._gigachat_plus().forbid_glossary_entry(
+            game_id, source_lang, target_lang, match_key
+        )
+
+    def allow_rejected_term(
+        self, game_id: str, source_lang: str, target_lang: str, match_key: str
+    ) -> bool:
+        return self._gigachat_plus().allow_rejected_term(
+            game_id, source_lang, target_lang, match_key
+        )
 
     def _gigachat_plus(self) -> GigaChatPlusTranslateProvider:
         provider = self.get_translation_provider(ProviderType.GIGACHAT_PLUS)
