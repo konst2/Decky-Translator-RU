@@ -1422,5 +1422,161 @@ class GigaChatPlusManagerTest(unittest.TestCase):
         self.assertGreater(PROVIDER_TIERS["gigachat_plus"], PROVIDER_TIERS["gigachat"])
 
 
+class GigaChatPlusInterfaceLabelTest(unittest.TestCase):
+    """Interface labels proposed by the model never reach the glossary."""
+
+    def test_glued_labels_are_split_into_words(self):
+        self.assertEqual(gp._term_words("lb Back"), ["lb", "back"])
+        self.assertEqual(gp._term_words("SaveBack"), ["save", "back"])
+        self.assertEqual(gp._term_words("QSaveQLoad"), ["q", "save", "q", "load"])
+        self.assertEqual(gp._term_words("BHide Window"), ["b", "hide", "window"])
+        self.assertEqual(gp._term_words("Q.Save"), ["q", "save"])
+        self.assertEqual(gp._term_words("Skip>>"), ["skip"])
+        # A run of capitals is one word; names keep their parts.
+        self.assertEqual(gp._term_words("HP"), ["hp"])
+        self.assertEqual(gp._term_words("LeBlanc"), ["le", "blanc"])
+        self.assertEqual(gp._term_words("Lae'zel"), ["lae", "zel"])
+
+    def test_interface_terms(self):
+        for term in ("lb Back", "Auto Mode", "AutoMode", "Y Auto Mode", "BHide Window", "Backlog",
+                     "ASave", "SaveBack", "LB Backlog", "QSaveQLoad", "RE Skip", "Skip>>",
+                     "Message Log", "A Next", ">>", "42"):
+            with self.subTest(term=term):
+                self.assertTrue(gp._is_interface_term(term))
+
+    def test_names_are_not_interface_terms(self):
+        # Whole words only: a listed word inside a longer word does not count.
+        for term in ("Shadowheart", "Backstreet", "Saveria", "Skipper", "Autumn Court",
+                     "Logan", "LeBlanc", "Lae'zel", "X-23", "Agent Y", "2B", "Selûne", "Ukon"):
+            with self.subTest(term=term):
+                self.assertFalse(gp._is_interface_term(term))
+
+    def test_interface_labels_are_dropped_and_names_kept(self):
+        # A visual novel screen: a line of dialogue and the button bar
+        # glued by OCR; the model lists the buttons next to the name.
+        api = FakeApi(chat_contents=[
+            "1. Хаку, ты покраснел!\n2. Назад Скрыть окно Сохранить\n---\n"
+            "Haku → Хаку (м)\nlb Back → Назад\nBHide Window → Скрыть окно\nSaveBack → Сохранить"
+        ])
+        p = provider("Utawarerumono")
+        with fake_http(api), self.assertLogs(gp.logger, level="INFO") as logs:
+            result = run(p.translate_batch(["Haku, you're blushing!", "lb Back BHide Window SaveBack"], "en", "ru"))
+
+        self.assertEqual(result, ["Хаку, ты покраснел!", "Назад Скрыть окно Сохранить"])
+        self.assertEqual(p.glossary_entries(), [("Haku", "Хаку (м)")])
+        self.assertTrue(any("interface labels dropped: lb Back, BHide Window, SaveBack" in line
+                            for line in logs.output))
+
+
+class GigaChatPlusBlackListTest(unittest.TestCase):
+    """Forbid an entry, allow it again: the model must not bring it back."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.store = GlossaryStore(os.path.join(self._tmp.name, "glossary.db"))
+
+    def tearDown(self):
+        self.store.close()
+        self._tmp.cleanup()
+
+    def provider(self, game="Utawarerumono", game_id=BG3_ID):
+        p = gp.GigaChatPlusTranslateProvider(api_key=API_KEY, glossary_store=self.store)
+        p.set_game(game, game_id)
+        return p
+
+    def translate(self, p, answer, line="Haku Gallery"):
+        """One screen; `answer` is the model's whole reply."""
+        api = FakeApi(chat_contents=[answer])
+        with fake_http(api):
+            run(p.translate_batch([line], "en", "ru"))
+        return api
+
+    def learned(self, p):
+        # "Gallery" is an interface label the stop list does not know
+        # (it is left to the model): only the black list can keep it out.
+        self.translate(p, "1. Хаку Галерея\n---\nHaku → Хаку (м)\nGallery → Галерея")
+        return p
+
+    def saved_terms(self):
+        return [entry.term for entry in self.store.load_entries(BG3_KEY)]
+
+    def test_forbidden_term_is_not_added_back(self):
+        p = self.learned(self.provider())
+
+        self.assertTrue(p.forbid_glossary_entry(BG3_ID, "en", "ru", "gallery"))
+        api = self.translate(p, "1. Хаку Галерея\n---\nGallery → Галерея")
+
+        self.assertEqual(p.glossary_entries(), [("Haku", "Хаку (м)")])
+        self.assertEqual(self.saved_terms(), ["Haku"])
+        self.assertNotIn("Gallery →", user_prompt(api.chat_calls[0]))
+
+    def test_black_list_survives_a_restart(self):
+        self.learned(self.provider()).forbid_glossary_entry(BG3_ID, "en", "ru", "gallery")
+
+        restarted = self.provider()
+        self.translate(restarted, "1. Хаку Галерея\n---\nGallery → Галерея")
+
+        self.assertEqual(restarted.glossary_entries(), [("Haku", "Хаку (м)")])
+
+    def test_deleting_the_last_entry_keeps_the_black_list(self):
+        # The store drops a glossary left without entries; with a black list
+        # it is not empty and must stay, or the forbidden term comes back.
+        p = self.learned(self.provider())
+        p.forbid_glossary_entry(BG3_ID, "en", "ru", "gallery")
+
+        p.delete_glossary_entry(BG3_ID, "en", "ru", "haku")
+
+        self.assertEqual([item.term for item in self.store.load_rejected(BG3_KEY)], ["Gallery"])
+        restarted = self.provider()
+        self.translate(restarted, "1. Галерея\n---\nGallery → Галерея", line="Gallery")
+        self.assertEqual(restarted.glossary_entries(), [])
+
+    def test_black_list_is_shown_with_translation_and_reason(self):
+        p = self.learned(self.provider())
+
+        p.forbid_glossary_entry(BG3_ID, "en", "ru", "gallery")
+
+        shown = p.rejected_for(BG3_ID, "en", "ru")
+        self.assertEqual([(item.term, item.translation, item.reason) for item in shown],
+                         [("Gallery", "Галерея", gp.REJECTED_BY_USER)])
+
+    def test_forbid_in_another_game_goes_to_its_saved_glossary(self):
+        self.learned(self.provider())
+        p = self.provider(game="Disco Elysium", game_id="632470")
+
+        self.assertTrue(p.forbid_glossary_entry(BG3_ID, "en", "ru", "gallery"))
+
+        self.assertEqual(self.saved_terms(), ["Haku"])
+        self.assertEqual([item.term for item in p.rejected_for(BG3_ID, "en", "ru")], ["Gallery"])
+        name = self.store._conn.execute("SELECT game_name FROM glossaries").fetchone()[0]
+        self.assertEqual(name, "Utawarerumono")
+
+    def test_allowed_term_may_be_added_again(self):
+        p = self.learned(self.provider())
+        p.forbid_glossary_entry(BG3_ID, "en", "ru", "gallery")
+
+        self.assertTrue(p.allow_rejected_term(BG3_ID, "en", "ru", "gallery"))
+        self.translate(p, "1. Хаку Галерея\n---\nGallery → Галерея")
+
+        self.assertEqual(p.rejected_for(BG3_ID, "en", "ru"), [])
+        self.assertIn(("Gallery", "Галерея"), p.glossary_entries())
+
+    def test_reset_clears_the_black_list(self):
+        p = self.learned(self.provider())
+        p.forbid_glossary_entry(BG3_ID, "en", "ru", "gallery")
+
+        self.assertTrue(p.reset_glossary(BG3_ID, "en", "ru"))
+
+        self.assertEqual(p.rejected_for(BG3_ID, "en", "ru"), [])
+        self.assertEqual(self.store.load_rejected(BG3_KEY), [])
+
+    def test_forbidding_a_missing_entry_or_without_a_game_reports_false(self):
+        p = self.learned(self.provider())
+
+        self.assertFalse(p.forbid_glossary_entry(BG3_ID, "en", "ru", "nobody"))
+        self.assertFalse(p.forbid_glossary_entry("", "en", "ru", "gallery"))
+        self.assertFalse(p.allow_rejected_term(BG3_ID, "en", "ru", "nobody"))
+
+
 if __name__ == "__main__":
     unittest.main()

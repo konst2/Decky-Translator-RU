@@ -26,7 +26,13 @@ from typing import List, NamedTuple, Optional, Tuple
 
 from .base import ProviderType, RateLimitError
 from .gigachat_client import GigaChatClient, TokenQuotaError
-from .glossary_store import GlossaryEntry, GlossaryKey, GlossaryStore
+from .glossary_store import (
+    REJECTED_BY_USER,
+    GlossaryEntry,
+    GlossaryKey,
+    GlossaryStore,
+    RejectedTerm,
+)
 from .gigachat_translate import (
     GigaChatTranslateProvider,
     _flatten,
@@ -114,6 +120,28 @@ _SPEECH_DASHES = (" — ", " – ", " - ")
 # Words shorter than this ("на", "ты", "вы", "и") do not count when notes are
 # compared: "грубо, на «ты»" and "почтительно, на «вы»" must not look alike.
 _SPEECH_MIN_WORD = 3
+
+# Words of interface labels. A proposed term that contains one of them as a
+# whole word is dropped before it reaches the glossary. The prompt forbids
+# interface labels, yet live runs on visual novels still let the button bar
+# through ("lb Back", "BHide Window", "SaveBack"), and once in the glossary a
+# label is re-listed on most screens and evicts real names: it shows up on
+# every screen, so it always counts as recently used. Only words that are
+# almost never part of a name are listed; the rest ("New Game", "Gallery")
+# is left to the model. The cost is a rare real name with such a word in it
+# ("Load Bearing Tower"), accepted as unlikely (decision of the user,
+# 13.11.2026). Whole words only: "Backstreet" or "Saveria" must pass.
+# Glued labels are split into words first (_term_words). Single gamepad
+# letters (A, B, X, Y) are not listed: "Agent Y", "X-23" are real names,
+# and in a glued label the letter comes with a listed word anyway ("BHide").
+_INTERFACE_WORDS = frozenset({
+    # Visual novel button bar and system menu.
+    "auto", "automode", "backlog", "log", "skip", "save", "load", "qsave", "qload",
+    "hide", "window", "config", "settings", "options", "menu", "system",
+    "next", "back", "pause", "quit", "cancel", "confirm",
+    # Gamepad bumpers, triggers and Switch buttons that OCR glues to labels.
+    "lb", "rb", "lt", "rt", "zl", "zr",
+})
 
 # A real name or term is short. Longer "entries" are the model retelling a
 # line instead of naming something, and would bloat every following prompt.
@@ -290,6 +318,60 @@ def _split_answer(content: str) -> Optional[Tuple[str, str]]:
     return content, ""
 
 
+def _starts_new_word(term: str, index: int) -> bool:
+    """
+    Whether the capital letter at `index` begins a new word of a glued label.
+
+    "SaveBack": a capital after a small letter. "QSave", "BHide": a capital
+    after a capital, followed by a small letter — the first capital is a
+    word of its own (a gamepad letter glued by OCR). "HP" stays one word.
+    """
+    char = term[index]
+    previous = term[index - 1]
+    if not char.isupper():
+        return False
+    if previous.islower():
+        return True
+    following = term[index + 1] if index + 1 < len(term) else ""
+    return previous.isupper() and following.islower()
+
+
+def _term_words(term: str) -> List[str]:
+    """
+    Words of a term, case-folded: split on anything that is not a letter or
+    a digit, and inside glued labels on capitals (_starts_new_word).
+
+    "lb Back" -> ["lb", "back"]; "QSaveQLoad" -> ["q", "save", "q", "load"];
+    "Q.Save" -> ["q", "save"]; "LeBlanc" -> ["le", "blanc"].
+    """
+    words: List[str] = []
+    current = ""
+    for index, char in enumerate(term):
+        if not char.isalnum():
+            if current:
+                words.append(current)
+                current = ""
+            continue
+        if current and _starts_new_word(term, index):
+            words.append(current)
+            current = ""
+        current += char
+    if current:
+        words.append(current)
+    return [word.casefold() for word in words]
+
+
+def _is_interface_term(term: str) -> bool:
+    """
+    Whether a proposed term is an interface label or OCR junk, not a name.
+
+    A term without a single letter (">>", "42") is never a name either.
+    """
+    if not any(char.isalpha() for char in term):
+        return True
+    return any(word in _INTERFACE_WORDS for word in _term_words(term))
+
+
 class ProposedEntry(NamedTuple):
     """A glossary entry as the model proposed it, after parsing."""
 
@@ -422,11 +504,15 @@ def _parse_glossary(text: str, sources: List[str]) -> List[ProposedEntry]:
     and listing names that were not in the text; neither must reach the
     glossary, where the first translation sticks for the whole session.
 
+    Interface labels are dropped as well (_INTERFACE_WORDS) and logged: the
+    log shows whether a real name was ever caught by the list.
+
     The glossary is a bonus: a malformed line is dropped, it never fails the
     translation.
     """
     batch_text = _match_key(" ".join(sources))
     entries: List[ProposedEntry] = []
+    interface_terms: List[str] = []
     for raw_line in text.splitlines():
         line = raw_line.strip().lstrip(_BULLET_CHARS).strip()
         pair = _split_on_arrow(line)
@@ -442,7 +528,12 @@ def _parse_glossary(text: str, sources: List[str]) -> List[ProposedEntry]:
             continue
         if _match_key(source) not in batch_text:
             continue
+        if _is_interface_term(source):
+            interface_terms.append(source)
+            continue
         entries.append(ProposedEntry(source, translation, form_fix))
+    if interface_terms:
+        logger.info(f"GigaChat+ glossary: interface labels dropped: {', '.join(interface_terms)}")
     return entries
 
 
@@ -469,6 +560,12 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         # unused entry is evicted first when the glossary is full. The
         # entry's last_used_at mirrors this order, so it survives a save.
         self._glossary: "OrderedDict[str, GlossaryEntry]" = OrderedDict()
+        # The black list of the same glossary: _match_key(term) -> rejected
+        # term. The model may not add these back. Without it a removed
+        # interface label returns on the next screen: the button bar is on
+        # every screen, and the model keeps listing it. Loaded, switched and
+        # reset together with the glossary.
+        self._rejected: "dict[str, RejectedTerm]" = {}
         # Unmarked form fixes waiting for more votes (_consider_form):
         # _match_key(term) -> (proposed name, votes). Memory only: after a
         # restart the votes start again, which only delays a fix.
@@ -521,6 +618,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             self._game = game
             self._game_id = game_id
             self._glossary.clear()
+            self._rejected.clear()
             self._form_candidates.clear()
             self._speech_candidates.clear()
             self._glossary_pair = None
@@ -593,14 +691,101 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             if self._glossary_store is not None:
                 deleted = self._glossary_store.delete_glossary(key)
             if self._is_current_glossary(key):
-                deleted = bool(self._glossary) or deleted
+                deleted = bool(self._glossary) or bool(self._rejected) or deleted
                 self._glossary.clear()
+                self._rejected.clear()
                 self._form_candidates.clear()
                 self._speech_candidates.clear()
                 self._glossary_epoch += 1
         if deleted:
             logger.info(f"GigaChat+ glossary reset by the user, game {game_id}")
         return deleted
+
+    # -- black list: view, forbid an entry, allow a term again --
+    #
+    # The same rules as the glossary form above: the caller names the game
+    # and the pair; the store is written first, under the glossary lock.
+
+    def rejected_for(self, game_id: str, source_lang: str, target_lang: str) -> List[RejectedTerm]:
+        """Black list of the game's glossary for the pair, most recently rejected first."""
+        key = self._form_key(game_id, source_lang, target_lang)
+        if key is None:
+            return []
+        with self._glossary_lock:
+            if self._is_current_glossary(key):
+                return sorted(self._rejected.values(), key=lambda item: item.rejected_at, reverse=True)
+        if self._glossary_store is None:
+            return []
+        return self._glossary_store.load_rejected(key)
+
+    def forbid_glossary_entry(
+        self, game_id: str, source_lang: str, target_lang: str, match_key: str
+    ) -> bool:
+        """
+        Delete an entry and put its term on the black list.
+
+        Unlike delete_glossary_entry, the model cannot add the term back.
+        Plain deletion is for a bad translation (a wrong gender, a clumsy
+        name): the model proposes the term again and may do better. Forbid
+        is for what is not a name at all — an interface label.
+        """
+        key = self._form_key(game_id, source_lang, target_lang)
+        if key is None:
+            return False
+        with self._glossary_lock:
+            current = self._is_current_glossary(key)
+            entry = self._find_entry(key, match_key, current)
+            if entry is None:
+                return False
+            rejected = RejectedTerm(
+                entry.match_key, entry.term, entry.translation, int(time.time()), REJECTED_BY_USER
+            )
+            if self._glossary_store is not None:
+                # The name of a game that is not running is unknown here;
+                # None keeps the stored one.
+                game_name = self._game if current else None
+                self._glossary_store.reject_entries(key, game_name, [rejected])
+            if current:
+                self._glossary.pop(match_key, None)
+                self._form_candidates.pop(match_key, None)
+                self._speech_candidates.pop(match_key, None)
+                self._rejected[match_key] = rejected
+                # A request in flight was built with the old glossary; its
+                # new terms are dropped so as not to mix with the edit.
+                self._glossary_epoch += 1
+        logger.info(f"GigaChat+ glossary entry rejected by the user: {entry.term}, game {game_id}")
+        return True
+
+    def allow_rejected_term(
+        self, game_id: str, source_lang: str, target_lang: str, match_key: str
+    ) -> bool:
+        """Take a term off the black list: the model may propose it again."""
+        key = self._form_key(game_id, source_lang, target_lang)
+        if key is None:
+            return False
+        with self._glossary_lock:
+            allowed = False
+            if self._glossary_store is not None:
+                allowed = self._glossary_store.delete_rejected(key, match_key)
+            if self._is_current_glossary(key):
+                allowed = (self._rejected.pop(match_key, None) is not None) or allowed
+        if allowed:
+            logger.info(f"GigaChat+ rejected term allowed again by the user, game {game_id}")
+        return allowed
+
+    def _find_entry(self, key: GlossaryKey, match_key: str, current: bool) -> Optional[GlossaryEntry]:
+        """
+        An entry of the glossary `key` names: from memory if it is the
+        current one, else from the store. Caller holds _glossary_lock.
+        """
+        if current:
+            return self._glossary.get(match_key)
+        if self._glossary_store is None:
+            return None
+        for entry in self._glossary_store.load_entries(key):
+            if entry.match_key == match_key:
+                return entry
+        return None
 
     def _form_key(self, game_id: str, source_lang: str, target_lang: str) -> Optional[GlossaryKey]:
         """Key for a form request; None without a game (nothing is saved for it)."""
@@ -827,6 +1012,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         if self._glossary:
             logger.info("GigaChat+ language pair changed, glossary switched")
         self._glossary.clear()
+        self._rejected.clear()
         self._form_candidates.clear()
         self._speech_candidates.clear()
         self._glossary_pair = pair
@@ -854,6 +1040,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             return
         try:
             entries = self._glossary_store.load_entries(key)
+            rejected = self._glossary_store.load_rejected(key)
         except sqlite3.Error as e:
             # The glossary is a bonus: translate without it rather than fail.
             # Not saving protects the stored glossary (see __init__).
@@ -863,10 +1050,15 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             )
             self._glossary_load_failed = True
             return
+        for item in rejected:
+            self._rejected[item.match_key] = item
         # The store returns the least recently used first, the same order
-        # the in-memory glossary keeps.
+        # the in-memory glossary keeps. A rejected term never has an entry
+        # (the store removes it in the same transaction); the check only
+        # guards against a database edited by hand.
         for entry in entries:
-            self._glossary[entry.match_key] = entry
+            if entry.match_key not in self._rejected:
+                self._glossary[entry.match_key] = entry
         # A glossary saved by a version with a larger limit is trimmed here.
         self._evict_overflow()
         if entries:
@@ -932,6 +1124,8 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             # Existing entries whose gender or form was fixed.
             updated = 0
             dropped: List[str] = []
+            # Proposed again although the user or the cleanup rejected them.
+            rejected: List[str] = []
             # One answer is one vote for a form, even if it lists a term twice.
             voted: set = set()
             now = int(time.time())
@@ -940,6 +1134,9 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 # "Lae'zel" and "Lae’zel" must be one entry, or the first
                 # translation would not stick.
                 key = _match_key(entry.term)
+                if key in self._rejected:
+                    rejected.append(entry.term)
+                    continue
                 existing = self._glossary.get(key)
                 if existing is None:
                     # The limit is on new entries only: a fix of an existing
@@ -963,6 +1160,8 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 key = self._speaker_key(name, batch_text)
                 if key is not None and self._consider_speech(key, note, speech_voted):
                     updated += 1
+            if rejected:
+                logger.info(f"GigaChat+ glossary: rejected terms not added: {', '.join(rejected)}")
             if dropped:
                 logger.info(
                     f"GigaChat+ glossary: answer proposed more than "

@@ -16,7 +16,7 @@ import logging
 import sqlite3
 import threading
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,30 @@ class GlossaryEntry:
     # Последним полем со значением по умолчанию: записи без манеры создаются
     # как раньше, четырьмя полями.
     speech: str = ""
+
+
+# Кто отбраковал термин. Хранится, чтобы в окне словаря было видно, что
+# удалила чистка: если она ошиблась и выкинула имя, это надо заметить.
+REJECTED_BY_USER = "user"
+REJECTED_BY_CLEANUP = "cleanup"
+
+
+@dataclass(frozen=True)
+class RejectedTerm:
+    """
+    Термин из чёрного списка словаря: модель больше не может его добавить.
+
+    Чаще всего это элемент интерфейса игры («lb Back», «Auto Mode»), который
+    модель выписывает снова и снова. translation — каким был перевод в
+    словаре, чтобы в окне было понятно, что запрещено. reason — кто запретил
+    (REJECTED_BY_USER или REJECTED_BY_CLEANUP).
+    """
+
+    match_key: str
+    term: str
+    translation: str
+    rejected_at: int
+    reason: str
 
 
 class GlossaryStore:
@@ -93,6 +117,23 @@ class GlossaryStore:
             )
             """
         )
+        # Чёрный список словаря. Привязан к той же строке glossaries, что и
+        # записи: у каждой игры и пары языков свой список, и сброс словаря
+        # удаляет его вместе с записями. Связь без REFERENCES — по той же
+        # причине, что у записей; подчистка — _delete_orphan_entries.
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS glossary_rejected (
+                glossary_id  INTEGER NOT NULL,
+                match_key    TEXT NOT NULL,
+                term         TEXT NOT NULL,
+                translation  TEXT NOT NULL,
+                rejected_at  INTEGER NOT NULL,
+                reason       TEXT NOT NULL,
+                PRIMARY KEY (glossary_id, match_key)
+            )
+            """
+        )
         self._add_missing_columns()
         self._conn.commit()
 
@@ -123,13 +164,20 @@ class GlossaryStore:
         десятков записей, переписать их дёшево, и вызывающему коду не нужно
         следить, что добавилось, изменилось или вытеснилось с прошлого раза.
 
-        Пустой список удаляет словарь: строка словаря создаётся, только когда
-        есть что хранить, поэтому пустые словари не копятся.
+        Пустой список удаляет записи, а строку словаря — только если и чёрный
+        список пуст: строка создаётся, только когда есть что хранить, поэтому
+        пустые словари не копятся, а запреты не теряются оттого, что из
+        словаря ушла последняя запись.
         Название игры обновляется при каждом сохранении (Steam может
         переименовать игру).
         """
         if not entries:
-            self.delete_glossary(key)
+            with self._lock, self._conn:
+                self._conn.execute(
+                    f"DELETE FROM glossary_entries WHERE glossary_id = ({self._GLOSSARY_ID_BY_KEY})",
+                    self._key_params(key),
+                )
+                self._delete_glossary_if_empty(key)
             return
 
         rows = [
@@ -154,39 +202,97 @@ class GlossaryStore:
         """
         Удалить одну запись; False, если такой записи не было.
 
-        Если это была последняя запись, удаляется и строка словаря — как при
-        сохранении пустого списка: пустые словари не копятся, и «сбросить всё»
-        по пустому словарю не считается удалением.
+        Если это была последняя запись и чёрный список пуст, удаляется и
+        строка словаря — как при сохранении пустого списка: пустые словари
+        не копятся, и «сбросить всё» по пустому словарю не считается удалением.
         """
         with self._lock, self._conn:
             cursor = self._conn.execute(
-                """
+                f"""
                 DELETE FROM glossary_entries
-                WHERE match_key = ? AND glossary_id = (
-                    SELECT id FROM glossaries
-                    WHERE method = ? AND game_id = ?
-                      AND source_lang = ? AND target_lang = ?
-                )
+                WHERE match_key = ? AND glossary_id = ({self._GLOSSARY_ID_BY_KEY})
                 """,
                 [match_key, *self._key_params(key)],
             )
             deleted = cursor.rowcount > 0
-            self._conn.execute(
+            self._delete_glossary_if_empty(key)
+        return deleted
+
+    # -- чёрный список --
+
+    def load_rejected(self, key: GlossaryKey) -> List[RejectedTerm]:
+        """Чёрный список словаря, недавно отбракованные первыми; [] если словаря нет."""
+        with self._lock:
+            rows = self._conn.execute(
                 """
-                DELETE FROM glossaries
-                WHERE method = ? AND game_id = ?
-                  AND source_lang = ? AND target_lang = ?
-                  AND NOT EXISTS (
-                      SELECT 1 FROM glossary_entries WHERE glossary_id = glossaries.id
-                  )
+                SELECT r.match_key, r.term, r.translation, r.rejected_at, r.reason
+                FROM glossary_rejected r
+                JOIN glossaries g ON g.id = r.glossary_id
+                WHERE g.method = ? AND g.game_id = ?
+                  AND g.source_lang = ? AND g.target_lang = ?
+                ORDER BY r.rejected_at DESC, r.rowid DESC
                 """,
                 self._key_params(key),
+            ).fetchall()
+        return [RejectedTerm(*row) for row in rows]
+
+    def reject_entries(
+        self, key: GlossaryKey, game_name: Optional[str], rejected: List[RejectedTerm]
+    ) -> None:
+        """
+        Внести термины в чёрный список и удалить их записи из словаря —
+        одной транзакцией.
+
+        Одной, потому что по отдельности сбой между шагами оставил бы либо
+        запись, которую модель уже не сможет исправить, либо запрет без
+        удаления. Повторный запрет того же термина обновляет его строку.
+        """
+        if not rejected:
+            return
+        with self._lock, self._conn:
+            glossary_id = self._upsert_glossary(key, game_name)
+            for item in rejected:
+                self._conn.execute(
+                    "DELETE FROM glossary_entries WHERE glossary_id = ? AND match_key = ?",
+                    [glossary_id, item.match_key],
+                )
+                self._conn.execute(
+                    """
+                    INSERT INTO glossary_rejected
+                        (glossary_id, match_key, term, translation, rejected_at, reason)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (glossary_id, match_key) DO UPDATE SET
+                        term = excluded.term,
+                        translation = excluded.translation,
+                        rejected_at = excluded.rejected_at,
+                        reason = excluded.reason
+                    """,
+                    [glossary_id, item.match_key, item.term, item.translation,
+                     item.rejected_at, item.reason],
+                )
+
+    def delete_rejected(self, key: GlossaryKey, match_key: str) -> bool:
+        """
+        Убрать термин из чёрного списка (модель снова может его добавить);
+        False, если его там не было. Опустевший словарь удаляется, как в
+        delete_entry.
+        """
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                f"""
+                DELETE FROM glossary_rejected
+                WHERE match_key = ? AND glossary_id = ({self._GLOSSARY_ID_BY_KEY})
+                """,
+                [match_key, *self._key_params(key)],
             )
+            deleted = cursor.rowcount > 0
+            self._delete_glossary_if_empty(key)
         return deleted
 
     def delete_glossary(self, key: GlossaryKey) -> bool:
         """
-        Удалить словарь со всеми записями; False, если словаря не было.
+        Удалить словарь со всеми записями и чёрным списком; False, если
+        словаря не было.
 
         По ключу удаляется только строка словаря. Его записи убирает
         подчистка в той же транзакции — вместе с записями, которые могла
@@ -226,12 +332,41 @@ class GlossaryStore:
             self._conn.execute("ALTER TABLE glossary_entries ADD COLUMN speech TEXT")
             logger.info("Glossary store migrated: speech column added")
 
+    # id словаря по ключу; параметры — _key_params. Подзапрос вернёт NULL,
+    # если словаря нет, и тогда сравнение с ним ничего не удалит.
+    _GLOSSARY_ID_BY_KEY = (
+        "SELECT id FROM glossaries "
+        "WHERE method = ? AND game_id = ? AND source_lang = ? AND target_lang = ?"
+    )
+
     @staticmethod
     def _key_params(key: GlossaryKey) -> list:
         return [key.method, key.game_id, key.source_lang, key.target_lang]
 
-    def _upsert_glossary(self, key: GlossaryKey, game_name: str) -> int:
-        """Создать строку словаря, если её нет, обновить название игры, вернуть id."""
+    def _delete_glossary_if_empty(self, key: GlossaryKey) -> None:
+        """Удалить строку словаря, если в нём нет ни записей, ни запретов."""
+        self._conn.execute(
+            """
+            DELETE FROM glossaries
+            WHERE method = ? AND game_id = ?
+              AND source_lang = ? AND target_lang = ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM glossary_entries WHERE glossary_id = glossaries.id
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM glossary_rejected WHERE glossary_id = glossaries.id
+              )
+            """,
+            self._key_params(key),
+        )
+
+    def _upsert_glossary(self, key: GlossaryKey, game_name: Optional[str]) -> int:
+        """
+        Создать строку словаря, если её нет, обновить название игры, вернуть id.
+
+        game_name=None — название не трогать: так вызывают, когда меняют
+        словарь не запущенной сейчас игры (из окна словаря) и названия не знают.
+        """
         # Два запроса вместо INSERT ... RETURNING: RETURNING требует
         # SQLite 3.35, а такая свежая версия в Python на Деке не гарантирована.
         # Сам upsert (3.24) уже используется в кэше переводов.
@@ -240,7 +375,7 @@ class GlossaryStore:
             INSERT INTO glossaries (method, game_id, game_name, source_lang, target_lang)
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT (method, game_id, source_lang, target_lang)
-            DO UPDATE SET game_name = excluded.game_name
+            DO UPDATE SET game_name = COALESCE(excluded.game_name, game_name)
             """,
             [key.method, key.game_id, game_name, key.source_lang, key.target_lang],
         )
@@ -255,7 +390,7 @@ class GlossaryStore:
 
     def _delete_orphan_entries(self) -> None:
         """
-        Удалить записи, чьего словаря больше нет.
+        Удалить записи и запреты, чьего словаря больше нет.
 
         Заменяет каскад (см. описание таблицы). Ловушка NOT IN с NULL (если
         подзапрос вернёт NULL, NOT IN не совпадёт ни с чем и ничего не
@@ -264,5 +399,9 @@ class GlossaryStore:
         """
         self._conn.execute(
             "DELETE FROM glossary_entries "
+            "WHERE glossary_id NOT IN (SELECT id FROM glossaries)"
+        )
+        self._conn.execute(
+            "DELETE FROM glossary_rejected "
             "WHERE glossary_id NOT IN (SELECT id FROM glossaries)"
         )

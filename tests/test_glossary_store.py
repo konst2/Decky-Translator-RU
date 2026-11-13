@@ -11,13 +11,24 @@ import sqlite3
 import tempfile
 import unittest
 
-from providers.glossary_store import GlossaryEntry, GlossaryKey, GlossaryStore
+from providers.glossary_store import (
+    REJECTED_BY_CLEANUP,
+    REJECTED_BY_USER,
+    GlossaryEntry,
+    GlossaryKey,
+    GlossaryStore,
+    RejectedTerm,
+)
 
 BG3 = GlossaryKey("gigachat_plus", "1086940", "en", "ru")
 
 
 def entry(term, translation, last_used_at):
     return GlossaryEntry(term.casefold(), term, translation, last_used_at)
+
+
+def rejected(term, translation, rejected_at, reason=REJECTED_BY_USER):
+    return RejectedTerm(term.casefold(), term, translation, rejected_at, reason)
 
 
 class GlossaryStoreTest(unittest.TestCase):
@@ -221,6 +232,115 @@ class GlossaryStoreTest(unittest.TestCase):
         self.store.replace_entries(BG3, "Baldur's Gate 3", [entry("Karlach", "Карлах", 1)])
 
         self.assertNotEqual(self.glossary_id(BG3), old_id)
+
+
+    # -- чёрный список --
+
+    def game_name(self, key):
+        row = self.store._conn.execute(
+            "SELECT game_name FROM glossaries WHERE id = ?", [self.glossary_id(key)]
+        ).fetchone()
+        return row[0]
+
+    def test_reject_moves_the_entry_to_the_black_list(self):
+        astarion = entry("Astarion", "Астарион (м)", 100)
+        back = entry("lb Back", "Назад", 100)
+        self.store.replace_entries(BG3, "Baldur's Gate 3", [astarion, back])
+
+        self.store.reject_entries(BG3, "Baldur's Gate 3", [rejected("lb Back", "Назад", 200)])
+
+        self.assertEqual(self.store.load_entries(BG3), [astarion])
+        self.assertEqual(self.store.load_rejected(BG3), [rejected("lb Back", "Назад", 200)])
+
+    def test_rejecting_the_last_entry_keeps_the_glossary_and_its_black_list(self):
+        # Пустым считается словарь без записей и без запретов: иначе запрет
+        # последней записи удалил бы строку словаря, а с ней и сам запрет.
+        self.store.replace_entries(BG3, "Baldur's Gate 3", [entry("lb Back", "Назад", 100)])
+
+        self.store.reject_entries(BG3, "Baldur's Gate 3", [rejected("lb Back", "Назад", 200)])
+
+        self.assertEqual(self.store.load_entries(BG3), [])
+        self.assertEqual(len(self.store.load_rejected(BG3)), 1)
+
+    def test_empty_replace_keeps_the_black_list(self):
+        # Провайдер сохраняет опустевший словарь пустым списком.
+        self.store.reject_entries(BG3, "Baldur's Gate 3", [rejected("lb Back", "Назад", 200)])
+
+        self.store.replace_entries(BG3, "Baldur's Gate 3", [])
+
+        self.assertEqual(len(self.store.load_rejected(BG3)), 1)
+
+    def test_deleting_the_last_entry_keeps_the_black_list(self):
+        astarion = entry("Astarion", "Астарион (м)", 100)
+        self.store.replace_entries(BG3, "Baldur's Gate 3", [astarion])
+        self.store.reject_entries(BG3, "Baldur's Gate 3", [rejected("lb Back", "Назад", 200)])
+
+        self.store.delete_entry(BG3, astarion.match_key)
+
+        self.assertEqual(len(self.store.load_rejected(BG3)), 1)
+
+    def test_black_list_loads_most_recent_first(self):
+        self.store.reject_entries(BG3, "Baldur's Gate 3", [
+            rejected("lb Back", "Назад", 100),
+            rejected("Auto Mode", "Авторежим", 300, REJECTED_BY_CLEANUP),
+            rejected("Skip", "Пропуск", 200),
+        ])
+
+        self.assertEqual(
+            [item.term for item in self.store.load_rejected(BG3)], ["Auto Mode", "Skip", "lb Back"]
+        )
+        self.assertEqual(self.store.load_rejected(BG3)[0].reason, REJECTED_BY_CLEANUP)
+
+    def test_rejecting_again_updates_the_row(self):
+        self.store.reject_entries(BG3, "Baldur's Gate 3", [rejected("lb Back", "Назад", 100)])
+
+        self.store.reject_entries(
+            BG3, "Baldur's Gate 3", [rejected("lb Back", "Назад", 300, REJECTED_BY_CLEANUP)]
+        )
+
+        self.assertEqual(
+            self.store.load_rejected(BG3), [rejected("lb Back", "Назад", 300, REJECTED_BY_CLEANUP)]
+        )
+
+    def test_reject_without_a_name_keeps_the_stored_name(self):
+        # Окно словаря запрещает запись в словаре не запущенной игры и
+        # её названия не знает.
+        self.store.replace_entries(BG3, "Baldur's Gate 3", [entry("lb Back", "Назад", 100)])
+
+        self.store.reject_entries(BG3, None, [rejected("lb Back", "Назад", 200)])
+
+        self.assertEqual(self.game_name(BG3), "Baldur's Gate 3")
+
+    def test_delete_rejected_allows_the_term_and_removes_an_empty_glossary(self):
+        self.store.reject_entries(BG3, "Baldur's Gate 3", [rejected("lb Back", "Назад", 100)])
+
+        self.assertTrue(self.store.delete_rejected(BG3, "lb back"))
+
+        self.assertEqual(self.store.load_rejected(BG3), [])
+        self.assertEqual(self.count("glossaries"), 0)
+        self.assertFalse(self.store.delete_rejected(BG3, "lb back"))
+
+    def test_delete_glossary_removes_its_black_list(self):
+        self.store.replace_entries(BG3, "Baldur's Gate 3", [entry("Astarion", "Астарион", 1)])
+        self.store.reject_entries(BG3, "Baldur's Gate 3", [rejected("lb Back", "Назад", 100)])
+
+        self.assertTrue(self.store.delete_glossary(BG3))
+
+        self.assertEqual(self.count("glossary_rejected"), 0)
+
+    def test_black_list_is_separate_per_glossary(self):
+        other_game = GlossaryKey("gigachat_plus", "632470", "en", "ru")
+        self.store.reject_entries(BG3, "Baldur's Gate 3", [rejected("lb Back", "Назад", 100)])
+
+        self.assertEqual(self.store.load_rejected(other_game), [])
+
+    def test_black_list_survives_reopening(self):
+        self.store.reject_entries(BG3, "Baldur's Gate 3", [rejected("lb Back", "Назад", 100)])
+        self.store.close()
+
+        self.store = GlossaryStore(self.db_path)
+
+        self.assertEqual(self.store.load_rejected(BG3), [rejected("lb Back", "Назад", 100)])
 
 
 if __name__ == "__main__":
