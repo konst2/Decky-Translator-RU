@@ -18,6 +18,7 @@ from .base import (
     NetworkError,
     ApiKeyError,
     RateLimitError,
+    TranslationSupersededError,
     TranslationUnavailableError,
 )
 from .capabilities import RAPIDOCR_AVAILABLE, RAPIDOCR_UNAVAILABLE_MESSAGE
@@ -66,6 +67,7 @@ __all__ = [
     'NetworkError',
     'ApiKeyError',
     'RateLimitError',
+    'TranslationSupersededError',
     'TranslationUnavailableError',
     'GoogleVisionProvider',
     'GoogleTranslateProvider',

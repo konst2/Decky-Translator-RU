@@ -5,12 +5,23 @@
 import asyncio
 import logging
 import re
+from contextvars import ContextVar
 from typing import List, Optional, Tuple
 
 from .base import TranslationProvider, ProviderType, NetworkError
 from .gigachat_client import ChatAnswer, GigaChatClient, INVALID_RESPONSE_MESSAGE
 
 logger = logging.getLogger(__name__)
+
+# The number of the screen being translated (GigaChatClient.begin_screen),
+# for every request of that screen: its batches, the line-by-line fallback,
+# GigaChat+'s retry without context. A context variable rather than a
+# parameter: the requests are made several calls deep, in a worker thread
+# (asyncio.to_thread copies the variable there), and a parameter would have
+# to go through every method of both providers. Two screens translated at
+# once are two asyncio tasks, each with its own value. Anything that is not
+# a screen (the glossary cleanup) sends None and is never dropped as stale.
+_current_screen: ContextVar[Optional[int]] = ContextVar("gigachat_current_screen", default=None)
 
 # One request carries several lines, which is faster than one request per
 # line (the free plan generates in a single thread). The limits keep the
@@ -258,16 +269,21 @@ class GigaChatTranslateProvider(TranslationProvider):
                 to_translate.append(value)
 
         translated: List[Optional[str]] = list(originals)
-        for batch in _make_batches(to_translate):
-            batch_texts = [to_translate[i] for i in batch]
-            logger.debug(f"Translating {len(batch_texts)} texts via GigaChat: {source} -> {target}")
-            # Any failure raises: returning the original text here would look
-            # like a successful translation to the user.
-            results = await asyncio.to_thread(
-                self._translate_request, batch_texts, source, target
-            )
-            for index, result in zip(batch, results):
-                translated[positions[index]] = result
+        screen_token = _current_screen.set(self._client.begin_screen())
+        try:
+            for batch in _make_batches(to_translate):
+                batch_texts = [to_translate[i] for i in batch]
+                logger.debug(f"Translating {len(batch_texts)} texts via GigaChat: {source} -> {target}")
+                # Any failure raises: returning the original text here would look
+                # like a successful translation to the user. A screen made stale
+                # by a newer one raises TranslationSupersededError (see chat).
+                results = await asyncio.to_thread(
+                    self._translate_request, batch_texts, source, target
+                )
+                for index, result in zip(batch, results):
+                    translated[positions[index]] = result
+        finally:
+            _current_screen.reset(screen_token)
 
         return translated
 
@@ -323,8 +339,11 @@ class GigaChatTranslateProvider(TranslationProvider):
         """
         Every request of this method goes through here, so a subclass that
         prefers another model gets it for all of them, fallbacks included.
+        A request of a screen that became stale is not sent (_current_screen).
         """
-        return self._client.chat(messages, choose_model=self._choose_model)
+        return self._client.chat(
+            messages, choose_model=self._choose_model, screen=_current_screen.get()
+        )
 
     def _system_prompt(self, source_lang: str, target_lang: str) -> str:
         target_name = _language_name(target_lang)

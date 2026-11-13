@@ -16,7 +16,7 @@ from typing import Callable, List, NamedTuple, Optional, Tuple
 
 import requests
 
-from .base import NetworkError, ApiKeyError, RateLimitError
+from .base import NetworkError, ApiKeyError, RateLimitError, TranslationSupersededError
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +165,14 @@ class GigaChatClient:
         # model caches need locks: two simultaneous calls must not fetch twice.
         self._token_lock = threading.Lock()
         self._model_lock = threading.Lock()
+        # One chat request at a time (see chat). Taken outside the two locks
+        # above and never while holding them, so the order is always the
+        # same and they cannot deadlock.
+        self._chat_lock = threading.Lock()
+        # Number of the latest screen sent for translation (begin_screen).
+        # Shared by both methods, as the lock above is.
+        self._latest_screen = 0
+        self._screen_lock = threading.Lock()
 
     @property
     def api_key(self) -> str:
@@ -197,14 +205,59 @@ class GigaChatClient:
 
     # -- chat --
 
-    def chat(self, messages: List[dict], choose_model: Optional[ModelChooser] = None) -> ChatAnswer:
+    def begin_screen(self) -> int:
+        """
+        Register a new screen to translate and return its number.
+
+        Every newer screen makes the older ones stale (see chat). The
+        frontend translates one screen at a time, so a newer screen means
+        the user closed the overlay of the older one and asked again.
+        """
+        with self._screen_lock:
+            self._latest_screen += 1
+            return self._latest_screen
+
+    def chat(
+        self,
+        messages: List[dict],
+        choose_model: Optional[ModelChooser] = None,
+        screen: Optional[int] = None,
+    ) -> ChatAnswer:
         """
         Send one chat request and return the assistant's text and finish_reason.
 
         choose_model lets a method pick its own model from the shared list
         (GigaChat+ prefers the strongest one); without it the first model is
         used, as the direct method always did.
+
+        Requests go strictly one at a time, for every method sharing this
+        client: a caller waits until the request before it has finished.
+        Parallel requests or quick bursts can look like abuse to the service
+        and get the request cut off or the key blocked. They did happen: the
+        overlay can be closed while a translation is still on its way, and
+        the next hotkey sent a second request beside the first. The GigaChat+
+        glossary cleanup runs in the background and relies on this as well.
+
+        screen — the number from begin_screen for a screen's translation,
+        None for anything else (the glossary cleanup). A screen that became
+        stale while waiting for its turn is not sent: TranslationSupersededError.
+        Without that, five quick "close and translate again" would send all
+        five requests one after another, and the only wanted one, the last,
+        would wait for four thrown-away translations and pay their tokens.
+        A request already sent is not interrupted: HTTP cannot be stopped
+        halfway, it just finishes.
         """
+        with self._chat_lock:
+            if screen is not None and self._is_stale_screen(screen):
+                raise TranslationSupersededError(f"screen {screen} superseded by a newer one")
+            return self._chat_one(messages, choose_model)
+
+    def _is_stale_screen(self, screen: int) -> bool:
+        with self._screen_lock:
+            return screen != self._latest_screen
+
+    def _chat_one(self, messages: List[dict], choose_model: Optional[ModelChooser]) -> ChatAnswer:
+        """chat() without the lock: one request with its retries (401, 404). Caller holds _chat_lock."""
         token = self._ensure_token()
         model = self._pick_model(token, choose_model)
         response = self._post_chat(token, self._payload(messages, model))

@@ -22,6 +22,14 @@ class RateLimitError(Exception):
     pass
 
 
+class TranslationSupersededError(Exception):
+    """Raised when a newer screen came while this translation waited for its
+    turn: the user closed the overlay and asked again, so the frontend would
+    throw this result away. Not an error for the user; the request is simply
+    not sent."""
+    pass
+
+
 class TranslationUnavailableError(Exception):
     """Raised when the selected translation provider cannot serve the request
     (not configured, or the language pair is not supported)."""

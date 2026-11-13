@@ -125,7 +125,10 @@ import urllib3
 import requests
 
 # Import provider system
-from providers import ProviderManager, TextRegion, NetworkError, ApiKeyError, RateLimitError, TranslationUnavailableError
+from providers import (
+    ProviderManager, TextRegion, NetworkError, ApiKeyError, RateLimitError,
+    TranslationSupersededError, TranslationUnavailableError,
+)
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize, reads_cache
 from providers.glossary_store import GlossaryStore
 from providers.gigachat_plus_translate import name_and_gender
@@ -2611,6 +2614,12 @@ class Plugin:
         except RateLimitError as e:
             logger.error(f"Rate limit during translation: {e}")
             return {"error": "rate_limit_error", "message": str(e)}
+        except TranslationSupersededError:
+            # The user closed the overlay and asked for a new screen while this one
+            # waited for its turn; the frontend has already dropped this run and
+            # ignores whatever comes back. Not an error, so not logged as one.
+            logger.info("Translation of a stale screen skipped: a newer screen was requested")
+            return {"error": "translation_cancelled", "message": "Перевод отменён: запрошен новый экран"}
         except TranslationUnavailableError as e:
             logger.error(f"Translation unavailable: {e}")
             return {"error": "translation_error", "message": str(e)}
