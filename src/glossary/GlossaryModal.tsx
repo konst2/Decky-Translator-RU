@@ -138,7 +138,10 @@ const GlossaryModal: VFC<GlossaryLanguages & {
     const [loadError, setLoadError] = useState("");
     const [confirmReset, setConfirmReset] = useState(false);
 
-    useEffect(() => {
+    // Загрузить словарь с бэкенда. Зовётся при открытии и после правки, которая
+    // не нашла запись: пока окно открыто, переводы и чистка словаря продолжают
+    // его менять, и тогда показанное окном устарело.
+    const loadGlossary = () => {
         if (!gameId) {
             setEntries([]);
             return;
@@ -159,7 +162,9 @@ const GlossaryModal: VFC<GlossaryLanguages & {
                 setLoadError(String(e));
                 setEntries([]);
             });
-    }, [gameId, sourceLang, targetLang]);
+    };
+
+    useEffect(loadGlossary, [gameId, sourceLang, targetLang]);
 
     // Бэкенд отдаёт записи по давности использования (так их вытесняет словарь),
     // а человеку проще найти имя по алфавиту. Отбракованные — как пришли: свежие
@@ -172,14 +177,26 @@ const GlossaryModal: VFC<GlossaryLanguages & {
         toaster.toast({ title: "Словарь игры", body: `Не удалось ${action}: ${error}`, duration: 4000 });
     };
 
-    // Вызов RPC правки словаря: true — успех, при ошибке показывается тост.
-    const callEdit = async (method: string, action: string, matchKey: string): Promise<boolean> => {
+    // Вызов RPC правки словаря: true — запись изменена, окно может поправить
+    // свои списки само. false — ошибка (показан тост) или записи на бэкенде уже
+    // нет: её вытеснили или убрала чистка, пока окно было открыто. Тогда окно
+    // перечитывает словарь, а не показывает то, чего не было: «запрещённую»
+    // запись, которую модель на самом деле добавит снова.
+    // doneField — поле ответа, которое говорит, что запись изменена
+    // (deleted / forbidden / allowed); success означает лишь «ошибки не было».
+    const callEdit = async (
+        method: string, action: string, matchKey: string, doneField: string
+    ): Promise<boolean> => {
         try {
             const result = await call<[string, string, string, string], any>(
                 method, gameId, sourceLang, targetLang, matchKey
             );
             if (!result?.success) {
                 showError(action, result?.error || "неизвестная ошибка");
+                return false;
+            }
+            if (!result[doneField]) {
+                loadGlossary();
                 return false;
             }
             return true;
@@ -193,13 +210,13 @@ const GlossaryModal: VFC<GlossaryLanguages & {
         setEntries(prev => prev ? prev.filter(x => x.matchKey !== matchKey) : prev);
 
     const removeEntry = async (entry: GlossaryEntryView) => {
-        if (await callEdit('delete_glossary_entry', "удалить запись", entry.matchKey)) {
+        if (await callEdit('delete_glossary_entry', "удалить запись", entry.matchKey, "deleted")) {
             dropEntry(entry.matchKey);
         }
     };
 
     const forbidEntry = async (entry: GlossaryEntryView) => {
-        if (!(await callEdit('forbid_glossary_entry', "запретить запись", entry.matchKey))) {
+        if (!(await callEdit('forbid_glossary_entry', "запретить запись", entry.matchKey, "forbidden"))) {
             return;
         }
         dropEntry(entry.matchKey);
@@ -210,7 +227,7 @@ const GlossaryModal: VFC<GlossaryLanguages & {
     };
 
     const allowTerm = async (item: RejectedTermView) => {
-        if (await callEdit('allow_rejected_term', "вернуть термин", item.matchKey)) {
+        if (await callEdit('allow_rejected_term', "вернуть термин", item.matchKey, "allowed")) {
             setRejected(prev => prev.filter(x => x.matchKey !== item.matchKey));
         }
     };

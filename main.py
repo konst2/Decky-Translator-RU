@@ -2725,9 +2725,10 @@ class Plugin:
             if not self._provider_manager:
                 return {"success": False, "entries": [], "rejected": []}
             manager = self._provider_manager
-            entries = await asyncio.to_thread(manager.get_glossary, game_id, source_lang, target_lang)
-            rejected = await asyncio.to_thread(
-                manager.get_rejected_terms, game_id, source_lang, target_lang
+            # One snapshot: read apart, a cleanup in between could show a
+            # term both in the glossary and among the rejected ones.
+            entries, rejected = await asyncio.to_thread(
+                manager.get_glossary_view, game_id, source_lang, target_lang
             )
             capacity, nearly_full_above = manager.get_glossary_capacity()
             return {

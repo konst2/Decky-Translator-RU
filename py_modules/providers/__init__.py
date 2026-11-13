@@ -311,6 +311,12 @@ class ProviderManager:
     def get_rejected_terms(self, game_id: str, source_lang: str, target_lang: str) -> List[RejectedTerm]:
         return self._gigachat_plus().rejected_for(game_id, source_lang, target_lang)
 
+    def get_glossary_view(
+        self, game_id: str, source_lang: str, target_lang: str
+    ) -> Tuple[List[GlossaryEntry], List[RejectedTerm]]:
+        """Entries and black list as one snapshot (see glossary_view)."""
+        return self._gigachat_plus().glossary_view(game_id, source_lang, target_lang)
+
     def forbid_glossary_entry(
         self, game_id: str, source_lang: str, target_lang: str, match_key: str
     ) -> bool:
@@ -1042,6 +1048,11 @@ class ProviderManager:
         return self._rapidocr_downloader.delete()
 
     def shutdown(self):
+        # Before main.py closes the glossary store: a pending GigaChat+
+        # cleanup timer must not send a request or write after the unload.
+        gigachat_plus = self._translation_providers.get(ProviderType.GIGACHAT_PLUS)
+        if isinstance(gigachat_plus, GigaChatPlusTranslateProvider):
+            gigachat_plus.shutdown()
         for provider_type in (ProviderType.CT2, ProviderType.OPUSMT):
             local = self._translation_providers.get(provider_type)
             if local and hasattr(local, 'shutdown'):

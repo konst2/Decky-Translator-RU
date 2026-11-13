@@ -142,7 +142,9 @@ _INTERFACE_WORDS = frozenset({
     "hide", "window", "config", "settings", "options", "menu", "system",
     "next", "back", "pause", "quit", "cancel", "confirm",
     # Gamepad bumpers, triggers and Switch buttons that OCR glues to labels.
-    "lb", "rb", "lt", "rt", "zl", "zr",
+    # Not "lt": it is the rank "Lt." in names ("Lt. Surge"), and a label with
+    # the LT button carries a listed word anyway ("LT Skip").
+    "lb", "rb", "rt", "zl", "zr",
 })
 
 # Glossary cleanup: from time to time the glossary is sent to the model in a
@@ -173,8 +175,15 @@ _CLEANUP_FULL_SHARE = 2 / 3
 _CLEANUP_IDLE_SECONDS = 5
 # Not more often than this, even if the trigger fires again: a model that
 # keeps leaving the junk in must not cause a request every few screens. A
-# failed cleanup waits for this as well — it is not retried at once.
+# failed cleanup waits for this as well — it is not retried at once. One
+# interval for the provider, not per game: switching the game (or a screen
+# of the Steam menu between two screens of the same game, which switches
+# to "no game" and back and reloads the glossary) must not trigger another
+# cleanup; nobody hops between games that fast while playing.
 _CLEANUP_MIN_INTERVAL_SECONDS = 600
+# A smaller glossary is not cleaned: with the "not more than half" rule
+# below, nothing could be deleted from one or two entries anyway.
+_CLEANUP_MIN_ENTRIES = 3
 # An answer naming more than this share of the glossary is not trusted: the
 # model has misread the task, a real glossary is mostly names.
 _CLEANUP_MAX_DELETE_SHARE = 0.5
@@ -437,7 +446,8 @@ def _parse_cleanup_answer(content: str, count: int) -> Optional[List[int]]:
     text = content.strip().rstrip(".").strip()
     if not text:
         return None
-    if text.casefold() == _CLEANUP_NOTHING:
+    # The prompt quotes the word («нет»), and the model may copy the quotes.
+    if text.strip("«»\"'").casefold() == _CLEANUP_NOTHING:
         return []
     numbers: List[int] = []
     for part in text.split(","):
@@ -695,7 +705,8 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         # this session: the counter above starts from zero after a restart,
         # and junk gathered before would wait for ten new entries.
         self._cleanup_after_load = False
-        # Clock reading of the last cleanup start; None = none yet.
+        # Clock reading of the last cleanup start; None = none yet. One for
+        # the provider, kept when the game changes (_CLEANUP_MIN_INTERVAL_SECONDS).
         self._last_cleanup_at: Optional[float] = None
         # Translations running now, and the clock when the last one ended:
         # the cleanup waits for a pause in translations.
@@ -703,6 +714,8 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         self._last_translation_at = 0.0
         self._cleanup_running = False
         self._cleanup_timer = None
+        # Set by shutdown(): no more cleanup timers or requests.
+        self._stopped = False
         # Replaced in tests, so they need not wait for real seconds.
         self._clock = time.monotonic
         self._timer_factory = _start_timer
@@ -823,10 +836,34 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 self._rejected.clear()
                 self._form_candidates.clear()
                 self._speech_candidates.clear()
+                # The new entries counted so far belonged to the old glossary.
+                self._reset_cleanup_state()
                 self._glossary_epoch += 1
         if deleted:
             logger.info(f"GigaChat+ glossary reset by the user, game {game_id}")
         return deleted
+
+    def glossary_view(
+        self, game_id: str, source_lang: str, target_lang: str
+    ) -> Tuple[List[GlossaryEntry], List[RejectedTerm]]:
+        """
+        Entries and black list of the game's glossary for the window, as one
+        snapshot taken under the glossary lock.
+
+        Read separately (glossary_for, then rejected_for), a cleanup ending
+        in between would show a term in both lists or in neither: the
+        cleanup moves entries to the black list under the same lock.
+        """
+        key = self._form_key(game_id, source_lang, target_lang)
+        if key is None:
+            return [], []
+        with self._glossary_lock:
+            if self._is_current_glossary(key):
+                rejected = sorted(self._rejected.values(), key=lambda item: item.rejected_at, reverse=True)
+                return list(self._glossary.values()), rejected
+            if self._glossary_store is None:
+                return [], []
+            return self._glossary_store.load_entries(key), self._glossary_store.load_rejected(key)
 
     # -- black list: view, forbid an entry, allow a term again --
     #
@@ -1497,10 +1534,28 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
     # hotkey pressed during the cleanup waits for it (1-2 s in live runs).
 
     def _reset_cleanup_state(self) -> None:
-        """A new glossary (game or pair changed): start counting anew. Caller holds _glossary_lock."""
+        """
+        A new or reset glossary: count its new entries anew. Caller holds
+        _glossary_lock. The interval since the last cleanup is kept: it is
+        one for the provider (see _CLEANUP_MIN_INTERVAL_SECONDS).
+        """
         self._new_since_cleanup = 0
         self._cleanup_after_load = False
-        self._last_cleanup_at = None
+
+    def shutdown(self) -> None:
+        """
+        Plugin unload: cancel a pending cleanup and start no new ones.
+
+        Without it, a timer started by the last translation could fire
+        after the unload, send a request and write to the closed store.
+        A cleanup already running finishes; its store write then fails
+        and is only logged.
+        """
+        with self._glossary_lock:
+            self._stopped = True
+            if self._cleanup_timer is not None:
+                self._cleanup_timer.cancel()
+                self._cleanup_timer = None
 
     def _translation_finished(self) -> None:
         """Count a translation as ended and restart the cleanup timer if a cleanup is due."""
@@ -1515,7 +1570,9 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
 
     def _cleanup_due(self) -> bool:
         """Whether the glossary should be cleaned now. Caller holds _glossary_lock."""
-        if not _GLOSSARY_CLEANUP_ENABLED or not self._glossary:
+        if not _GLOSSARY_CLEANUP_ENABLED or self._stopped:
+            return False
+        if len(self._glossary) < _CLEANUP_MIN_ENTRIES:
             return False
         if self._last_cleanup_at is not None:
             if self._clock() - self._last_cleanup_at < _CLEANUP_MIN_INTERVAL_SECONDS:
@@ -1537,7 +1594,9 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         pool is reported by the next translation anyway).
         """
         with self._glossary_lock:
-            self._cleanup_timer = None
+            # self._cleanup_timer is not cleared here: a translation may have
+            # started a newer timer while this callback waited for the lock,
+            # and clearing would lose it. Cancelling a fired timer is harmless.
             if self._cleanup_running or self._translations_running:
                 return
             if self._clock() - self._last_translation_at < _CLEANUP_IDLE_SECONDS:

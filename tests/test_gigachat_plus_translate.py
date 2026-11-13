@@ -20,6 +20,7 @@ from test_gigachat_translate import (
     API_KEY,
     REFUSAL,
     FakeApi,
+    FakeResponse,
     chat_response,
     fake_http,
     run,
@@ -1485,7 +1486,8 @@ class GigaChatPlusInterfaceLabelTest(unittest.TestCase):
     def test_names_are_not_interface_terms(self):
         # Whole words only: a listed word inside a longer word does not count.
         for term in ("Shadowheart", "Backstreet", "Saveria", "Skipper", "Autumn Court",
-                     "Logan", "LeBlanc", "Lae'zel", "X-23", "Agent Y", "2B", "Selûne", "Ukon"):
+                     "Logan", "LeBlanc", "Lae'zel", "X-23", "Agent Y", "2B", "Selûne", "Ukon",
+                     "Lt. Surge"):
             with self.subTest(term=term):
                 self.assertFalse(gp._is_interface_term(term))
 
@@ -1626,6 +1628,8 @@ class GigaChatPlusCleanupAnswerTest(unittest.TestCase):
     def test_nothing_to_delete(self):
         self.assertEqual(gp._parse_cleanup_answer("нет", 20), [])
         self.assertEqual(gp._parse_cleanup_answer("Нет.", 20), [])
+        # The prompt quotes the word, the model may copy the quotes.
+        self.assertEqual(gp._parse_cleanup_answer("«нет»", 20), [])
 
     def test_untrusted_answers(self):
         cases = {
@@ -1911,6 +1915,89 @@ class GigaChatPlusCleanupTest(unittest.TestCase):
 
         self.assertEqual(self.timers.started, [])
 
+    def test_entry_with_a_speech_note_is_never_removed(self):
+        p = self.provider()
+        self.translate(p)
+        # Yamato has no gender, so only the speech note protects it.
+        with p._glossary_lock:
+            yamato = p._glossary["yamato"]
+            p._glossary["yamato"] = gp.replace(yamato, speech="торжественно")
+
+        self.fire_after_idle(p, "5")
+
+        self.assertIn("Yamato", self.terms(p))
+
+    def test_small_glossary_is_not_cleaned(self):
+        p = self.provider([("Haku", "Хаку"), ("Gallery", "Галерея")])
+
+        self.translate(p)
+
+        self.assertEqual(self.timers.started, [])
+
+    def test_reset_starts_counting_anew(self):
+        # Reset before the first cleanup of the loaded glossary: the new
+        # glossary must wait for its own ten entries.
+        p = self.provider()
+        self.translate(p)  # loads the saved glossary: a cleanup is due after the load
+        p.reset_glossary(BG3_ID, "en", "ru")
+        names = ["Aaron", "Bella", "Cyrus"]
+        self.translate(p, "1. x\n---\n" + "\n".join(f"{n} → {n}" for n in names), " ".join(names))
+
+        self.now += gp._CLEANUP_IDLE_SECONDS
+        api = FakeApi()
+        with fake_http(api):
+            for timer in self.timers.pending():
+                timer.callback()
+
+        self.assertEqual(api.chat_calls, [])
+
+    def test_interval_is_kept_when_the_game_changes(self):
+        # A Steam menu screen between two screens of the game switches to
+        # "no game" and back, reloading the glossary: no second cleanup.
+        p = self.provider()
+        self.translate(p)
+        self.fire_after_idle(p, "нет")
+
+        p.set_game("", "")
+        self.translate(p)
+        p.set_game("Utawarerumono", BG3_ID)
+        self.translate(p)
+
+        self.assertEqual(self.timers.pending(), [])
+
+    def test_shutdown_cancels_the_pending_cleanup(self):
+        p = self.provider()
+        self.translate(p)
+
+        p.shutdown()
+        self.translate(p)
+
+        self.assertEqual(self.timers.pending(), [])
+
+    def test_fired_timer_keeps_the_newer_one(self):
+        # The first timer's callback runs after a newer translation has
+        # started a second timer; the provider must still hold the second.
+        p = self.provider()
+        self.translate(p)
+        self.translate(p)
+        first, second = self.timers.started
+
+        api = FakeApi()
+        with fake_http(api):
+            first.callback()
+
+        self.assertIs(p._cleanup_timer, second)
+
+    def test_window_gets_entries_and_black_list_in_one_snapshot(self):
+        p = self.provider()
+        self.translate(p)
+        self.fire_after_idle(p, "2")
+
+        entries, rejected = p.glossary_view(BG3_ID, "en", "ru")
+
+        self.assertNotIn("Gallery", [entry.term for entry in entries])
+        self.assertEqual([item.term for item in rejected], ["Gallery"])
+
 
 class GigaChatClientOneRequestAtATimeTest(unittest.TestCase):
     """Chat requests never overlap, whoever sends them."""
@@ -2031,9 +2118,11 @@ class GigaChatClientOneRequestAtATimeTest(unittest.TestCase):
         p._timer_factory = timers
         p._clock = lambda: 1000.0
         p.set_game("Utawarerumono")
-        api = FakeApi(chat_contents=["1. Хаку Галерея\n---\nHaku → Хаку (м)\nGallery → Галерея"])
+        api = FakeApi(chat_contents=[
+            "1. Хаку Галерея Ямато\n---\nHaku → Хаку (м)\nGallery → Галерея\nYamato → Ямато"
+        ])
         with fake_http(api):
-            run(p.translate_batch(["Haku Gallery"], "en", "ru"))
+            run(p.translate_batch(["Haku Gallery Yamato"], "en", "ru"))
         # Make a cleanup due and end a translation, which starts the timer.
         with p._glossary_lock:
             p._cleanup_after_load = True
@@ -2052,7 +2141,28 @@ class GigaChatClientOneRequestAtATimeTest(unittest.TestCase):
             _current_screen.reset(token)
 
         self.assertEqual(len(cleanup_api.chat_calls), 1)
-        self.assertEqual(p.glossary_entries(), [("Haku", "Хаку (м)")])
+        self.assertEqual(p.glossary_entries(), [("Haku", "Хаку (м)"), ("Yamato", "Ямато")])
+
+    def test_retry_of_a_stale_screen_is_not_sent(self):
+        # The first send got 401 (token revoked); meanwhile a newer screen
+        # came. The retry with a fresh token must not be sent.
+        client = GigaChatClient(API_KEY)
+        stale = client.begin_screen()
+        api = FakeApi(chat_responses=[FakeResponse(401, {"message": "Unauthorized"})])
+
+        def post(*args, **kwargs):
+            response = api.post(*args, **kwargs)
+            if args and args[0].endswith("/chat/completions"):
+                client.begin_screen()
+            return response
+
+        from providers import gigachat_client as gcc
+        with patch.object(gcc.requests, "post", side_effect=post), \
+                patch.object(gcc.requests, "get", side_effect=api.get):
+            with self.assertRaises(TranslationSupersededError):
+                client.chat([{"role": "user", "content": "x"}], screen=stale)
+
+        self.assertEqual(len(api.chat_calls), 1)
 
 
 if __name__ == "__main__":

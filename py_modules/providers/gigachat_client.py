@@ -248,16 +248,22 @@ class GigaChatClient:
         halfway, it just finishes.
         """
         with self._chat_lock:
-            if screen is not None and self._is_stale_screen(screen):
-                raise TranslationSupersededError(f"screen {screen} superseded by a newer one")
-            return self._chat_one(messages, choose_model)
+            return self._chat_one(messages, choose_model, screen)
 
     def _is_stale_screen(self, screen: int) -> bool:
         with self._screen_lock:
             return screen != self._latest_screen
 
-    def _chat_one(self, messages: List[dict], choose_model: Optional[ModelChooser]) -> ChatAnswer:
+    def _raise_if_stale(self, screen: Optional[int]) -> None:
+        """Before every send, retries included: a retry of a stale screen is a wasted request too."""
+        if screen is not None and self._is_stale_screen(screen):
+            raise TranslationSupersededError(f"screen {screen} superseded by a newer one")
+
+    def _chat_one(
+        self, messages: List[dict], choose_model: Optional[ModelChooser], screen: Optional[int]
+    ) -> ChatAnswer:
         """chat() without the lock: one request with its retries (401, 404). Caller holds _chat_lock."""
+        self._raise_if_stale(screen)
         token = self._ensure_token()
         model = self._pick_model(token, choose_model)
         response = self._post_chat(token, self._payload(messages, model))
@@ -268,6 +274,7 @@ class GigaChatClient:
             logger.info("GigaChat token rejected, refreshing it once")
             self._invalidate_token()
             token = self._ensure_token()
+            self._raise_if_stale(screen)
             response = self._post_chat(token, self._payload(messages, model))
 
         # The model list changes: a name can be removed or replaced. Re-read
@@ -285,6 +292,7 @@ class GigaChatClient:
                 new_model = self._pick_model(token, choose_model)
             if new_model != model:
                 logger.info(f"GigaChat retry with model {new_model}")
+                self._raise_if_stale(screen)
                 response = self._post_chat(token, self._payload(messages, new_model))
                 # Errors below must name the model that actually answered:
                 # GigaChat+ tells a used-up pool of its own model apart by it.
