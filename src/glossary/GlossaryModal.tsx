@@ -318,10 +318,10 @@ const GlossaryModal: VFC<GlossaryLanguages & {
                         ))}
                         {rejected.length > 0 && (
                             <div style={{ marginTop: sorted.length > 0 ? "12px" : "0" }}>
-                                <div style={{ fontSize: "14px", fontWeight: "bold" }}>Отбракованные ({rejected.length})</div>
+                                <div style={{ fontSize: "14px", fontWeight: "bold" }}>Чёрный список ({rejected.length} отбраковано)</div>
                                 <div style={{ ...HINT_STYLE, marginTop: "2px" }}>
-                                    Попало ранее по ошибке. «Чистка» — убрано автоматически,
-                                    «Вы» — запрещено вами. <HiArrowUturnLeft style={{ verticalAlign: "middle" }} /> Убрать из списка.
+                                    Попадало в словарь по ошибке. «Чистка» — убрано автоматически,
+                                    «Вы» — вами. <HiArrowUturnLeft style={{ verticalAlign: "middle" }} /> Удалить.
                                 </div>
                             </div>
                         )}
