@@ -320,8 +320,8 @@ const GlossaryModal: VFC<GlossaryLanguages & {
                             <div style={{ marginTop: sorted.length > 0 ? "12px" : "0" }}>
                                 <div style={{ fontSize: "14px", fontWeight: "bold" }}>Отбракованные ({rejected.length})</div>
                                 <div style={{ ...HINT_STYLE, marginTop: "2px" }}>
-                                    Модель больше не добавит эти термины в словарь. «чистка» — убрано автоматически,
-                                    «вы» — запрещено вами. <HiArrowUturnLeft style={{ verticalAlign: "middle" }} /> возвращает термин.
+                                    Попало ранее по ошибке. «Чистка» — убрано автоматически,
+                                    «Вы» — запрещено вами. <HiArrowUturnLeft style={{ verticalAlign: "middle" }} /> Убрать из списка.
                                 </div>
                             </div>
                         )}
