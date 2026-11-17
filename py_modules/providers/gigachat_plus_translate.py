@@ -167,7 +167,8 @@ _INTERFACE_WORDS = frozenset({
 # Why two requests in turns and not one: live runs (5 games, 2 repeats)
 # with both kinds in one request lost the common words of a game the model
 # does not know ("Innkeeper", "Stranger" in a made-up game, 0 of 4); the
-# common-words request alone found them all, deleted no real entry either.
+# common-words request alone found them all. Neither deleted a name; the
+# common-words request named a game mechanic once (see the prompt below).
 # Not back to back: each request is one more burst for the service, and the
 # turns come at the usual cleanup moments anyway.
 # Master off switch, and one per kind: a stronger model may stop listing
@@ -237,7 +238,7 @@ _CLEANUP_INSTRUCTION = (
 #   words in one repeat of two; with it, in both.
 # - The examples are not the words seen in the user's glossary: those were
 #   the test set, and a model that recognises its examples proves nothing.
-# Seen once in four Persona 5 runs: "Confidant" (a game mechanic) named.
+# Seen in one of two Persona 5 runs: "Confidant" (a game mechanic) named.
 # Not lost: it goes to the black list, visible in the glossary window.
 # Missed every time: "Lord" in Hades — harmless.
 _CLEANUP_COMMON_WORDS_INSTRUCTION = (
@@ -774,7 +775,8 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         self._new_since_cleanup = 0
         # A non-empty saved glossary was loaded and has not been cleaned in
         # this session: the counter above starts from zero after a restart,
-        # and junk gathered before would wait for ten new entries.
+        # and junk gathered before would wait for _CLEANUP_AFTER_NEW_ENTRIES
+        # new entries.
         self._cleanup_after_load = False
         # Clock reading of the last cleanup start; None = none yet. One for
         # the provider, kept when the game changes (_CLEANUP_MIN_INTERVAL_SECONDS).

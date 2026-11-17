@@ -1681,8 +1681,12 @@ class _ManualTimer:
         self.cancelled = True
 
 
-# Haku and Kuon are characters (gender), the rest are interface labels the
-# stop list does not know, as the model would have listed them.
+# Haku and Kuon are characters (gender), Yamato is a place; Gallery and
+# Text Speed are interface labels the stop list does not know, as the model
+# would have listed them. The first cleanup after a start is the
+# common-words kind, so the tests that remove entries on the first cleanup
+# run that kind; the model's answer is faked, the kind only picks the
+# prompt. The interface kind has its own test (the second cleanup).
 CLEANUP_GLOSSARY = [
     ("Haku", "Хаку (м)"),
     ("Gallery", "Галерея"),
@@ -1735,7 +1739,7 @@ class GigaChatPlusCleanupTest(unittest.TestCase):
 
     # -- what is removed --
 
-    def test_labels_are_moved_to_the_black_list(self):
+    def test_found_entries_are_moved_to_the_black_list(self):
         p = self.provider()
         self.translate(p)
 
@@ -1943,15 +1947,25 @@ class GigaChatPlusCleanupTest(unittest.TestCase):
         self.assertTrue(any("cleanup (interface)" in line for line in second_logs))
 
     def test_failed_cleanup_passes_the_turn(self):
-        # A kind whose requests keep failing must not take every turn.
-        p = self.provider()
-        self.translate(p)
-        self.now += gp._CLEANUP_IDLE_SECONDS
-        api = FakeApi(chat_responses=[chat_response(REFUSAL, "blacklist")])
-        with fake_http(api):
-            self.timers.fire()
+        # A kind whose requests keep failing must not take every turn. Two
+        # ways to fail: the model refuses (an answer, no exception) and the
+        # request fails (an exception out of _clean_glossary).
+        server_errors = [FakeResponse(500, text="Internal Server Error") for _ in range(5)]
+        failures = {
+            "refusal": [chat_response(REFUSAL, "blacklist")],
+            "server error": server_errors,
+        }
+        for name, responses in failures.items():
+            with self.subTest(name):
+                p = self.provider()
+                self.translate(p)
+                self.now += gp._CLEANUP_IDLE_SECONDS
+                api = FakeApi(chat_responses=responses)
+                with fake_http(api):
+                    self.timers.fire()
+                self.assertGreater(len(api.chat_calls), 0)  # the cleanup did start and fail
 
-        self.assertTrue(self.next_cleanup(p).startswith(gp._CLEANUP_INSTRUCTION))
+                self.assertTrue(self.next_cleanup(p).startswith(gp._CLEANUP_INSTRUCTION))
 
     def test_common_words_are_moved_to_the_black_list(self):
         p = self.provider([("Haku", "Хаку (м)"), ("Old man", "старик"), ("Kuon", "Куон (ж)"),
@@ -1961,17 +1975,41 @@ class GigaChatPlusCleanupTest(unittest.TestCase):
         self.fire_after_idle(p, "2, 5")
 
         self.assertEqual(self.terms(p), ["Haku", "Kuon", "Yamato"])
+        self.assertCountEqual(
+            [(item.term, item.reason) for item in self.store.load_rejected(BG3_KEY)],
+            [("Old man", gp.REJECTED_BY_CLEANUP), ("Tenant", gp.REJECTED_BY_CLEANUP)],
+        )
         self.assertTrue(any("cleanup (common words): rejected 2" in line for line in self.logs))
 
-    def test_with_one_kind_off_the_other_runs_every_time(self):
-        with patch.object(gp, "_CLEANUP_COMMON_WORDS_ENABLED", False):
-            p = self.provider()
-            self.translate(p)
-            first = user_prompt(self.fire_after_idle(p, "нет").chat_calls[0])
-            second = self.next_cleanup(p)
+    def test_interface_labels_are_moved_to_the_black_list(self):
+        p = self.provider()
+        self.translate(p)
+        self.fire_after_idle(p, "нет")  # the common-words turn
 
-        self.assertTrue(first.startswith(gp._CLEANUP_INSTRUCTION))
-        self.assertTrue(second.startswith(gp._CLEANUP_INSTRUCTION))
+        prompt = self.next_cleanup(p, "2, 4")
+
+        self.assertTrue(prompt.startswith(gp._CLEANUP_INSTRUCTION))
+        self.assertEqual(self.terms(p), ["Haku", "Kuon", "Yamato"])
+        self.assertCountEqual(
+            [(item.term, item.reason) for item in self.store.load_rejected(BG3_KEY)],
+            [("Gallery", gp.REJECTED_BY_CLEANUP), ("Text Speed", gp.REJECTED_BY_CLEANUP)],
+        )
+        self.assertTrue(any("cleanup (interface): rejected 2" in line for line in self.logs))
+
+    def test_with_one_kind_off_the_other_runs_every_time(self):
+        cases = {
+            "_CLEANUP_COMMON_WORDS_ENABLED": gp._CLEANUP_INSTRUCTION,
+            "_CLEANUP_INTERFACE_ENABLED": gp._CLEANUP_COMMON_WORDS_INSTRUCTION,
+        }
+        for switch, instruction in cases.items():
+            with self.subTest(off=switch), patch.object(gp, switch, False):
+                p = self.provider()
+                self.translate(p)
+                first = user_prompt(self.fire_after_idle(p, "нет").chat_calls[0])
+                second = self.next_cleanup(p)
+
+                self.assertTrue(first.startswith(instruction))
+                self.assertTrue(second.startswith(instruction))
 
     def test_both_kinds_off_is_a_switch_off(self):
         with patch.object(gp, "_CLEANUP_COMMON_WORDS_ENABLED", False), \
