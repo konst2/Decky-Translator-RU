@@ -148,25 +148,51 @@ _INTERFACE_WORDS = frozenset({
 })
 
 # Glossary cleanup: from time to time the glossary is sent to the model in a
-# separate request, "which of these are interface labels?", and the labels
-# found are moved to the black list. The stop list above catches only the
-# usual words; a short separate task is easier for the model than one more
-# rule in the long translation prompt. Live runs on GigaChat-3-Ultra
-# (5 games, 26 requests): no real name or term deleted, every menu item and
-# glued label found ("New Game", "Return to Title", "SaveBack", "EchoAuto");
-# code names made of ordinary words ("Joker", "Queen") and game terms that
-# look like ordinary words ("Darkness", "Boon") kept. OCR junk ("Tl1e") is
-# not found and not hunted: OCR is good and the user can delete it by hand.
-# Off switch: a stronger model may stop listing interface labels at all.
+# separate request, and the entries it names are moved to the black list.
+# Two kinds of junk, each with its own request, taken in turns:
+# - interface labels ("which of these are buttons and menu items?"). The
+#   stop list above catches only the usual words; a short separate task is
+#   easier for the model than one more rule in the long translation prompt.
+#   Live runs on GigaChat-3-Ultra (5 games, 26 requests): no real name or
+#   term deleted, every menu item and glued label found ("New Game",
+#   "Return to Title", "SaveBack", "EchoAuto"); code names made of ordinary
+#   words ("Joker", "Queen") and game terms that look like ordinary words
+#   ("Darkness", "Boon") kept. OCR junk ("Tl1e") is not found and not
+#   hunted: OCR is good and the user can delete it by hand.
+# - common words: roles, forms of address, descriptions without a proper
+#   name ("Old man", "Lady", "Tenant", "capital", "Capital guard"). Three
+#   days of a visual novel gathered them: the name box of an unnamed
+#   speaker says "Old Man", and the translation prompt asks for every
+#   character, "even minor ones". The interface request never named them.
+# Why two requests in turns and not one: live runs (5 games, 2 repeats)
+# with both kinds in one request lost the common words of a game the model
+# does not know ("Innkeeper", "Stranger" in a made-up game, 0 of 4); the
+# common-words request alone found them all, deleted no real entry either.
+# Not back to back: each request is one more burst for the service, and the
+# turns come at the usual cleanup moments anyway.
+# Master off switch, and one per kind: a stronger model may stop listing
+# such entries at all. With one kind off, the other runs every time.
 _GLOSSARY_CLEANUP_ENABLED = True
+_CLEANUP_INTERFACE_ENABLED = True
+_CLEANUP_COMMON_WORDS_ENABLED = True
+# Kinds of cleanup, in the order they take turns. Common words go first
+# after a plugin start (the turn is kept in memory only): interface labels
+# are also caught by the stop list before they reach the glossary.
+_CLEANUP_KIND_COMMON_WORDS = "common words"
+_CLEANUP_KIND_INTERFACE = "interface"
+_CLEANUP_KINDS = (_CLEANUP_KIND_COMMON_WORDS, _CLEANUP_KIND_INTERFACE)
 # The cleanup runs when this many new entries came since the last one: junk
 # only ever arrives with new entries, so a glossary that does not grow is
-# not sent again.
-_CLEANUP_AFTER_NEW_ENTRIES = 10
+# not sent again. With two kinds in turns each kind sees twice as many new
+# entries between its runs, so the numbers below were made 1.5 times
+# smaller (10 -> 7, 3 -> 2, 600 -> 400 s): each kind runs a little less
+# often than the single cleanup did, the requests 1.5 times more often
+# (decision of the user, 17.11.2026). One request is 300-500 tokens.
+_CLEANUP_AFTER_NEW_ENTRIES = 7
 # ...or this many once the glossary is more than 2/3 full. Labels are on
 # every screen, so they always count as recently used, and a full glossary
 # evicts real characters instead of them.
-_CLEANUP_AFTER_NEW_ENTRIES_FULL = 3
+_CLEANUP_AFTER_NEW_ENTRIES_FULL = 2
 _CLEANUP_FULL_SHARE = 2 / 3
 # The cleanup starts only after this long without translations, and never
 # while one is running. Requests go one at a time anyway (GigaChatClient.chat),
@@ -176,21 +202,21 @@ _CLEANUP_IDLE_SECONDS = 5
 # Not more often than this, even if the trigger fires again: a model that
 # keeps leaving the junk in must not cause a request every few screens. A
 # failed cleanup waits for this as well — it is not retried at once. One
-# interval for the provider, not per game: switching the game (or a screen
-# of the Steam menu between two screens of the same game, which switches
-# to "no game" and back and reloads the glossary) must not trigger another
-# cleanup; nobody hops between games that fast while playing.
-_CLEANUP_MIN_INTERVAL_SECONDS = 600
+# interval for the provider and for both kinds, not per game: switching the
+# game (or a screen of the Steam menu between two screens of the same game,
+# which switches to "no game" and back and reloads the glossary) must not
+# trigger another cleanup; nobody hops between games that fast while playing.
+_CLEANUP_MIN_INTERVAL_SECONDS = 400
 # A smaller glossary is not cleaned: with the "not more than half" rule
 # below, nothing could be deleted from one or two entries anyway.
 _CLEANUP_MIN_ENTRIES = 3
 # An answer naming more than this share of the glossary is not trusted: the
 # model has misread the task, a real glossary is mostly names.
 _CLEANUP_MAX_DELETE_SHARE = 0.5
-# The wording that won the live runs (answer with numbers only; labelling
-# every entry was longer, slower and dropped lines). A remark about OCR junk
-# was tried and left out: it found junk unreliably and "names with distorted
-# letters" invites deleting unusual real names.
+# Interface labels. The wording that won the live runs (answer with numbers
+# only; labelling every entry was longer, slower and dropped lines). A
+# remark about OCR junk was tried and left out: it found junk unreliably and
+# "names with distorted letters" invites deleting unusual real names.
 _CLEANUP_INSTRUCTION = (
     "В словарь должны попадать только имена персонажей, названия мест, фракций, божеств, "
     "особых предметов, существ и понятий мира этой игры. Элементы интерфейса — это кнопки, "
@@ -198,6 +224,31 @@ _CLEANUP_INSTRUCTION = (
     "Skip, Save, Options, Continue), в том числе с буквой или названием кнопки геймпада впереди "
     "(A Next, Y Auto Mode, lb Back) и склеенные при распознавании текста (AutoMode, BHide Window).\n"
     "Найди в словаре записи, которые являются элементами интерфейса, а не частью мира игры. "
+    "Ответь только номерами таких записей через запятую, без пояснений. "
+    "Если таких записей нет, ответь «нет»."
+)
+# Common words. Live runs, what made it work:
+# - First what stays: names of this game's world "even if made of ordinary
+#   words". Without it a world's own titles and units look like common
+#   words: "Imperial Guard of Left", "Mikado", "Twen Shields of Yamato" in
+#   Utawarerumono, code names "Joker", "Queen" in Persona 5 — all kept.
+# - The test "could be translated without knowing the game and would mean
+#   the same in any other story". Without it the model named the common
+#   words in one repeat of two; with it, in both.
+# - The examples are not the words seen in the user's glossary: those were
+#   the test set, and a model that recognises its examples proves nothing.
+# Seen once in four Persona 5 runs: "Confidant" (a game mechanic) named.
+# Not lost: it goes to the black list, visible in the glossary window.
+# Missed every time: "Lord" in Hades — harmless.
+_CLEANUP_COMMON_WORDS_INSTRUCTION = (
+    "В словаре должны оставаться только имена и названия из мира этой игры: персонажи, страны, "
+    "города, отряды, титулы, заведения, божества, особые предметы, существа и понятия, кодовые "
+    "имена — даже если они состоят из обычных слов (например, Knights of the Rose, Shogun, Ace).\n"
+    "Найди записи, которым в словаре не место: обычные слова и описания без имени собственного — "
+    "роли, обращения, должности, общие названия людей и мест (например, Soldier, Grandpa, Girl, Sir, "
+    "village, bandit leader).\n"
+    "Признак обычного слова: его можно перевести без знания игры, и в любой другой истории оно "
+    "значило бы то же самое.\n"
     "Ответь только номерами таких записей через запятую, без пояснений. "
     "Если таких записей нет, ответь «нет»."
 )
@@ -472,6 +523,26 @@ def _is_protected_from_cleanup(entry: GlossaryEntry) -> bool:
     return bool(_split_gender(entry.translation)[1]) or bool(entry.speech)
 
 
+def _enabled_cleanup_kinds() -> List[str]:
+    """Cleanup kinds switched on, in the order they take turns (_CLEANUP_KINDS)."""
+    if not _GLOSSARY_CLEANUP_ENABLED:
+        return []
+    switched_on = {
+        _CLEANUP_KIND_COMMON_WORDS: _CLEANUP_COMMON_WORDS_ENABLED,
+        _CLEANUP_KIND_INTERFACE: _CLEANUP_INTERFACE_ENABLED,
+    }
+    return [kind for kind in _CLEANUP_KINDS if switched_on[kind]]
+
+
+def _cleanup_instruction(kind: str) -> str:
+    """The request text for one cleanup kind."""
+    if kind == _CLEANUP_KIND_INTERFACE:
+        return _CLEANUP_INSTRUCTION
+    if kind == _CLEANUP_KIND_COMMON_WORDS:
+        return _CLEANUP_COMMON_WORDS_INSTRUCTION
+    raise ValueError(f"unknown cleanup kind: {kind}")
+
+
 def _start_timer(seconds: float, callback) -> threading.Timer:
     """A daemon timer: a pending cleanup must not keep the plugin from unloading."""
     timer = threading.Timer(seconds, callback)
@@ -714,6 +785,10 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         self._last_translation_at = 0.0
         self._cleanup_running = False
         self._cleanup_timer = None
+        # Kind of the next cleanup (_CLEANUP_KINDS). One for the provider,
+        # like the interval; memory only: after a restart common words go
+        # first.
+        self._next_cleanup_kind = _CLEANUP_KINDS[0]
         # Set by shutdown(): no more cleanup timers or requests.
         self._stopped = False
         # Replaced in tests, so they need not wait for real seconds.
@@ -1570,7 +1645,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
 
     def _cleanup_due(self) -> bool:
         """Whether the glossary should be cleaned now. Caller holds _glossary_lock."""
-        if not _GLOSSARY_CLEANUP_ENABLED or self._stopped:
+        if not _enabled_cleanup_kinds() or self._stopped:
             return False
         if len(self._glossary) < _CLEANUP_MIN_ENTRIES:
             return False
@@ -1603,6 +1678,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 return
             if not self._cleanup_due():
                 return
+            kind = self._take_cleanup_turn()
             self._cleanup_running = True
             # Counted from the start: a failed cleanup also waits the full
             # interval instead of being retried at once.
@@ -1614,51 +1690,70 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
             game = self._game
             epoch = self._glossary_epoch
         try:
-            self._clean_glossary(snapshot, game, epoch)
+            self._clean_glossary(snapshot, game, epoch, kind)
         except Exception as e:  # noqa: BLE001 — any failure only skips this cleanup
-            logger.warning(f"GigaChat+ glossary cleanup failed: {type(e).__name__}: {e}")
+            logger.warning(f"GigaChat+ glossary cleanup ({kind}) failed: {type(e).__name__}: {e}")
         finally:
             with self._glossary_lock:
                 self._cleanup_running = False
 
-    def _clean_glossary(self, snapshot: List[GlossaryEntry], game: str, epoch: int) -> None:
-        """Ask the model which entries are interface labels and reject them."""
-        logger.info(f"GigaChat+ glossary cleanup: checking {len(snapshot)} entries")
+    def _take_cleanup_turn(self) -> str:
+        """
+        The kind of the cleanup starting now; passes the turn to the next
+        kind. Caller holds _glossary_lock and has checked _cleanup_due, so
+        at least one kind is on.
+
+        The turn passes when the cleanup starts, not when it succeeds: a
+        kind whose requests keep failing must not take every turn. A kind
+        switched off is skipped, so with one kind on it runs every time.
+        """
+        kinds = _enabled_cleanup_kinds()
+        if self._next_cleanup_kind in kinds:
+            kind = self._next_cleanup_kind
+        else:
+            kind = kinds[0]
+        position = _CLEANUP_KINDS.index(kind)
+        self._next_cleanup_kind = _CLEANUP_KINDS[(position + 1) % len(_CLEANUP_KINDS)]
+        return kind
+
+    def _clean_glossary(self, snapshot: List[GlossaryEntry], game: str, epoch: int, kind: str) -> None:
+        """Ask the model which entries are junk of this kind and reject them."""
+        logger.info(f"GigaChat+ glossary cleanup ({kind}): checking {len(snapshot)} entries")
         # Not a screen: a newer screen must not drop this request as stale.
         # Set explicitly, because a thread may inherit the context it was
         # started from (an option of newer Python), and the timer is started
         # while a screen is being translated.
         screen_token = _current_screen.set(None)
         try:
-            answer = self._chat(self._cleanup_messages(game, snapshot))
+            answer = self._chat(self._cleanup_messages(game, snapshot, kind))
         finally:
             _current_screen.reset(screen_token)
         if not answer.usable:
-            logger.warning(f"GigaChat+ glossary cleanup: answer finished with '{answer.finish_reason}'")
+            logger.warning(f"GigaChat+ glossary cleanup ({kind}): answer finished with '{answer.finish_reason}'")
             return
         numbers = _parse_cleanup_answer(answer.content, len(snapshot))
         if numbers is None:
-            logger.warning(f"GigaChat+ glossary cleanup: answer not understood: {answer.content[:200]!r}")
+            logger.warning(f"GigaChat+ glossary cleanup ({kind}): answer not understood: {answer.content[:200]!r}")
             return
         if len(numbers) > len(snapshot) * _CLEANUP_MAX_DELETE_SHARE:
             logger.warning(
-                f"GigaChat+ glossary cleanup: answer names {len(numbers)} of {len(snapshot)} entries, "
+                f"GigaChat+ glossary cleanup ({kind}): answer names {len(numbers)} of {len(snapshot)} entries, "
                 "not trusted"
             )
             return
         named = [snapshot[number - 1] for number in numbers]
         protected = [entry.term for entry in named if _is_protected_from_cleanup(entry)]
         if protected:
-            logger.info(f"GigaChat+ glossary cleanup: kept characters: {', '.join(protected)}")
+            logger.info(f"GigaChat+ glossary cleanup ({kind}): kept characters: {', '.join(protected)}")
         labels = [entry for entry in named if not _is_protected_from_cleanup(entry)]
         if not labels:
-            logger.info("GigaChat+ glossary cleanup: no interface labels found")
+            logger.info(f"GigaChat+ glossary cleanup ({kind}): nothing found")
             return
-        self._reject_by_cleanup(labels, epoch)
+        self._reject_by_cleanup(labels, epoch, kind)
 
-    def _cleanup_messages(self, game: str, snapshot: List[GlossaryEntry]) -> List[dict]:
+    def _cleanup_messages(self, game: str, snapshot: List[GlossaryEntry], kind: str) -> List[dict]:
         """
-        The cleanup request: the instruction and the numbered glossary.
+        The cleanup request: the instruction of the kind and the numbered glossary.
 
         One entry per line, so a term can never break the numbering: terms
         come from single answer lines and hold no line breaks.
@@ -1673,12 +1768,12 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         )
         return [
             {"role": "system", "content": system},
-            {"role": "user", "content": f"{_CLEANUP_INSTRUCTION}\n\nСловарь:\n{numbered}"},
+            {"role": "user", "content": f"{_cleanup_instruction(kind)}\n\nСловарь:\n{numbered}"},
         ]
 
-    def _reject_by_cleanup(self, labels: List[GlossaryEntry], epoch: int) -> None:
+    def _reject_by_cleanup(self, labels: List[GlossaryEntry], epoch: int, kind: str) -> None:
         """
-        Move the labels found by the cleanup to the black list.
+        Move the entries found by the cleanup to the black list.
 
         Skipped as a whole if the glossary was reset, edited by the user or
         switched during the request (the epoch changed): the numbers belong
@@ -1690,7 +1785,7 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
         """
         with self._glossary_lock:
             if epoch != self._glossary_epoch:
-                logger.info("GigaChat+ glossary cleanup: glossary changed during the request, result dropped")
+                logger.info(f"GigaChat+ glossary cleanup ({kind}): glossary changed during the request, result dropped")
                 return
             now = int(time.time())
             rejected = [
@@ -1710,6 +1805,6 @@ class GigaChatPlusTranslateProvider(GigaChatTranslateProvider):
                 self._speech_candidates.pop(item.match_key, None)
                 self._rejected[item.match_key] = item
         logger.info(
-            f"GigaChat+ glossary cleanup: rejected {len(rejected)}: "
+            f"GigaChat+ glossary cleanup ({kind}): rejected {len(rejected)}: "
             f"{', '.join(item.term for item in rejected)}"
         )

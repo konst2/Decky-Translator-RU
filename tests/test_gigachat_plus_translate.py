@@ -1887,11 +1887,14 @@ class GigaChatPlusCleanupTest(unittest.TestCase):
         self.translate(p)
         self.fire_after_idle(p, "нет")
         self.now += gp._CLEANUP_MIN_INTERVAL_SECONDS
-        names = ["Aaron", "Bella", "Cyrus", "Dora", "Ezra", "Fiona", "Gideon", "Hana", "Ivan"]
+        all_names = ["Aaron", "Bella", "Cyrus", "Dora", "Ezra", "Fiona", "Gideon", "Hana", "Ivan"]
+        # One entry below the threshold. Two answers: one answer may add only
+        # _MAX_NEW_ENTRIES_PER_ANSWER entries.
+        names = all_names[:gp._CLEANUP_AFTER_NEW_ENTRIES - 1]
+        half = len(names) // 2
 
-        # 9 new entries: below the threshold of 10.
-        self.translate(p, "1. x\n---\n" + "\n".join(f"{n} → {n}" for n in names[:5]), " ".join(names))
-        self.translate(p, "1. x\n---\n" + "\n".join(f"{n} → {n}" for n in names[5:]), " ".join(names))
+        self.translate(p, "1. x\n---\n" + "\n".join(f"{n} → {n}" for n in names[:half]), " ".join(names))
+        self.translate(p, "1. x\n---\n" + "\n".join(f"{n} → {n}" for n in names[half:]), " ".join(names))
         self.assertEqual(self.timers.pending(), [])
 
         self.translate(p, "1. x\n---\nJudith → Джудит", "Judith")
@@ -1910,6 +1913,69 @@ class GigaChatPlusCleanupTest(unittest.TestCase):
 
     def test_switch_off(self):
         with patch.object(gp, "_GLOSSARY_CLEANUP_ENABLED", False):
+            p = self.provider()
+            self.translate(p)
+
+        self.assertEqual(self.timers.started, [])
+
+    # -- two kinds in turns --
+
+    def next_cleanup(self, p, cleanup_answer="нет"):
+        """Make the next cleanup due and run it; returns its prompt."""
+        self.now += gp._CLEANUP_MIN_INTERVAL_SECONDS
+        p._new_since_cleanup = gp._CLEANUP_AFTER_NEW_ENTRIES
+        self.translate(p)
+        api = self.fire_after_idle(p, cleanup_answer)
+        return user_prompt(api.chat_calls[0])
+
+    def test_kinds_take_turns_common_words_first(self):
+        p = self.provider()
+        self.translate(p)
+
+        first = user_prompt(self.fire_after_idle(p, "нет").chat_calls[0])
+        second = self.next_cleanup(p)
+        second_logs = self.logs
+        third = self.next_cleanup(p)
+
+        self.assertTrue(first.startswith(gp._CLEANUP_COMMON_WORDS_INSTRUCTION))
+        self.assertTrue(second.startswith(gp._CLEANUP_INSTRUCTION))
+        self.assertTrue(third.startswith(gp._CLEANUP_COMMON_WORDS_INSTRUCTION))
+        self.assertTrue(any("cleanup (interface)" in line for line in second_logs))
+
+    def test_failed_cleanup_passes_the_turn(self):
+        # A kind whose requests keep failing must not take every turn.
+        p = self.provider()
+        self.translate(p)
+        self.now += gp._CLEANUP_IDLE_SECONDS
+        api = FakeApi(chat_responses=[chat_response(REFUSAL, "blacklist")])
+        with fake_http(api):
+            self.timers.fire()
+
+        self.assertTrue(self.next_cleanup(p).startswith(gp._CLEANUP_INSTRUCTION))
+
+    def test_common_words_are_moved_to_the_black_list(self):
+        p = self.provider([("Haku", "Хаку (м)"), ("Old man", "старик"), ("Kuon", "Куон (ж)"),
+                           ("Yamato", "Ямато"), ("Tenant", "жилец")])
+        self.translate(p)
+
+        self.fire_after_idle(p, "2, 5")
+
+        self.assertEqual(self.terms(p), ["Haku", "Kuon", "Yamato"])
+        self.assertTrue(any("cleanup (common words): rejected 2" in line for line in self.logs))
+
+    def test_with_one_kind_off_the_other_runs_every_time(self):
+        with patch.object(gp, "_CLEANUP_COMMON_WORDS_ENABLED", False):
+            p = self.provider()
+            self.translate(p)
+            first = user_prompt(self.fire_after_idle(p, "нет").chat_calls[0])
+            second = self.next_cleanup(p)
+
+        self.assertTrue(first.startswith(gp._CLEANUP_INSTRUCTION))
+        self.assertTrue(second.startswith(gp._CLEANUP_INSTRUCTION))
+
+    def test_both_kinds_off_is_a_switch_off(self):
+        with patch.object(gp, "_CLEANUP_COMMON_WORDS_ENABLED", False), \
+                patch.object(gp, "_CLEANUP_INTERFACE_ENABLED", False):
             p = self.provider()
             self.translate(p)
 
@@ -1936,7 +2002,7 @@ class GigaChatPlusCleanupTest(unittest.TestCase):
 
     def test_reset_starts_counting_anew(self):
         # Reset before the first cleanup of the loaded glossary: the new
-        # glossary must wait for its own ten entries.
+        # glossary must wait for its own new entries.
         p = self.provider()
         self.translate(p)  # loads the saved glossary: a cleanup is due after the load
         p.reset_glossary(BG3_ID, "en", "ru")
