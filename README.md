@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/readme-logo.png" alt="Decky Translator RU" />
+  <img src="assets/readme-logo.jpg" alt="Decky Translator RU" />
 </p>
 
 <p align="center">
